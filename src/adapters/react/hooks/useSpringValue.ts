@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
-import { createSpringValue, type SpringValue, type SpringConfig } from '../../core/spring-value.ts'
+import { useEffect, useRef } from 'react'
+import { createSpringValue } from '../../../index.js'
+import type { SpringConfig, SpringValue } from '../../../types.js'
 
 /**
  * Hook for creating a spring value

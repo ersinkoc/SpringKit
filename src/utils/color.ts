@@ -35,9 +35,9 @@ export function parseColor(color: string): RGB {
   const rgbMatch = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/i)
   if (rgbMatch) {
     return {
-      r: parseInt(rgbMatch[1], 10),
-      g: parseInt(rgbMatch[2], 10),
-      b: parseInt(rgbMatch[3], 10),
+      r: parseInt(rgbMatch[1]!, 10),
+      g: parseInt(rgbMatch[2]!, 10),
+      b: parseInt(rgbMatch[3]!, 10),
     }
   }
 
@@ -45,9 +45,9 @@ export function parseColor(color: string): RGB {
   const rgbaMatch = color.match(/rgba\((\d+),\s*(\d+),\s*(\d+),\s*[\d.]+\)/i)
   if (rgbaMatch) {
     return {
-      r: parseInt(rgbaMatch[1], 10),
-      g: parseInt(rgbaMatch[2], 10),
-      b: parseInt(rgbaMatch[3], 10),
+      r: parseInt(rgbaMatch[1]!, 10),
+      g: parseInt(rgbaMatch[2]!, 10),
+      b: parseInt(rgbaMatch[3]!, 10),
     }
   }
 
@@ -55,9 +55,9 @@ export function parseColor(color: string): RGB {
   const hslMatch = color.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/i)
   if (hslMatch) {
     return hslToRgb(
-      parseInt(hslMatch[1], 10),
-      parseInt(hslMatch[2], 10),
-      parseInt(hslMatch[3], 10)
+      parseInt(hslMatch[1]!, 10),
+      parseInt(hslMatch[2]!, 10),
+      parseInt(hslMatch[3]!, 10)
     )
   }
 
@@ -90,9 +90,9 @@ export function hexToRgb(hex: string): RGB {
 
   if (cleanHex.length === 3) {
     return {
-      r: parseInt(cleanHex[0] + cleanHex[0], 16),
-      g: parseInt(cleanHex[1] + cleanHex[1], 16),
-      b: parseInt(cleanHex[2] + cleanHex[2], 16),
+      r: parseInt(cleanHex.charAt(0) + cleanHex.charAt(0), 16),
+      g: parseInt(cleanHex.charAt(1) + cleanHex.charAt(1), 16),
+      b: parseInt(cleanHex.charAt(2) + cleanHex.charAt(2), 16),
     }
   }
 

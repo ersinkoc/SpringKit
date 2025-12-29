@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { createDragSpring, type DragSpring, type DragSpringConfig } from '../../gesture/drag.ts'
+import { createDragSpring } from '../../../index.js'
+import type { DragSpring, DragSpringConfig } from '../../../types.js'
 
 /**
  * Drag API interface
@@ -45,7 +46,7 @@ export interface DragAPI {
  * }
  * ```
  */
-export function useDrag(config: DragSpringConfig = []): [
+export function useDrag(config: DragSpringConfig = {}): [
   { x: number; y: number },
   DragAPI
 ] {

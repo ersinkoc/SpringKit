@@ -1,4 +1,3 @@
-import type { SpringConfig } from '../core/config.js'
 import { defaultConfig } from '../core/config.js'
 import { createSpringValue, type SpringValue } from '../core/spring-value.js'
 import { clamp } from '../utils/math.js'
@@ -6,7 +5,21 @@ import { clamp } from '../utils/math.js'
 /**
  * Drag spring configuration interface
  */
-export interface DragSpringConfig extends SpringConfig {
+export interface DragSpringConfig {
+  /** Spring stiffness (default: 100) */
+  stiffness?: number
+  /** Damping ratio (default: 10) */
+  damping?: number
+  /** Mass (default: 1) */
+  mass?: number
+  /** Initial velocity */
+  velocity?: number
+  /** Speed threshold for considering spring at rest (default: 0.01) */
+  restSpeed?: number
+  /** Position threshold for considering spring at rest (default: 0.01) */
+  restDelta?: number
+  /** Clamp value to [from, to] range */
+  clamp?: boolean
   /** Axis constraint */
   axis?: 'x' | 'y' | 'both'
   /** Boundary constraints */
@@ -55,7 +68,7 @@ export interface DragSpring {
 /**
  * Default drag spring configuration
  */
-const defaultDragConfig: Required<Omit<DragSpringConfig, 'onDragStart' | 'onDrag' | 'onDragEnd' | 'onUpdate' | 'velocity'>> = {
+const defaultDragConfig: Required<Omit<DragSpringConfig, 'onDragStart' | 'onDrag' | 'onDragEnd' | 'onUpdate' | 'velocity' | 'bounds'>> = {
   axis: 'both',
   rubberBand: false,
   rubberBandFactor: 0.5,
@@ -90,8 +103,18 @@ class DragSpringImpl implements DragSpring {
     this.element = element
     this.config = { ...defaultDragConfig, ...config }
 
-    this.springX = createSpringValue(0, this.config)
-    this.springY = createSpringValue(0, this.config)
+    // Extract only spring physics config for createSpringValue
+    const springConfig = {
+      stiffness: this.config.stiffness,
+      damping: this.config.damping,
+      mass: this.config.mass,
+      restSpeed: this.config.restSpeed,
+      restDelta: this.config.restDelta,
+      clamp: this.config.clamp,
+    }
+
+    this.springX = createSpringValue(0, springConfig)
+    this.springY = createSpringValue(0, springConfig)
 
     // Subscribe to spring updates
     this.springX.subscribe(() => {

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { createSpringGroup, type SpringGroup, type SpringConfig } from '../../core/spring-group.ts'
+import { createSpringGroup } from '../../../index.js'
+import type { SpringConfig, SpringGroup } from '../../../types.js'
 
 /**
  * Animated values type

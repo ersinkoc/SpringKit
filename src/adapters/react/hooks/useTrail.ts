@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { createTrail, type Trail, type SpringConfig } from '../../animation/trail.ts'
+import { createTrail } from '../../../index.js'
+import type { SpringConfig, Trail } from '../../../types.js'
 
 /**
  * Hook for creating trail animations

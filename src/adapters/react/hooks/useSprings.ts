@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { createSpringGroup, type SpringConfig } from '../../core/spring-group.ts'
+import { createSpringGroup } from '../../../index.js'
+import type { SpringConfig } from '../../../types.js'
 
 /**
  * Spring item configuration

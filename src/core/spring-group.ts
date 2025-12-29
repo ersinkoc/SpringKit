@@ -60,7 +60,7 @@ class SpringGroupImpl<T extends Record<string, number>> implements SpringGroup<T
   get(): T {
     const result = {} as T
     for (const [key, springValue] of this.values) {
-      result[key] = springValue.get()
+      (result as Record<string, number>)[key as string] = springValue.get()
     }
     return result
   }

@@ -10,19 +10,17 @@ export default defineConfig({
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
+      include: ['src/**/*.ts'],
       exclude: [
         'node_modules/',
         'dist/',
         'website/',
-        'tests/fixtures/',
-        'tests/unit/react/',
+        'tests/',
         '**/*.test.{ts,tsx}',
         '**/*.spec.{ts,tsx}',
         'src/adapters/react/**',
-        'vitest.config.ts',
-        'tsup.config.ts',
-        'vite.config.ts',
         'src/types.ts',
+        'src/index.ts',
       ],
       thresholds: {
         lines: 100,

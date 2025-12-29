@@ -133,8 +133,8 @@ export async function stagger<T>(
   const animations: SpringAnimation[] = []
 
   for (let i = 0; i < indices.length; i++) {
-    const index = indices[i]
-    const anim = animate(items[index], index)
+    const index = indices[i]!
+    const anim = animate(items[index]!, index)
     animations.push(anim)
 
     const delayMs = getDelay(i)

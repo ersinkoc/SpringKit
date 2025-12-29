@@ -2,19 +2,19 @@
 
 // ============ Hooks ============
 
-export { useSpring } from './hooks/useSpring.ts'
-export { useSpringValue } from './hooks/useSpringValue.ts'
-export { useSprings } from './hooks/useSprings.ts'
-export { useTrail } from './hooks/useTrail.ts'
-export { useDrag } from './hooks/useDrag.ts'
-export { useGesture } from './hooks/useGesture.ts'
+export { useSpring } from './hooks/useSpring.js'
+export { useSpringValue } from './hooks/useSpringValue.js'
+export { useSprings } from './hooks/useSprings.js'
+export { useTrail } from './hooks/useTrail.js'
+export { useDrag } from './hooks/useDrag.js'
+export { useGesture } from './hooks/useGesture.js'
 
 // ============ Components ============
 
-export { Spring } from './components/Spring.tsx'
-export { Animated } from './components/Animated.tsx'
-export { Trail } from './components/Trail.tsx'
+export { Spring } from './components/Spring.js'
+export { Animated } from './components/Animated.js'
+export { Trail } from './components/Trail.js'
 
 // ============ Re-export core types ============
 
-export * from '../../types.ts'
+export * from '../../types.js'

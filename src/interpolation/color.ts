@@ -80,12 +80,12 @@ class ColorInterpolationImpl implements ColorInterpolation {
     // Try to parse hex
     const hexMatch = color.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i)
     if (hexMatch) {
-      const hex = hexMatch[1]
+      const hex = hexMatch[1]!
       if (hex.length === 3) {
         return [
-          parseInt(hex[0] + hex[0], 16),
-          parseInt(hex[1] + hex[1], 16),
-          parseInt(hex[2] + hex[2], 16),
+          parseInt(hex.charAt(0) + hex.charAt(0), 16),
+          parseInt(hex.charAt(1) + hex.charAt(1), 16),
+          parseInt(hex.charAt(2) + hex.charAt(2), 16),
         ]
       }
       return [

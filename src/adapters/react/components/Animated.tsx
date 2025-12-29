@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { createSpringGroup, type SpringConfig } from '../../core/spring-group.ts'
+import { createSpringGroup } from '../../../index.js'
+import type { SpringConfig } from '../../../types.js'
 
 /**
  * Props for animated elements
@@ -22,8 +23,8 @@ function createAnimatedComponent<T extends React.ElementType>(
       const [animatedStyle, setAnimatedStyle] = useState<React.CSSProperties>({})
 
       // Extract numeric style values for animation
-      const numericStyle = Object.fromEntries(
-        Object.entries(style).filter(([_, v]) => typeof v === 'number')
+      const numericStyle: Record<string, number> = Object.fromEntries(
+        Object.entries(style).filter((entry): entry is [string, number] => typeof entry[1] === 'number')
       )
 
       // Initialize spring
