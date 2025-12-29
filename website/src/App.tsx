@@ -1,0 +1,41 @@
+import { Routes, Route } from 'react-router-dom'
+import { Home } from './pages/Home'
+import { GettingStarted } from './docs/GettingStarted'
+import { SpringBasics } from './docs/SpringBasics'
+import { Presets } from './docs/Presets'
+import { Interpolation } from './docs/Interpolation'
+import { Gestures } from './docs/Gestures'
+import { Orchestration } from './docs/Orchestration'
+import { ApiReference } from './docs/ApiReference'
+import { ReactGuide } from './docs/ReactGuide'
+import { Examples } from './pages/Examples'
+import { Layout } from './components/Layout'
+import { Header } from './components/Header'
+import { Sidebar } from './components/Sidebar'
+
+function App() {
+  return (
+    <div className="min-h-screen bg-background">
+      <Header />
+      <div className="flex">
+        <Sidebar />
+        <main className="flex-1">
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/docs/getting-started" element={<GettingStarted />} />
+            <Route path="/docs/spring/*" element={<SpringBasics />} />
+            <Route path="/docs/presets" element={<Presets />} />
+            <Route path="/docs/interpolation" element={<Interpolation />} />
+            <Route path="/docs/gestures/*" element={<Gestures />} />
+            <Route path="/docs/orchestration/*" element={<Orchestration />} />
+            <Route path="/docs/api/*" element={<ApiReference />} />
+            <Route path="/docs/react/*" element={<ReactGuide />} />
+            <Route path="/examples" element={<Examples />} />
+          </Routes>
+        </main>
+      </div>
+    </div>
+  )
+}
+
+export default App

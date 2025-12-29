@@ -1,0 +1,183 @@
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
+import { globalLoop, type Animatable, AnimationState } from '../../../src/animation/loop'
+
+describe('AnimationLoop', () => {
+  beforeEach(() => {
+    vi.useRealTimers()
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  describe('globalLoop', () => {
+    it('should be defined', () => {
+      expect(globalLoop).toBeDefined()
+      expect(globalLoop.size).toBe(0)
+    })
+  })
+
+  describe('AnimationState enum', () => {
+    it('should have all states', () => {
+      expect(AnimationState.Idle).toBe('idle')
+      expect(AnimationState.Running).toBe('running')
+      expect(AnimationState.Paused).toBe('paused')
+      expect(AnimationState.Complete).toBe('complete')
+    })
+  })
+
+  describe('adding animations', () => {
+    it('should add an animation to the loop', () => {
+      const animation: Animatable = {
+        update: vi.fn(),
+        isComplete: () => false,
+      }
+
+      globalLoop.add(animation)
+
+      expect(globalLoop.size).toBeGreaterThan(0)
+
+      // Clean up
+      globalLoop.remove(animation)
+    })
+
+    it('should add multiple animations', () => {
+      const animation1: Animatable = {
+        update: vi.fn(),
+        isComplete: () => false,
+      }
+      const animation2: Animatable = {
+        update: vi.fn(),
+        isComplete: () => false,
+      }
+
+      globalLoop.add(animation1)
+      globalLoop.add(animation2)
+
+      expect(globalLoop.size).toBeGreaterThan(0)
+
+      // Clean up
+      globalLoop.remove(animation1)
+      globalLoop.remove(animation2)
+    })
+  })
+
+  describe('removing animations', () => {
+    it('should remove an animation from the loop', () => {
+      const animation: Animatable = {
+        update: vi.fn(),
+        isComplete: () => false,
+      }
+
+      globalLoop.add(animation)
+      const sizeBefore = globalLoop.size
+
+      globalLoop.remove(animation)
+
+      expect(globalLoop.size).toBeLessThan(sizeBefore)
+    })
+
+    it('should stop loop when no animations remain', () => {
+      const animation: Animatable = {
+        update: vi.fn(),
+        isComplete: () => false,
+      }
+
+      globalLoop.add(animation)
+      globalLoop.remove(animation)
+
+      expect(globalLoop.size).toBe(0)
+    })
+
+    it('should handle removing non-existent animation', () => {
+      const animation: Animatable = {
+        update: vi.fn(),
+        isComplete: () => false,
+      }
+
+      // Should not throw
+      expect(() => {
+        globalLoop.remove(animation)
+      }).not.toThrow()
+    })
+  })
+
+  describe(' Animatable interface', () => {
+    it('should accept valid animatable object', () => {
+      const animation: Animatable = {
+        update: vi.fn(),
+        isComplete: () => false,
+      }
+
+      expect(animation.update).toBeDefined()
+      expect(animation.isComplete).toBeDefined()
+    })
+  })
+
+  describe('completed animation removal', () => {
+    it('should remove completed animations from loop', async () => {
+      let completed = false
+      const animation: Animatable = {
+        update: vi.fn(),
+        isComplete: () => completed,
+      }
+
+      globalLoop.add(animation)
+
+      // Wait a bit for the loop to process
+      await new Promise(resolve => setTimeout(resolve, 50))
+
+      completed = true
+
+      // Wait for loop to detect completion and remove
+      await new Promise(resolve => setTimeout(resolve, 100))
+
+      // Animation should be removed by the loop
+      expect(globalLoop.size).toBe(0)
+    })
+  })
+
+  describe('edge cases', () => {
+    it('should handle adding same animation multiple times', () => {
+      const animation: Animatable = {
+        update: vi.fn(),
+        isComplete: () => false,
+      }
+
+      globalLoop.add(animation)
+      globalLoop.add(animation) // Add again (Set should handle deduplication)
+
+      expect(globalLoop.size).toBeGreaterThan(0)
+
+      // Single remove should remove it
+      globalLoop.remove(animation)
+      expect(globalLoop.size).toBe(0)
+    })
+
+    it('should handle animation that becomes complete immediately', () => {
+      const animation: Animatable = {
+        update: vi.fn(),
+        isComplete: () => true,
+      }
+
+      globalLoop.add(animation)
+
+      // Animation should be removed quickly
+      expect(globalLoop.size).toBe(0)
+    })
+
+    it('should handle rapid add/remove cycles', () => {
+      const animation: Animatable = {
+        update: vi.fn(),
+        isComplete: () => false,
+      }
+
+      for (let i = 0; i < 10; i++) {
+        globalLoop.add(animation)
+        globalLoop.remove(animation)
+      }
+
+      expect(globalLoop.size).toBe(0)
+    })
+  })
+})
