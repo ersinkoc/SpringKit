@@ -66,13 +66,19 @@ class SpringValueImpl implements SpringValue {
 
     // Create new animation
     const mergedConfig = { ...this.config, ...config }
+    const originalOnUpdate = mergedConfig.onUpdate
+    const originalOnComplete = mergedConfig.onComplete
+
     this.currentAnimation = spring(this.value, to, {
       ...mergedConfig,
       onUpdate: (value) => {
         this.value = value
         this.notify()
+        // Also call original onUpdate if provided
+        originalOnUpdate?.(value)
       },
       onComplete: () => {
+        originalOnComplete?.()
         if (this.resolveComplete) {
           this.resolveComplete()
         }

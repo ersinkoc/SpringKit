@@ -7,6 +7,8 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@oxog/springkit/react': path.resolve(__dirname, './public/springkit/react.mjs'),
+      '@oxog/springkit': path.resolve(__dirname, './public/springkit/springkit.mjs'),
     },
   },
   build: {

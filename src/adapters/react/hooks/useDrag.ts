@@ -6,8 +6,8 @@ import type { DragSpring, DragSpringConfig } from '../../../types.js'
  * Drag API interface
  */
 export interface DragAPI {
-  /** Bind drag events to an element */
-  bind(): { onPointerDown: (e: React.PointerEvent) => void }
+  /** Ref callback to attach to your draggable element */
+  ref: (el: HTMLElement | null) => void
   /** Set position */
   set(values: { x?: number; y?: number }): void
   /** Reset to initial position */
@@ -32,7 +32,7 @@ export interface DragAPI {
  *
  *   return (
  *     <div
- *       {...api.bind()}
+ *       ref={api.ref}
  *       style={{
  *         transform: `translate(${x}px, ${y}px)`,
  *         width: 100,
@@ -50,53 +50,58 @@ export function useDrag(config: DragSpringConfig = {}): [
   { x: number; y: number },
   DragAPI
 ] {
-  const dragRef = useRef<DragSpring | null>(null)
-  const [position, setPosition] = useState({ x: 0, y: 0 })
-  const elementRef = useRef<HTMLElement | null>(null)
+  const dragSpringRef = useRef<DragSpring | null>(null)
+  const positionRef = useRef({ x: 0, y: 0 })
+  const [element, setElement] = useState<HTMLElement | null>(null)
+  const [, forceUpdate] = useState({})
+  const configRef = useRef(config)
 
-  // Initialize drag spring
-  useEffect(() => {
-    if (!elementRef.current) return
+  // Keep config ref updated
+  configRef.current = config
 
-    dragRef.current = createDragSpring(elementRef.current, {
-      ...config,
-      onUpdate: (x, y) => {
-        setPosition({ x, y })
-        config.onUpdate?.(x, y)
-      },
-    })
-
-    return () => {
-      dragRef.current?.destroy()
-    }
-  }, [config.bounds?.left, config.bounds?.right])
-
-  // Bind to element
-  const bind = () => ({
-    onPointerDown: (e: React.PointerEvent) => {
-      elementRef.current = e.currentTarget as HTMLElement
-      if (!dragRef.current && elementRef.current) {
-        dragRef.current = createDragSpring(elementRef.current, {
-          ...config,
-          onUpdate: (x, y) => {
-            setPosition({ x, y })
-            config.onUpdate?.(x, y)
-          },
-        })
-      }
-    },
-  })
-
-  // API
-  const api: DragAPI = {
-    bind,
-    set: (values) => {
-      dragRef.current?.setPosition(values.x ?? position.x, values.y ?? position.y)
-    },
-    reset: () => {
-      dragRef.current?.reset()
-    },
+  // Ref callback - triggers re-render when element changes
+  const refCallback = (el: HTMLElement | null) => {
+    setElement(el)
   }
 
-  return [position, api]
+  // Setup/cleanup drag spring when element changes
+  useEffect(() => {
+    // Cleanup previous instance
+    if (dragSpringRef.current) {
+      dragSpringRef.current.destroy()
+      dragSpringRef.current = null
+    }
+
+    if (element) {
+      // Create drag spring with the element
+      dragSpringRef.current = createDragSpring(element, {
+        ...configRef.current,
+        onUpdate: (x, y) => {
+          positionRef.current = { x, y }
+          forceUpdate({})
+          configRef.current.onUpdate?.(x, y)
+        },
+      })
+    }
+
+    return () => {
+      dragSpringRef.current?.destroy()
+      dragSpringRef.current = null
+    }
+  }, [element])
+
+  // API methods
+  const set = (values: { x?: number; y?: number }) => {
+    const x = values.x ?? positionRef.current.x
+    const y = values.y ?? positionRef.current.y
+    dragSpringRef.current?.setPosition(x, y)
+  }
+
+  const reset = () => {
+    dragSpringRef.current?.reset()
+    positionRef.current = { x: 0, y: 0 }
+    forceUpdate({})
+  }
+
+  return [positionRef.current, { ref: refCallback, set, reset }]
 }

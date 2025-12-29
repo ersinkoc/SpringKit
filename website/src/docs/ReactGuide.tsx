@@ -1,64 +1,100 @@
-import { Routes, Route } from 'react-router-dom'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Routes, Route, Link } from 'react-router-dom'
+import { Card, CardContent } from '@/components/ui/card'
+import { DocLayout, DocSection, CodeBlock } from '@/components/docs'
+import { Atom, Code2, Box, Sparkles } from 'lucide-react'
 
 export function ReactGuide() {
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-4xl font-bold mb-4">React Integration</h1>
-        <p className="text-xl text-muted-foreground">
-          Use SpringKit with React using hooks and components.
-        </p>
-      </div>
-
-      <Routes>
-        <Route path="/" element={<ReactIndex />} />
-        <Route path="/hooks" element={<ReactHooks />} />
-        <Route path="/components" element={<ReactComponents />} />
-        <Route path="/examples" element={<ReactExamples />} />
-      </Routes>
-    </div>
+    <Routes>
+      <Route path="/" element={<ReactIndex />} />
+      <Route path="/hooks" element={<ReactHooks />} />
+      <Route path="/components" element={<ReactComponents />} />
+      <Route path="/examples" element={<ReactExamples />} />
+    </Routes>
   )
 }
 
 function ReactIndex() {
   const guides = [
-    { name: 'Hooks', path: '/docs/react/hooks', desc: 'useSpring, useSpringValue, useSprings, etc.' },
-    { name: 'Components', path: '/docs/react/components', desc: 'Spring, Animated, Trail components' },
-    { name: 'Examples', path: '/docs/react/examples', desc: 'React examples and patterns' },
+    { title: 'Hooks', href: '/docs/react/hooks', desc: 'useSpring, useSpringValue, useSprings, and more', icon: Code2 },
+    { title: 'Components', href: '/docs/react/components', desc: 'Spring, Animated, Trail components', icon: Box },
+    { title: 'Examples', href: '/docs/react/examples', desc: 'React examples and patterns', icon: Sparkles },
   ]
 
   return (
-    <div className="grid md:grid-cols-3 gap-6">
-      {guides.map((guide) => (
-        <a key={guide.path} href={guide.path}>
-          <Card className="hover:border-primary transition-colors cursor-pointer h-full">
-            <CardContent className="pt-6">
-              <h3 className="text-xl font-bold mb-2">{guide.name}</h3>
-              <p className="text-muted-foreground">{guide.desc}</p>
-            </CardContent>
-          </Card>
-        </a>
-      ))}
-    </div>
+    <DocLayout
+      title="React Integration"
+      description="Use SpringKit with React using hooks and components"
+      icon={Atom}
+    >
+      <div className="grid md:grid-cols-3 gap-6">
+        {guides.map((guide) => (
+          <Link key={guide.href} to={guide.href}>
+            <Card className="h-full group cursor-pointer">
+              <CardContent className="pt-6">
+                <div className="flex items-start gap-4">
+                  <div className="w-10 h-10 rounded-lg bg-orange-500/10 flex items-center justify-center shrink-0">
+                    <guide.icon className="w-5 h-5 text-orange-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold mb-2 text-white group-hover:text-orange-300 transition-colors">
+                      {guide.title}
+                    </h3>
+                    <p className="text-muted-foreground text-sm">{guide.desc}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+        ))}
+      </div>
+
+      <DocSection title="Quick Start">
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { useSpring, Animated } from '@oxog/springkit/react'
+
+function AnimatedBox() {
+  const [isOpen, setIsOpen] = useState(false)
+
+  const style = useSpring({
+    scale: isOpen ? 1.2 : 1,
+    opacity: isOpen ? 1 : 0.5,
+  })
+
+  return (
+    <Animated.div
+      onClick={() => setIsOpen(!isOpen)}
+      style={{
+        transform: \`scale(\${style.scale})\`,
+        opacity: style.opacity,
+      }}
+    >
+      Click me!
+    </Animated.div>
+  )
+}`} />
+          </CardContent>
+        </Card>
+      </DocSection>
+    </DocLayout>
   )
 }
 
 function ReactHooks() {
   return (
-    <div className="space-y-6">
-      <h2 className="text-3xl font-bold">React Hooks</h2>
-      <p className="text-muted-foreground">
-        Import hooks from <code>@oxog/springkit/react</code>.
-      </p>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>useSpring</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <pre className="bg-muted p-4 rounded-lg text-sm">
-            <code>{`import { useSpring } from '@oxog/springkit/react'
+    <DocLayout
+      title="React Hooks"
+      description="Import hooks from @oxog/springkit/react"
+      icon={Code2}
+    >
+      <DocSection title="useSpring">
+        <p className="text-muted-foreground mb-4">
+          Animate multiple values based on state:
+        </p>
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { useSpring } from '@oxog/springkit/react'
 
 function Box() {
   const [isOpen, setIsOpen] = useState(false)
@@ -78,18 +114,18 @@ function Box() {
       }}
     />
   )
-}`}</code>
-          </pre>
-        </CardContent>
-      </Card>
+}`} />
+          </CardContent>
+        </Card>
+      </DocSection>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>useSpringValue</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <pre className="bg-muted p-4 rounded-lg text-sm">
-            <code>{`import { useSpringValue } from '@oxog/springkit/react'
+      <DocSection title="useSpringValue">
+        <p className="text-muted-foreground mb-4">
+          Animate a single value imperatively:
+        </p>
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { useSpringValue } from '@oxog/springkit/react'
 
 function ProgressBar({ value }) {
   const progress = useSpringValue(value)
@@ -106,18 +142,18 @@ function ProgressBar({ value }) {
       />
     </div>
   )
-}`}</code>
-          </pre>
-        </CardContent>
-      </Card>
+}`} />
+          </CardContent>
+        </Card>
+      </DocSection>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>useSprings</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <pre className="bg-muted p-4 rounded-lg text-sm">
-            <code>{`import { useSprings } from '@oxog/springkit/react'
+      <DocSection title="useSprings">
+        <p className="text-muted-foreground mb-4">
+          Animate a list of items:
+        </p>
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { useSprings } from '@oxog/springkit/react'
 
 function AnimatedList({ items }) {
   const springs = useSprings(
@@ -144,18 +180,18 @@ function AnimatedList({ items }) {
       ))}
     </ul>
   )
-}`}</code>
-          </pre>
-        </CardContent>
-      </Card>
+}`} />
+          </CardContent>
+        </Card>
+      </DocSection>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>useTrail</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <pre className="bg-muted p-4 rounded-lg text-sm">
-            <code>{`import { useTrail } from '@oxog/springkit/react'
+      <DocSection title="useTrail">
+        <p className="text-muted-foreground mb-4">
+          Create staggered animations:
+        </p>
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { useTrail } from '@oxog/springkit/react'
 
 function TrailList({ items, isVisible }) {
   const trail = useTrail(items.length, {
@@ -178,18 +214,18 @@ function TrailList({ items, isVisible }) {
       ))}
     </ul>
   )
-}`}</code>
-          </pre>
-        </CardContent>
-      </Card>
+}`} />
+          </CardContent>
+        </Card>
+      </DocSection>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>useDrag</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <pre className="bg-muted p-4 rounded-lg text-sm">
-            <code>{`import { useDrag } from '@oxog/springkit/react'
+      <DocSection title="useDrag">
+        <p className="text-muted-foreground mb-4">
+          Add drag interactions:
+        </p>
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { useDrag } from '@oxog/springkit/react'
 
 function DraggableCard() {
   const [{ x, y }, api] = useDrag({
@@ -204,37 +240,35 @@ function DraggableCard() {
         transform: \`translate(\${x}px, \${y}px)\`,
         width: 100,
         height: 100,
-        background: '#3b82f6',
+        background: '#f97316',
       }}
     >
       Drag me!
     </div>
   )
-}`}</code>
-          </pre>
-        </CardContent>
-      </Card>
-    </div>
+}`} />
+          </CardContent>
+        </Card>
+      </DocSection>
+    </DocLayout>
   )
 }
 
 function ReactComponents() {
   return (
-    <div className="space-y-6">
-      <h2 className="text-3xl font-bold">React Components</h2>
-      <p className="text-muted-foreground">
-        Declarative components for common animation patterns.
-      </p>
+    <DocLayout
+      title="React Components"
+      description="Declarative components for common animation patterns"
+      icon={Box}
+    >
+      <DocSection title="Spring">
+        <p className="text-muted-foreground mb-4">
+          Render prop component for spring animations:
+        </p>
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { Spring } from '@oxog/springkit/react'
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Spring</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <pre className="bg-muted p-4 rounded-lg text-sm">
-            <code>{`import { Spring } from '@oxog/springkit/react'
-
-// Basic usage
 <Spring
   from={{ opacity: 0, y: 20 }}
   to={{ opacity: 1, y: 0 }}
@@ -249,20 +283,20 @@ function ReactComponents() {
       Animated content
     </div>
   )}
-</Spring>`}</code>
-          </pre>
-        </CardContent>
-      </Card>
+</Spring>`} />
+          </CardContent>
+        </Card>
+      </DocSection>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Animated</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <pre className="bg-muted p-4 rounded-lg text-sm">
-            <code>{`import { Animated } from '@oxog/springkit/react'
+      <DocSection title="Animated">
+        <p className="text-muted-foreground mb-4">
+          Auto-animate any style changes:
+        </p>
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { Animated } from '@oxog/springkit/react'
 
-// Auto-animate any style changes
+// Style changes are automatically animated
 <Animated.div
   style={{
     opacity: isVisible ? 1 : 0,
@@ -281,18 +315,18 @@ function ReactComponents() {
 <Animated.p />
 <Animated.h1 />
 <Animated.ul />
-<Animated.li />`}</code>
-          </pre>
-        </CardContent>
-      </Card>
+<Animated.li />`} />
+          </CardContent>
+        </Card>
+      </DocSection>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Trail</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <pre className="bg-muted p-4 rounded-lg text-sm">
-            <code>{`import { Trail } from '@oxog/springkit/react'
+      <DocSection title="Trail">
+        <p className="text-muted-foreground mb-4">
+          Animate list items with stagger:
+        </p>
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { Trail } from '@oxog/springkit/react'
 
 <Trail
   items={items}
@@ -311,26 +345,25 @@ function ReactComponents() {
       {item.name}
     </div>
   )}
-</Trail>`}</code>
-          </pre>
-        </CardContent>
-      </Card>
-    </div>
+</Trail>`} />
+          </CardContent>
+        </Card>
+      </DocSection>
+    </DocLayout>
   )
 }
 
 function ReactExamples() {
   return (
-    <div className="space-y-6">
-      <h2 className="text-3xl font-bold">React Examples</h2>
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Animated Modal</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <pre className="bg-muted p-4 rounded-lg text-sm">
-            <code>{`function Modal({ isOpen, onClose }) {
+    <DocLayout
+      title="React Examples"
+      description="Common patterns and recipes"
+      icon={Sparkles}
+    >
+      <DocSection title="Animated Modal">
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`function Modal({ isOpen, onClose }) {
   const style = useSpring({
     opacity: isOpen ? 1 : 0,
     scale: isOpen ? 1 : 0.9,
@@ -340,7 +373,7 @@ function ReactExamples() {
 
   return (
     <div
-      className="fixed inset-0 flex items-center justify-center"
+      className="fixed inset-0 flex items-center justify-center bg-black/50"
       style={{ opacity: style.opacity }}
       onClick={onClose}
     >
@@ -353,18 +386,15 @@ function ReactExamples() {
       </Animated.div>
     </div>
   )
-}`}</code>
-          </pre>
-        </CardContent>
-      </Card>
+}`} />
+          </CardContent>
+        </Card>
+      </DocSection>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Animated List Items</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <pre className="bg-muted p-4 rounded-lg text-sm">
-            <code>{`function AnimatedList({ items }) {
+      <DocSection title="Animated List Items">
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`function AnimatedList({ items }) {
   const trail = useTrail(items.length, {
     opacity: 1,
     x: 0,
@@ -373,10 +403,11 @@ function ReactExamples() {
   })
 
   return (
-    <ul>
+    <ul className="space-y-2">
       {items.map((item, index) => (
         <li
           key={item.id}
+          className="p-4 bg-white rounded-lg shadow"
           style={{
             opacity: trail[index].opacity,
             transform: \`translateX(\${trail[index].x}px)\`,
@@ -387,10 +418,40 @@ function ReactExamples() {
       ))}
     </ul>
   )
-}`}</code>
-          </pre>
-        </CardContent>
-      </Card>
+}`} />
+          </CardContent>
+        </Card>
+      </DocSection>
+
+      <DocSection title="Hover Card">
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`function HoverCard({ children }) {
+  const [isHovered, setIsHovered] = useState(false)
+
+  const style = useSpring({
+    scale: isHovered ? 1.05 : 1,
+    y: isHovered ? -5 : 0,
+    shadow: isHovered ? 20 : 5,
+  })
+
+  return (
+    <div
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      style={{
+        transform: \`scale(\${style.scale}) translateY(\${style.y}px)\`,
+        boxShadow: \`0 \${style.shadow}px \${style.shadow * 2}px rgba(0,0,0,0.1)\`,
+      }}
+      className="p-6 bg-white rounded-xl cursor-pointer"
+    >
+      {children}
     </div>
+  )
+}`} />
+          </CardContent>
+        </Card>
+      </DocSection>
+    </DocLayout>
   )
 }

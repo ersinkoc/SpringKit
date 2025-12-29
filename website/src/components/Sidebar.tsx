@@ -1,11 +1,10 @@
 import { Link, useLocation } from 'react-router-dom'
 import { ScrollArea } from './ui/scroll-area'
 import { cn } from '@/lib/utils'
-import { ChevronRight } from 'lucide-react'
 
 interface NavItem {
   title: string
-  href: string
+  href?: string
   children?: NavItem[]
 }
 
@@ -68,28 +67,26 @@ const navItems: NavItem[] = [
 ]
 
 export function Sidebar() {
-  const location = useLocation()
-
   return (
-    <aside className="hidden lg:block fixed left-0 top-16 z-40 h-[calc(100vh-4rem)] w-64 border-r">
+    <aside className="hidden lg:block fixed left-0 top-16 z-40 h-[calc(100vh-4rem)] w-64 border-r border-white/5 bg-background/50 backdrop-blur-xl">
       <ScrollArea className="h-full py-6">
         <nav className="space-y-6 px-4">
           {navItems.map((item) => (
             <div key={item.title}>
               {item.children ? (
                 <div className="space-y-1">
-                  <p className="text-sm font-medium text-muted-foreground mb-2">
+                  <p className="text-xs font-semibold uppercase tracking-wider text-orange-400/80 mb-3 px-3">
                     {item.title}
                   </p>
-                  {item.children.map((child) => (
-                    <NavLink key={child.href} href={child.href}>
+                  {item.children.filter((child) => child.href).map((child) => (
+                    <NavLink key={child.href} href={child.href!}>
                       {child.title}
                     </NavLink>
                   ))}
                 </div>
-              ) : (
+              ) : item.href ? (
                 <NavLink href={item.href}>{item.title}</NavLink>
-              )}
+              ) : null}
             </div>
           ))}
         </nav>
@@ -106,13 +103,12 @@ function NavLink({ href, children }: { href: string; children: string }) {
     <Link
       to={href}
       className={cn(
-        'flex items-center gap-2 rounded-md px-3 py-2 text-sm transition-colors',
+        'flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-all duration-200',
         isActive
-          ? 'bg-accent text-accent-foreground font-medium'
-          : 'text-muted-foreground hover:text-foreground hover:bg-accent/50'
+          ? 'bg-orange-500/10 text-orange-300 font-medium border-l-2 border-orange-500 -ml-[2px] pl-[14px]'
+          : 'text-muted-foreground hover:text-white hover:bg-white/5'
       )}
     >
-      {isActive && <ChevronRight className="h-4 w-4" />}
       {children}
     </Link>
   )

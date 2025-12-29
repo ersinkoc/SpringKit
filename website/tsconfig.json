@@ -17,7 +17,9 @@
     "noFallthroughCasesInSwitch": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@oxog/springkit": ["../dist/index.d.ts"],
+      "@oxog/springkit/react": ["../dist/react/index.d.ts"]
     }
   },
   "include": ["src"],

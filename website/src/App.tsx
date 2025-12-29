@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom'
+import { Routes, Route, useLocation } from 'react-router-dom'
 import { Home } from './pages/Home'
 import { GettingStarted } from './docs/GettingStarted'
 import { SpringBasics } from './docs/SpringBasics'
@@ -9,17 +9,21 @@ import { Orchestration } from './docs/Orchestration'
 import { ApiReference } from './docs/ApiReference'
 import { ReactGuide } from './docs/ReactGuide'
 import { Examples } from './pages/Examples'
-import { Layout } from './components/Layout'
 import { Header } from './components/Header'
 import { Sidebar } from './components/Sidebar'
 
 function App() {
+  const location = useLocation()
+  const isHomePage = location.pathname === '/'
+  const isExamplesPage = location.pathname === '/examples'
+  const showSidebar = !isHomePage && !isExamplesPage
+
   return (
     <div className="min-h-screen bg-background">
       <Header />
       <div className="flex">
-        <Sidebar />
-        <main className="flex-1">
+        {showSidebar && <Sidebar />}
+        <main className={`flex-1 ${showSidebar ? 'lg:pl-64' : ''}`}>
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/docs/getting-started" element={<GettingStarted />} />

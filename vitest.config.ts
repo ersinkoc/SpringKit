@@ -5,7 +5,6 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
-    // Exclude React adapter tests due to Vite import resolution issues
     exclude: ['**/node_modules/**', '**/dist/**', '**/tests/unit/react/**'],
     coverage: {
       provider: 'v8',

@@ -1,89 +1,94 @@
 import { Routes, Route, Link } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
+import { DocLayout, DocSection, CodeBlock, InlineCode } from '@/components/docs'
+import { Atom, Zap, Layers, Settings } from 'lucide-react'
 
 export function SpringBasics() {
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-4xl font-bold mb-4">Spring Basics</h1>
-        <p className="text-xl text-muted-foreground">
-          Learn the fundamentals of spring animations in SpringKit.
-        </p>
-      </div>
-
-      <Routes>
-        <Route path="/" element={<SpringBasicsIndex />} />
-        <Route path="/function" element={<SpringFunction />} />
-        <Route path="/values" element={<SpringValues />} />
-        <Route path="/groups" element={<SpringGroups />} />
-        <Route path="/config" element={<SpringConfig />} />
-      </Routes>
-    </div>
+    <Routes>
+      <Route path="/" element={<SpringBasicsIndex />} />
+      <Route path="/function" element={<SpringFunction />} />
+      <Route path="/values" element={<SpringValues />} />
+      <Route path="/groups" element={<SpringGroups />} />
+      <Route path="/config" element={<SpringConfig />} />
+    </Routes>
   )
 }
 
 function SpringBasicsIndex() {
+  const topics = [
+    {
+      title: 'Spring Function',
+      href: '/docs/spring/function',
+      desc: 'The spring() function creates a one-time animation between two values.',
+      icon: Zap,
+    },
+    {
+      title: 'Spring Values',
+      href: '/docs/spring/values',
+      desc: 'SpringValue allows you to animate values that can be updated over time.',
+      icon: Atom,
+    },
+    {
+      title: 'Spring Groups',
+      href: '/docs/spring/groups',
+      desc: 'Animate multiple values together with SpringGroup.',
+      icon: Layers,
+    },
+    {
+      title: 'Configuration',
+      href: '/docs/spring/config',
+      desc: 'Customize spring behavior with stiffness, damping, mass, and more.',
+      icon: Settings,
+    },
+  ]
+
   return (
-    <div className="grid md:grid-cols-2 gap-6">
-      <Link to="/docs/spring/function">
-        <Card className="hover:border-primary transition-colors cursor-pointer h-full">
-          <CardContent className="pt-6">
-            <h3 className="text-xl font-bold mb-2">Spring Function</h3>
-            <p className="text-muted-foreground">
-              The spring() function creates a one-time animation between two values.
-            </p>
-          </CardContent>
-        </Card>
-      </Link>
-
-      <Link to="/docs/spring/values">
-        <Card className="hover:border-primary transition-colors cursor-pointer h-full">
-          <CardContent className="pt-6">
-            <h3 className="text-xl font-bold mb-2">Spring Values</h3>
-            <p className="text-muted-foreground">
-              SpringValue allows you to animate values that can be updated over time.
-            </p>
-          </CardContent>
-        </Card>
-      </Link>
-
-      <Link to="/docs/spring/groups">
-        <Card className="hover:border-primary transition-colors cursor-pointer h-full">
-          <CardContent className="pt-6">
-            <h3 className="text-xl font-bold mb-2">Spring Groups</h3>
-            <p className="text-muted-foreground">
-              Animate multiple values together with SpringGroup.
-            </p>
-          </CardContent>
-        </Card>
-      </Link>
-
-      <Link to="/docs/spring/config">
-        <Card className="hover:border-primary transition-colors cursor-pointer h-full">
-          <CardContent className="pt-6">
-            <h3 className="text-xl font-bold mb-2">Configuration</h3>
-            <p className="text-muted-foreground">
-              Customize spring behavior with stiffness, damping, mass, and more.
-            </p>
-          </CardContent>
-        </Card>
-      </Link>
-    </div>
+    <DocLayout
+      title="Spring Basics"
+      description="Learn the fundamentals of spring animations in SpringKit"
+      icon={Atom}
+    >
+      <div className="grid md:grid-cols-2 gap-6">
+        {topics.map((topic) => (
+          <Link key={topic.href} to={topic.href}>
+            <Card className="h-full group cursor-pointer">
+              <CardContent className="pt-6">
+                <div className="flex items-start gap-4">
+                  <div className="w-10 h-10 rounded-lg bg-orange-500/10 flex items-center justify-center shrink-0">
+                    <topic.icon className="w-5 h-5 text-orange-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold mb-2 text-white group-hover:text-orange-300 transition-colors">
+                      {topic.title}
+                    </h3>
+                    <p className="text-muted-foreground text-sm">{topic.desc}</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+        ))}
+      </div>
+    </DocLayout>
   )
 }
 
 function SpringFunction() {
   return (
-    <div className="space-y-6">
-      <h2 className="text-3xl font-bold">Spring Function</h2>
-      <p className="text-muted-foreground">
-        The <code>spring()</code> function creates a one-time animation from a starting value to a target value.
-      </p>
+    <DocLayout
+      title="Spring Function"
+      description="Create one-time animations from a starting value to a target value"
+      icon={Zap}
+    >
+      <DocSection title="Basic Usage">
+        <p className="text-muted-foreground text-lg mb-4">
+          The <InlineCode>spring()</InlineCode> function creates a one-time animation from a starting value to a target value.
+        </p>
 
-      <Card>
-        <CardContent className="pt-6">
-          <pre className="bg-muted p-4 rounded-lg text-sm">
-            <code>{`import { spring } from '@oxog/springkit'
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { spring } from '@oxog/springkit'
 
 const anim = spring(from, to, {
   onUpdate: (value) => {
@@ -94,33 +99,66 @@ const anim = spring(from, to, {
   }
 })
 
-anim.start()`}</code>
-          </pre>
-        </CardContent>
-      </Card>
+anim.start()`} />
+          </CardContent>
+        </Card>
+      </DocSection>
 
-      <h3 className="text-xl font-bold">Parameters</h3>
-      <ul className="list-disc list-inside space-y-2 text-muted-foreground">
-        <li><code>from</code> - Starting value (number)</li>
-        <li><code>to</code> - Target value (number)</li>
-        <li><code>config</code> - Optional configuration object</li>
-      </ul>
-    </div>
+      <DocSection title="Parameters">
+        <div className="space-y-3">
+          {[
+            { name: 'from', type: 'number', desc: 'Starting value' },
+            { name: 'to', type: 'number', desc: 'Target value' },
+            { name: 'config', type: 'SpringConfig', desc: 'Optional configuration object' },
+          ].map((param) => (
+            <div key={param.name} className="flex items-start gap-4 p-4 rounded-xl bg-white/5 border border-white/10">
+              <code className="text-orange-300 font-mono">{param.name}</code>
+              <span className="text-white/40">:</span>
+              <code className="text-purple-300 font-mono">{param.type}</code>
+              <span className="text-muted-foreground ml-auto">{param.desc}</span>
+            </div>
+          ))}
+        </div>
+      </DocSection>
+
+      <DocSection title="Example">
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`// Animate element from 0 to 100px
+const anim = spring(0, 100, {
+  stiffness: 200,
+  damping: 20,
+  onUpdate: (value) => {
+    element.style.transform = \`translateX(\${value}px)\`
+  },
+  onComplete: () => {
+    console.log('Animation complete!')
+  }
+})
+
+anim.start()`} />
+          </CardContent>
+        </Card>
+      </DocSection>
+    </DocLayout>
   )
 }
 
 function SpringValues() {
   return (
-    <div className="space-y-6">
-      <h2 className="text-3xl font-bold">Spring Values</h2>
-      <p className="text-muted-foreground">
-        SpringValue is useful for values that change over time, like user-driven animations.
-      </p>
+    <DocLayout
+      title="Spring Values"
+      description="Animate values that can be updated over time"
+      icon={Atom}
+    >
+      <DocSection title="Overview">
+        <p className="text-muted-foreground text-lg mb-4">
+          SpringValue is useful for values that change over time, like user-driven animations.
+        </p>
 
-      <Card>
-        <CardContent className="pt-6">
-          <pre className="bg-muted p-4 rounded-lg text-sm">
-            <code>{`import { createSpringValue } from '@oxog/springkit'
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { createSpringValue } from '@oxog/springkit'
 
 const x = createSpringValue(0, { stiffness: 100, damping: 10 })
 
@@ -129,26 +167,49 @@ x.subscribe((value) => {
 })
 
 x.set(100)  // Animate to 100
-x.jump(50)  // Jump immediately to 50`}</code>
-          </pre>
-        </CardContent>
-      </Card>
-    </div>
+x.jump(50)  // Jump immediately to 50`} />
+          </CardContent>
+        </Card>
+      </DocSection>
+
+      <DocSection title="Methods">
+        <div className="grid gap-3">
+          {[
+            { method: 'get()', desc: 'Get current value' },
+            { method: 'getVelocity()', desc: 'Get current velocity' },
+            { method: 'set(to, config?)', desc: 'Animate to value' },
+            { method: 'jump(to)', desc: 'Set value immediately without animation' },
+            { method: 'subscribe(callback)', desc: 'Listen to value changes' },
+            { method: 'isAnimating()', desc: 'Check if currently animating' },
+            { method: 'finished', desc: 'Promise that resolves on completion' },
+            { method: 'destroy()', desc: 'Clean up resources' },
+          ].map((item) => (
+            <div key={item.method} className="flex items-center gap-4 p-3 rounded-lg bg-white/5 border border-white/10">
+              <code className="text-orange-300 font-mono text-sm">{item.method}</code>
+              <span className="text-muted-foreground text-sm">{item.desc}</span>
+            </div>
+          ))}
+        </div>
+      </DocSection>
+    </DocLayout>
   )
 }
 
 function SpringGroups() {
   return (
-    <div className="space-y-6">
-      <h2 className="text-3xl font-bold">Spring Groups</h2>
-      <p className="text-muted-foreground">
-        SpringGroup allows you to animate multiple values together with a single configuration.
-      </p>
+    <DocLayout
+      title="Spring Groups"
+      description="Animate multiple values together with a single configuration"
+      icon={Layers}
+    >
+      <DocSection title="Overview">
+        <p className="text-muted-foreground text-lg mb-4">
+          SpringGroup allows you to animate multiple values together with a single configuration.
+        </p>
 
-      <Card>
-        <CardContent className="pt-6">
-          <pre className="bg-muted p-4 rounded-lg text-sm">
-            <code>{`import { createSpringGroup } from '@oxog/springkit'
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { createSpringGroup } from '@oxog/springkit'
 
 const group = createSpringGroup({
   x: 0,
@@ -163,72 +224,98 @@ group.subscribe((values) => {
   \`
 })
 
-group.set({ x: 100, y: 50, scale: 1.2 })`}</code>
-          </pre>
-        </CardContent>
-      </Card>
-    </div>
+group.set({ x: 100, y: 50, scale: 1.2 })`} />
+          </CardContent>
+        </Card>
+      </DocSection>
+
+      <DocSection title="Methods">
+        <div className="grid gap-3">
+          {[
+            { method: 'get()', desc: 'Get all current values' },
+            { method: 'getValue(key)', desc: 'Get a single value by key' },
+            { method: 'set(values, config?)', desc: 'Animate to new values' },
+            { method: 'jump(values)', desc: 'Set values immediately' },
+            { method: 'subscribe(callback)', desc: 'Listen to all value changes' },
+            { method: 'isAnimating()', desc: 'Check if any value is animating' },
+            { method: 'finished', desc: 'Promise that resolves when all complete' },
+            { method: 'destroy()', desc: 'Clean up all resources' },
+          ].map((item) => (
+            <div key={item.method} className="flex items-center gap-4 p-3 rounded-lg bg-white/5 border border-white/10">
+              <code className="text-orange-300 font-mono text-sm">{item.method}</code>
+              <span className="text-muted-foreground text-sm">{item.desc}</span>
+            </div>
+          ))}
+        </div>
+      </DocSection>
+    </DocLayout>
   )
 }
 
 function SpringConfig() {
   return (
-    <div className="space-y-6">
-      <h2 className="text-3xl font-bold">Configuration</h2>
-      <p className="text-muted-foreground">
-        Customize spring behavior with these configuration options.
-      </p>
+    <DocLayout
+      title="Configuration"
+      description="Customize spring behavior with these configuration options"
+      icon={Settings}
+    >
+      <DocSection title="Configuration Options">
+        <Card>
+          <CardContent className="pt-6 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-white/10">
+                  <th className="text-left py-3 text-orange-300 font-mono">Property</th>
+                  <th className="text-left py-3 text-white/60">Default</th>
+                  <th className="text-left py-3 text-white/60">Description</th>
+                </tr>
+              </thead>
+              <tbody className="text-muted-foreground">
+                {[
+                  { prop: 'stiffness', default: '100', desc: 'Spring stiffness constant' },
+                  { prop: 'damping', default: '10', desc: 'Damping coefficient' },
+                  { prop: 'mass', default: '1', desc: 'Spring mass' },
+                  { prop: 'velocity', default: '0', desc: 'Initial velocity' },
+                  { prop: 'restSpeed', default: '0.01', desc: 'Speed threshold for rest' },
+                  { prop: 'restDelta', default: '0.01', desc: 'Position threshold for rest' },
+                  { prop: 'clamp', default: 'false', desc: 'Clamp value to range' },
+                ].map((row) => (
+                  <tr key={row.prop} className="border-b border-white/5">
+                    <td className="py-3 font-mono text-white">{row.prop}</td>
+                    <td className="py-3 text-purple-300">{row.default}</td>
+                    <td className="py-3">{row.desc}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </CardContent>
+        </Card>
+      </DocSection>
 
-      <Card>
-        <CardContent className="pt-6">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b">
-                <th className="text-left py-2">Property</th>
-                <th className="text-left py-2">Default</th>
-                <th className="text-left py-2">Description</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr className="border-b">
-                <td className="py-2 font-mono">stiffness</td>
-                <td className="py-2">100</td>
-                <td className="py-2">Spring stiffness constant</td>
-              </tr>
-              <tr className="border-b">
-                <td className="py-2 font-mono">damping</td>
-                <td className="py-2">10</td>
-                <td className="py-2">Damping coefficient</td>
-              </tr>
-              <tr className="border-b">
-                <td className="py-2 font-mono">mass</td>
-                <td className="py-2">1</td>
-                <td className="py-2">Spring mass</td>
-              </tr>
-              <tr className="border-b">
-                <td className="py-2 font-mono">velocity</td>
-                <td className="py-2">0</td>
-                <td className="py-2">Initial velocity</td>
-              </tr>
-              <tr className="border-b">
-                <td className="py-2 font-mono">restSpeed</td>
-                <td className="py-2">0.01</td>
-                <td className="py-2">Speed threshold for rest</td>
-              </tr>
-              <tr className="border-b">
-                <td className="py-2 font-mono">restDelta</td>
-                <td className="py-2">0.01</td>
-                <td className="py-2">Position threshold for rest</td>
-              </tr>
-              <tr>
-                <td className="py-2 font-mono">clamp</td>
-                <td className="py-2">false</td>
-                <td className="py-2">Clamp value to range</td>
-              </tr>
-            </tbody>
-          </table>
-        </CardContent>
-      </Card>
-    </div>
+      <DocSection title="Example">
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { spring } from '@oxog/springkit'
+
+const anim = spring(0, 100, {
+  stiffness: 200,   // Higher = faster
+  damping: 15,      // Higher = less bounce
+  mass: 1,          // Higher = more inertia
+  velocity: 0,      // Starting velocity
+  restSpeed: 0.01,  // When to stop
+  restDelta: 0.01,  // Position tolerance
+  clamp: false,     // Allow overshoot
+
+  onUpdate: (value) => {
+    console.log('Current:', value)
+  },
+  onComplete: () => {
+    console.log('Done!')
+  }
+})`} />
+          </CardContent>
+        </Card>
+      </DocSection>
+    </DocLayout>
   )
 }

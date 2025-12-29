@@ -4,8 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "copy:springkit": "node -e \"const fs=require('fs');const p='public/springkit';fs.mkdirSync(p,{recursive:true});fs.copyFileSync('../dist/index.mjs',p+'/springkit.mjs');fs.copyFileSync('../dist/react/index.mjs',p+'/react.mjs');console.log('SpringKit dist copied!')\"",
+    "dev": "npm run copy:springkit && vite",
+    "build": "npm run copy:springkit && tsc && vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
   },

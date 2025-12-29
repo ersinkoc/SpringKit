@@ -1,27 +1,21 @@
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent } from '@/components/ui/card'
+import { DocLayout, DocSection, CodeBlock } from '@/components/docs'
+import { Blend, Palette, ArrowLeftRight } from 'lucide-react'
 
 export function Interpolation() {
   return (
-    <div className="space-y-8">
-      <div>
-        <h1 className="text-4xl font-bold mb-4">Interpolation</h1>
-        <p className="text-xl text-muted-foreground">
-          Map values to different ranges and interpolate between colors.
-        </p>
-      </div>
-
-      <section>
-        <h2 className="text-2xl font-bold mb-4">Value Interpolation</h2>
-        <p className="text-muted-foreground mb-4">
+    <DocLayout
+      title="Interpolation"
+      description="Map values to different ranges and interpolate between colors"
+      icon={Blend}
+    >
+      <DocSection title="Value Interpolation" icon={ArrowLeftRight}>
+        <p className="text-muted-foreground text-lg mb-4">
           Map a spring value from one range to another:
         </p>
         <Card>
-          <CardHeader>
-            <CardTitle>Basic Interpolation</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <pre className="bg-muted p-4 rounded-lg text-sm">
-              <code>{`import { createSpringValue, interpolate } from '@oxog/springkit'
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { createSpringValue, interpolate } from '@oxog/springkit'
 
 const x = createSpringValue(0)
 
@@ -32,45 +26,36 @@ x.subscribe(() => {
   element.style.opacity = String(opacity.get())
 })
 
-x.set(100)  // opacity animates to 1`}</code>
-            </pre>
+x.set(100)  // opacity animates to 1`} />
           </CardContent>
         </Card>
-      </section>
+      </DocSection>
 
-      <section>
-        <h2 className="text-2xl font-bold mb-4">Multi-Point Interpolation</h2>
-        <p className="text-muted-foreground mb-4">
-          Interpolate through multiple points:
+      <DocSection title="Multi-Point Interpolation">
+        <p className="text-muted-foreground text-lg mb-4">
+          Interpolate through multiple points for complex transitions:
         </p>
         <Card>
           <CardContent className="pt-6">
-            <pre className="bg-muted p-4 rounded-lg text-sm">
-              <code>{`const progress = createSpringValue(0)
+            <CodeBlock code={`const progress = createSpringValue(0)
 
 // Scale: starts at 1, peaks at 1.5, returns to 1
 const scale = interpolate(progress, [0, 50, 100], [1, 1.5, 1])
 
 progress.subscribe(() => {
   element.style.transform = \`scale(\${scale.get()})\`
-})`}</code>
-            </pre>
+})`} />
           </CardContent>
         </Card>
-      </section>
+      </DocSection>
 
-      <section>
-        <h2 className="text-2xl font-bold mb-4">Color Interpolation</h2>
-        <p className="text-muted-foreground mb-4">
-          Interpolate between colors:
+      <DocSection title="Color Interpolation" icon={Palette}>
+        <p className="text-muted-foreground text-lg mb-4">
+          Smoothly interpolate between colors:
         </p>
         <Card>
-          <CardHeader>
-            <CardTitle>Color Gradient</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <pre className="bg-muted p-4 rounded-lg text-sm">
-              <code>{`import { createSpringValue, interpolateColor } from '@oxog/springkit'
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { createSpringValue, interpolateColor } from '@oxog/springkit'
 
 const progress = createSpringValue(0)
 
@@ -84,39 +69,71 @@ progress.subscribe(() => {
   element.style.backgroundColor = color.get()
 })
 
-progress.set(50)  // color is '#00ff00'`}</code>
-            </pre>
+progress.set(50)  // color is '#00ff00'`} />
           </CardContent>
         </Card>
-      </section>
 
-      <section>
-        <h2 className="text-2xl font-bold mb-4">Extrapolation</h2>
-        <p className="text-muted-foreground mb-4">
+        {/* Color preview */}
+        <div className="flex gap-2 mt-4">
+          {['#ff0000', '#00ff00', '#0000ff'].map((color, i) => (
+            <div
+              key={i}
+              className="flex-1 h-12 rounded-lg flex items-center justify-center text-xs font-mono text-white/80"
+              style={{ backgroundColor: color }}
+            >
+              {i === 0 ? '0%' : i === 1 ? '50%' : '100%'}
+            </div>
+          ))}
+        </div>
+      </DocSection>
+
+      <DocSection title="Extrapolation">
+        <p className="text-muted-foreground text-lg mb-4">
           Control how values behave outside the input range:
         </p>
         <Card>
           <CardContent className="pt-6">
-            <pre className="bg-muted p-4 rounded-lg text-sm">
-              <code>{`const value = createSpringValue(0)
+            <CodeBlock code={`const value = createSpringValue(0)
 
+// Clamp: won't go outside output range
 const clamped = interpolate(
   value,
   [0, 100],
   [0, 200],
-  { extrapolate: 'clamp' }  // Won't go outside output range
+  { extrapolate: 'clamp' }
 )
 
+// Identity: returns input value outside range
 const identity = interpolate(
   value,
   [0, 100],
   [0, 200],
-  { extrapolate: 'identity' }  // Returns input value outside range
-)`}</code>
-            </pre>
+  { extrapolate: 'identity' }
+)
+
+// Extend: continues linear interpolation (default)
+const extended = interpolate(
+  value,
+  [0, 100],
+  [0, 200],
+  { extrapolate: 'extend' }
+)`} />
           </CardContent>
         </Card>
-      </section>
-    </div>
+
+        <div className="grid md:grid-cols-3 gap-4 mt-4">
+          {[
+            { mode: 'clamp', desc: 'Stays within bounds' },
+            { mode: 'identity', desc: 'Returns raw value' },
+            { mode: 'extend', desc: 'Continues pattern' },
+          ].map((item) => (
+            <div key={item.mode} className="p-4 rounded-lg bg-white/5 border border-white/10 text-center">
+              <code className="text-orange-300 font-mono">{item.mode}</code>
+              <p className="text-sm text-muted-foreground mt-1">{item.desc}</p>
+            </div>
+          ))}
+        </div>
+      </DocSection>
+    </DocLayout>
   )
 }

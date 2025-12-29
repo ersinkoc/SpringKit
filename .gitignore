@@ -13,3 +13,4 @@ website/.astro/
 
 
 node_modules/
+.playwright-mcp/

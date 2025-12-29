@@ -49,21 +49,29 @@ export function useSpring<T extends Record<string, number>>(
 ): AnimatedValues<T> {
   const springRef = useRef<SpringGroup<T> | null>(null)
   const [, forceUpdate] = useState({})
+  const isFirstRender = useRef(true)
+  const prevValuesStringRef = useRef<string>(JSON.stringify(values))
 
-  // Initialize spring group
+  // Initialize spring group with ACTUAL initial values (not 0)
   if (!springRef.current) {
-    const initialValues = Object.fromEntries(
-      Object.entries(values).map(([k, v]) => [k, 0])
-    ) as T
-
-    springRef.current = createSpringGroup(initialValues, config)
+    springRef.current = createSpringGroup(values, config)
     springRef.current.subscribe(() => forceUpdate({}))
   }
 
-  // Update when values change
+  // Update when values change (skip first render since we initialized with values)
   useEffect(() => {
-    springRef.current?.set(values, config)
-  }, [values, config])
+    if (isFirstRender.current) {
+      isFirstRender.current = false
+      return
+    }
+
+    // Compare using JSON string to detect actual value changes
+    const currentValuesString = JSON.stringify(values)
+    if (currentValuesString !== prevValuesStringRef.current) {
+      springRef.current?.set(values, config)
+      prevValuesStringRef.current = currentValuesString
+    }
+  }, [JSON.stringify(values)]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Cleanup on unmount
   useEffect(() => {
