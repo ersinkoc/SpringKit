@@ -1,7 +1,9 @@
 import { Routes, Route, Link } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
 import { DocLayout, DocSection, CodeBlock } from '@/components/docs'
-import { Book, FileType, Zap, Atom, Layers, Blend } from 'lucide-react'
+import { Book, FileType, Zap, Atom, Layers, Blend, Play, RotateCcw, Box } from 'lucide-react'
+import { useState, useRef, useEffect } from 'react'
+import { spring, createSpringValue, createSpringGroup, interpolate } from '@oxog/springkit'
 
 export function ApiReference() {
   return (
@@ -113,6 +115,244 @@ function ApiIndex() {
   )
 }
 
+// ============================================================================
+// INTERACTIVE API DEMOS
+// ============================================================================
+
+function SpringDemo() {
+  const boxRef = useRef<HTMLDivElement>(null)
+  const animRef = useRef<ReturnType<typeof spring> | null>(null)
+  const [isAnimating, setIsAnimating] = useState(false)
+  const [value, setValue] = useState(0)
+
+  const runAnimation = () => {
+    if (!boxRef.current || isAnimating) return
+    setIsAnimating(true)
+
+    boxRef.current.style.transform = 'translateX(0)'
+    setValue(0)
+
+    animRef.current?.stop()
+    animRef.current = spring(0, 200, {
+      stiffness: 180,
+      damping: 20,
+      onUpdate: (v) => {
+        if (boxRef.current) boxRef.current.style.transform = `translateX(${v}px)`
+        setValue(v)
+      },
+      onComplete: () => setIsAnimating(false)
+    })
+    animRef.current.start()
+  }
+
+  const reset = () => {
+    animRef.current?.stop()
+    if (boxRef.current) boxRef.current.style.transform = 'translateX(0)'
+    setValue(0)
+    setIsAnimating(false)
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="h-20 bg-black/20 rounded-xl relative overflow-hidden">
+        <div className="absolute right-4 top-0 bottom-0 w-px bg-orange-500/30" />
+        <div className="absolute right-3 top-2 text-[10px] text-orange-400/50">target</div>
+        <div
+          ref={boxRef}
+          className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 bg-gradient-to-br from-orange-500 to-amber-500 rounded-xl shadow-lg flex items-center justify-center"
+        >
+          <Box className="w-5 h-5 text-white" />
+        </div>
+      </div>
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-mono text-white/50">
+          Value: <span className="text-orange-400">{value.toFixed(1)}</span>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={runAnimation}
+            disabled={isAnimating}
+            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 disabled:opacity-50 text-white text-sm font-medium rounded-lg"
+          >
+            <Play className="w-4 h-4" />
+            Run
+          </button>
+          <button onClick={reset} className="px-3 py-2 bg-white/5 hover:bg-white/10 text-white rounded-lg">
+            <RotateCcw className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SpringValueDemo() {
+  const [position, setPosition] = useState(0)
+  const springRef = useRef<ReturnType<typeof createSpringValue> | null>(null)
+
+  useEffect(() => {
+    springRef.current = createSpringValue(0, {
+      stiffness: 150,
+      damping: 15,
+      onUpdate: setPosition
+    })
+    return () => springRef.current?.destroy()
+  }, [])
+
+  const moveTo = (target: number) => springRef.current?.set(target)
+  const jumpTo = (target: number) => springRef.current?.jump(target)
+
+  return (
+    <div className="space-y-4">
+      <div className="h-16 bg-black/20 rounded-xl relative overflow-hidden">
+        {[0, 100, 200, 300].map(pos => (
+          <div key={pos} className="absolute top-0 bottom-0 w-px bg-white/10" style={{ left: `${(pos / 300) * 100}%` }} />
+        ))}
+        <div
+          className="absolute top-1/2 -translate-y-1/2 w-10 h-10 bg-gradient-to-br from-cyan-500 to-blue-500 rounded-lg shadow-lg flex items-center justify-center"
+          style={{ left: `calc(${(position / 300) * 100}% - 20px)` }}
+        >
+          <Atom className="w-5 h-5 text-white" />
+        </div>
+      </div>
+      <div className="flex items-center justify-between">
+        <div className="text-sm font-mono text-white/50">
+          Position: <span className="text-cyan-400">{position.toFixed(0)}</span>
+        </div>
+        <div className="flex gap-2">
+          {[0, 100, 200, 300].map(target => (
+            <button
+              key={target}
+              onClick={() => moveTo(target)}
+              className="px-3 py-1.5 bg-white/5 hover:bg-white/10 text-white/70 text-sm rounded-lg font-mono"
+            >
+              {target}
+            </button>
+          ))}
+          <button
+            onClick={() => jumpTo(0)}
+            className="px-3 py-1.5 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 text-sm rounded-lg"
+          >
+            Jump 0
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function SpringGroupDemo() {
+  const [values, setValues] = useState({ x: 0, y: 0, scale: 1, rotate: 0 })
+  const groupRef = useRef<ReturnType<typeof createSpringGroup<typeof values>> | null>(null)
+
+  useEffect(() => {
+    groupRef.current = createSpringGroup(
+      { x: 0, y: 0, scale: 1, rotate: 0 },
+      { stiffness: 200, damping: 20 }
+    )
+    groupRef.current.subscribe(setValues)
+    return () => groupRef.current?.destroy()
+  }, [])
+
+  const presets = [
+    { name: 'Center', values: { x: 0, y: 0, scale: 1, rotate: 0 } },
+    { name: 'Right', values: { x: 80, y: 0, scale: 1, rotate: 0 } },
+    { name: 'Scaled', values: { x: 0, y: 0, scale: 1.5, rotate: 0 } },
+    { name: 'Rotated', values: { x: 0, y: 0, scale: 1, rotate: 45 } },
+    { name: 'Complex', values: { x: 50, y: -20, scale: 1.2, rotate: 15 } },
+  ]
+
+  return (
+    <div className="space-y-4">
+      <div className="h-32 bg-black/20 rounded-xl relative overflow-hidden flex items-center justify-center">
+        <div
+          className="w-16 h-16 bg-gradient-to-br from-violet-500 to-purple-500 rounded-xl shadow-lg flex items-center justify-center"
+          style={{
+            transform: `translate(${values.x}px, ${values.y}px) scale(${values.scale}) rotate(${values.rotate}deg)`
+          }}
+        >
+          <Layers className="w-7 h-7 text-white" />
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {presets.map(preset => (
+          <button
+            key={preset.name}
+            onClick={() => groupRef.current?.set(preset.values)}
+            className="px-4 py-2 bg-white/5 hover:bg-white/10 text-white/70 text-sm rounded-lg"
+          >
+            {preset.name}
+          </button>
+        ))}
+      </div>
+      <div className="grid grid-cols-4 gap-2 text-xs font-mono text-white/50">
+        <div>x: <span className="text-violet-400">{values.x.toFixed(0)}</span></div>
+        <div>y: <span className="text-violet-400">{values.y.toFixed(0)}</span></div>
+        <div>scale: <span className="text-violet-400">{values.scale.toFixed(2)}</span></div>
+        <div>rotate: <span className="text-violet-400">{values.rotate.toFixed(0)}°</span></div>
+      </div>
+    </div>
+  )
+}
+
+function InterpolateDemo() {
+  const [progress, setProgress] = useState(0)
+  const springRef = useRef<ReturnType<typeof createSpringValue> | null>(null)
+  const interpOpacity = useRef<ReturnType<typeof interpolate> | null>(null)
+  const interpScale = useRef<ReturnType<typeof interpolate> | null>(null)
+  const interpHue = useRef<ReturnType<typeof interpolate> | null>(null)
+
+  useEffect(() => {
+    springRef.current = createSpringValue(0, { stiffness: 100, damping: 15 })
+    interpOpacity.current = interpolate(springRef.current, [0, 100], [0.3, 1])
+    interpScale.current = interpolate(springRef.current, [0, 50, 100], [1, 1.3, 1])
+    interpHue.current = interpolate(springRef.current, [0, 100], [0, 360])
+
+    springRef.current.subscribe((v) => setProgress(v))
+    return () => springRef.current?.destroy()
+  }, [])
+
+  const opacity = interpOpacity.current?.get() ?? 0.3
+  const scale = interpScale.current?.get() ?? 1
+  const hue = interpHue.current?.get() ?? 0
+
+  return (
+    <div className="space-y-4">
+      <div className="h-32 bg-black/20 rounded-xl flex items-center justify-center">
+        <div
+          className="w-20 h-20 rounded-2xl shadow-lg flex items-center justify-center"
+          style={{
+            opacity,
+            transform: `scale(${scale})`,
+            backgroundColor: `hsl(${hue}, 70%, 50%)`,
+          }}
+        >
+          <Blend className="w-8 h-8 text-white" />
+        </div>
+      </div>
+      <div>
+        <div className="flex justify-between text-sm mb-2">
+          <span className="text-white/50">Progress</span>
+          <span className="font-mono text-emerald-400">{progress.toFixed(0)}%</span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max="100"
+          value={progress}
+          onChange={(e) => springRef.current?.set(Number(e.target.value))}
+          className="w-full"
+        />
+      </div>
+      <div className="grid grid-cols-3 gap-2 text-xs font-mono text-white/50">
+        <div>opacity: <span className="text-emerald-400">{opacity.toFixed(2)}</span></div>
+        <div>scale: <span className="text-emerald-400">{scale.toFixed(2)}</span></div>
+        <div>hue: <span className="text-emerald-400">{hue.toFixed(0)}°</span></div>
+      </div>
+    </div>
+  )
+}
+
 function SpringApi() {
   return (
     <DocLayout
@@ -120,6 +360,17 @@ function SpringApi() {
       description="Create a one-time spring animation"
       icon={Zap}
     >
+      <DocSection title="Interactive Demo">
+        <p className="text-muted-foreground mb-4">
+          Click Run to see a spring animation in action:
+        </p>
+        <Card>
+          <CardContent className="pt-6">
+            <SpringDemo />
+          </CardContent>
+        </Card>
+      </DocSection>
+
       <DocSection title="Signature">
         <Card>
           <CardContent className="pt-6">
@@ -191,6 +442,17 @@ function SpringValueApi() {
       description="Create an animated value that can be updated over time"
       icon={Atom}
     >
+      <DocSection title="Interactive Demo">
+        <p className="text-muted-foreground mb-4">
+          Click the position buttons to animate, or use Jump to set immediately:
+        </p>
+        <Card>
+          <CardContent className="pt-6">
+            <SpringValueDemo />
+          </CardContent>
+        </Card>
+      </DocSection>
+
       <DocSection title="Signature">
         <Card>
           <CardContent className="pt-6">
@@ -259,6 +521,17 @@ function SpringGroupApi() {
       description="Animate multiple values together"
       icon={Layers}
     >
+      <DocSection title="Interactive Demo">
+        <p className="text-muted-foreground mb-4">
+          Click presets to animate multiple properties simultaneously:
+        </p>
+        <Card>
+          <CardContent className="pt-6">
+            <SpringGroupDemo />
+          </CardContent>
+        </Card>
+      </DocSection>
+
       <DocSection title="Signature">
         <Card>
           <CardContent className="pt-6">
@@ -329,6 +602,17 @@ function InterpolateApi() {
       description="Map values from one range to another"
       icon={Blend}
     >
+      <DocSection title="Interactive Demo">
+        <p className="text-muted-foreground mb-4">
+          Drag the slider to see how interpolation maps progress to opacity, scale, and color:
+        </p>
+        <Card>
+          <CardContent className="pt-6">
+            <InterpolateDemo />
+          </CardContent>
+        </Card>
+      </DocSection>
+
       <DocSection title="Signature">
         <Card>
           <CardContent className="pt-6">

@@ -1,9 +1,12 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   Play, RotateCcw, GripVertical, ChevronRight, Sparkles, Layers, Zap,
   MousePointer2, ArrowRight, Activity, Target, Gauge, Box,
   Atom, Flame, Waves, Heart, Star, Moon, Sun, Cloud, Snowflake, Music,
-  Rocket, Globe, Cpu, Eye, Shuffle
+  Rocket, Globe, Cpu, Eye, Shuffle, X, Check, Bell, Mail, Settings,
+  User, ShoppingCart, CreditCard, Lock, Unlock, Volume2, VolumeX,
+  Wifi, WifiOff, Battery, BatteryCharging, Download, Upload, RefreshCw,
+  MoreHorizontal, Menu, ChevronDown, ChevronUp, Plus, Minus, Send
 } from 'lucide-react'
 import { useSpring, useDrag, useTrail } from '@oxog/springkit/react'
 import {
@@ -679,7 +682,7 @@ function MorphingShapes() {
 }
 
 // ============================================================================
-// WAVE ANIMATION - Synchronized wave motion
+// WAVE ANIMATION - Synchronized wave motion with SpringKit
 // ============================================================================
 
 function WaveAnimation() {
@@ -689,20 +692,27 @@ function WaveAnimation() {
   const [amplitude, setAmplitude] = useState(30)
   const animationRef = useRef<number | null>(null)
   const timeRef = useRef(0)
+  const mountedRef = useRef(true)
 
   useEffect(() => {
-    if (!isRunning) return
+    mountedRef.current = true
 
     const animate = () => {
-      timeRef.current += 0.05
-      setWaves(prev => prev.map((_, i) => {
+      if (!mountedRef.current || !isRunning) return
+
+      timeRef.current += 0.08
+      setWaves(Array(20).fill(0).map((_, i) => {
         return Math.sin(timeRef.current + i * frequency) * amplitude
       }))
       animationRef.current = requestAnimationFrame(animate)
     }
 
-    animationRef.current = requestAnimationFrame(animate)
+    if (isRunning) {
+      animationRef.current = requestAnimationFrame(animate)
+    }
+
     return () => {
+      mountedRef.current = false
       if (animationRef.current) cancelAnimationFrame(animationRef.current)
     }
   }, [isRunning, frequency, amplitude])
@@ -941,6 +951,1109 @@ function IconCarousel() {
             )
           })}
         </div>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================================
+// PROFESSIONAL UI COMPONENTS
+// ============================================================================
+
+// Swipeable Card Stack (Tinder-like)
+interface SwipeCard {
+  id: number
+  name: string
+  role: string
+  avatar: string
+  color: string
+}
+
+function CardStackDemo() {
+  const [cards, setCards] = useState<SwipeCard[]>([
+    { id: 1, name: 'Sarah Chen', role: 'Product Designer', avatar: '👩‍💻', color: 'from-pink-500 to-rose-500' },
+    { id: 2, name: 'Alex Rivera', role: 'Frontend Dev', avatar: '👨‍💻', color: 'from-violet-500 to-purple-500' },
+    { id: 3, name: 'Jordan Lee', role: 'UX Researcher', avatar: '🧑‍🔬', color: 'from-cyan-500 to-blue-500' },
+    { id: 4, name: 'Taylor Swift', role: 'Tech Lead', avatar: '👩‍🚀', color: 'from-amber-500 to-orange-500' },
+    { id: 5, name: 'Morgan Blake', role: 'Data Scientist', avatar: '🧑‍🎓', color: 'from-emerald-500 to-teal-500' },
+  ])
+  const [cardKey, setCardKey] = useState(0)
+  const [isExiting, setIsExiting] = useState(false)
+  const exitDirectionRef = useRef<'left' | 'right' | null>(null)
+
+  // Drag hook for card swiping
+  const [dragPos, dragApi] = useDrag({
+    bounds: { left: -300, right: 300, top: -100, bottom: 100 },
+    rubberBand: false,
+  })
+
+  // Spring for exit animation
+  const exitSpring = useSpring({
+    x: isExiting ? (exitDirectionRef.current === 'right' ? 400 : -400) : 0,
+    rotation: isExiting ? (exitDirectionRef.current === 'right' ? 30 : -30) : 0,
+  }, { stiffness: 200, damping: 20 })
+
+  const topCard = cards[0]
+
+  // Calculate rotation based on drag
+  const rotation = dragApi.isDragging ? dragPos.x * 0.1 : 0
+  const likeOpacity = Math.min(1, Math.max(0, dragPos.x / 100))
+  const nopeOpacity = Math.min(1, Math.max(0, -dragPos.x / 100))
+
+  // Handle swipe on drag end
+  useEffect(() => {
+    if (!dragApi.isDragging && !isExiting) {
+      const threshold = 100
+      if (dragPos.x > threshold) {
+        // Swipe right - LIKE
+        exitDirectionRef.current = 'right'
+        setIsExiting(true)
+        setTimeout(() => {
+          setCards(prev => [...prev.slice(1), prev[0]])
+          setIsExiting(false)
+          setCardKey(k => k + 1)
+          exitDirectionRef.current = null
+        }, 300)
+      } else if (dragPos.x < -threshold) {
+        // Swipe left - NOPE
+        exitDirectionRef.current = 'left'
+        setIsExiting(true)
+        setTimeout(() => {
+          setCards(prev => [...prev.slice(1), prev[0]])
+          setIsExiting(false)
+          setCardKey(k => k + 1)
+          exitDirectionRef.current = null
+        }, 300)
+      }
+    }
+  }, [dragApi.isDragging, dragPos.x, isExiting])
+
+  const handleButtonSwipe = (direction: 'left' | 'right') => {
+    if (isExiting) return
+    exitDirectionRef.current = direction
+    setIsExiting(true)
+    setTimeout(() => {
+      setCards(prev => [...prev.slice(1), prev[0]])
+      setIsExiting(false)
+      setCardKey(k => k + 1)
+      exitDirectionRef.current = null
+    }, 300)
+  }
+
+  // Calculate card transform
+  const cardX = isExiting ? exitSpring.x : dragPos.x
+  const cardRotation = isExiting ? exitSpring.rotation : rotation
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-pink-500/20 to-rose-500/20 flex items-center justify-center">
+          <Heart className="w-5 h-5 text-pink-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-white">Swipe Cards</h3>
+          <p className="text-xs text-white/40">Drag left or right to swipe</p>
+        </div>
+      </div>
+
+      <div className="relative h-80 flex items-center justify-center">
+        {/* Background cards */}
+        {cards.slice(1, 3).reverse().map((card, i) => (
+          <div
+            key={card.id}
+            className={`absolute w-64 h-72 bg-gradient-to-br ${card.color} rounded-3xl shadow-xl`}
+            style={{
+              transform: `scale(${0.95 - i * 0.05}) translateY(${(1 - i) * 8}px)`,
+              opacity: 0.6 - i * 0.2,
+              zIndex: 1 - i,
+            }}
+          />
+        ))}
+
+        {/* Top card - draggable */}
+        {topCard && (
+          <div
+            key={cardKey}
+            ref={dragApi.ref}
+            className={`absolute w-64 h-72 bg-gradient-to-br ${topCard.color} rounded-3xl shadow-2xl cursor-grab active:cursor-grabbing select-none z-10`}
+            style={{
+              transform: `translate(${cardX}px, ${dragPos.y}px) rotate(${cardRotation}deg)`,
+              opacity: isExiting ? 0.8 : 1,
+            }}
+          >
+            {/* Like indicator */}
+            <div
+              className="absolute top-6 right-6 px-4 py-2 border-4 border-green-400 rounded-xl rotate-12"
+              style={{ opacity: isExiting && exitDirectionRef.current === 'right' ? 1 : likeOpacity }}
+            >
+              <span className="text-green-400 font-bold text-xl">LIKE</span>
+            </div>
+            {/* Nope indicator */}
+            <div
+              className="absolute top-6 left-6 px-4 py-2 border-4 border-red-400 rounded-xl -rotate-12"
+              style={{ opacity: isExiting && exitDirectionRef.current === 'left' ? 1 : nopeOpacity }}
+            >
+              <span className="text-red-400 font-bold text-xl">NOPE</span>
+            </div>
+
+            {/* Card content */}
+            <div className="absolute inset-0 flex flex-col items-center justify-center p-6">
+              <div className="text-6xl mb-4">{topCard.avatar}</div>
+              <h4 className="text-xl font-bold text-white mb-1">{topCard.name}</h4>
+              <p className="text-white/70 text-sm">{topCard.role}</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="flex justify-center gap-4 mt-4">
+        <button
+          onClick={() => handleButtonSwipe('left')}
+          disabled={isExiting}
+          className="w-14 h-14 rounded-full bg-white/10 hover:bg-red-500/20 disabled:opacity-50 flex items-center justify-center transition-colors"
+        >
+          <X className="w-6 h-6 text-red-400" />
+        </button>
+        <button
+          onClick={() => handleButtonSwipe('right')}
+          disabled={isExiting}
+          className="w-14 h-14 rounded-full bg-white/10 hover:bg-green-500/20 disabled:opacity-50 flex items-center justify-center transition-colors"
+        >
+          <Heart className="w-6 h-6 text-green-400" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// Animated Notification Toasts
+function NotificationDemo() {
+  const [notifications, setNotifications] = useState<Array<{ id: number; type: 'success' | 'error' | 'info'; message: string }>>([])
+
+  const addNotification = (type: 'success' | 'error' | 'info') => {
+    const messages = {
+      success: ['Payment successful!', 'File uploaded!', 'Settings saved!'],
+      error: ['Connection failed', 'Invalid input', 'Please try again'],
+      info: ['New update available', '3 new messages', 'Session expires soon'],
+    }
+    const message = messages[type][Math.floor(Math.random() * messages[type].length)]
+    const id = Date.now()
+    setNotifications(prev => [...prev, { id, type, message }])
+    setTimeout(() => setNotifications(prev => prev.filter(n => n.id !== id)), 3000)
+  }
+
+  const icons = { success: Check, error: X, info: Bell }
+  const colors = {
+    success: 'from-green-500 to-emerald-500',
+    error: 'from-red-500 to-rose-500',
+    info: 'from-blue-500 to-cyan-500',
+  }
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 flex items-center justify-center">
+          <Bell className="w-5 h-5 text-blue-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-white">Toast Notifications</h3>
+          <p className="text-xs text-white/40">Animated toast messages</p>
+        </div>
+      </div>
+
+      <div className="flex gap-2 mb-6">
+        <button
+          onClick={() => addNotification('success')}
+          className="flex-1 py-2.5 bg-green-500/20 hover:bg-green-500/30 text-green-400 text-sm font-medium rounded-lg transition-colors"
+        >
+          Success
+        </button>
+        <button
+          onClick={() => addNotification('error')}
+          className="flex-1 py-2.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 text-sm font-medium rounded-lg transition-colors"
+        >
+          Error
+        </button>
+        <button
+          onClick={() => addNotification('info')}
+          className="flex-1 py-2.5 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 text-sm font-medium rounded-lg transition-colors"
+        >
+          Info
+        </button>
+      </div>
+
+      <div className="relative h-48 bg-black/20 rounded-xl overflow-hidden">
+        <div className="absolute top-4 right-4 left-4 space-y-2">
+          {notifications.map((notif, i) => {
+            const Icon = icons[notif.type]
+            return (
+              <NotificationToast
+                key={notif.id}
+                icon={Icon}
+                message={notif.message}
+                color={colors[notif.type]}
+                onClose={() => setNotifications(prev => prev.filter(n => n.id !== notif.id))}
+              />
+            )
+          })}
+        </div>
+        {notifications.length === 0 && (
+          <div className="absolute inset-0 flex items-center justify-center text-white/20 text-sm">
+            Click buttons to show notifications
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function NotificationToast({ icon: Icon, message, color, onClose }: {
+  icon: React.ElementType
+  message: string
+  color: string
+  onClose: () => void
+}) {
+  const style = useSpring({ opacity: 1, x: 0, scale: 1 }, { stiffness: 300, damping: 25 })
+
+  return (
+    <div
+      className={`flex items-center gap-3 px-4 py-3 bg-gradient-to-r ${color} rounded-xl shadow-lg`}
+      style={{
+        opacity: style.opacity,
+        transform: `translateX(${style.x}px) scale(${style.scale})`,
+      }}
+    >
+      <Icon className="w-5 h-5 text-white flex-shrink-0" />
+      <span className="text-white text-sm font-medium flex-1">{message}</span>
+      <button onClick={onClose} className="text-white/70 hover:text-white">
+        <X className="w-4 h-4" />
+      </button>
+    </div>
+  )
+}
+
+// 3D Flip Card
+function FlipCardDemo() {
+  const [isFlipped, setIsFlipped] = useState(false)
+  const flipStyle = useSpring({
+    rotateY: isFlipped ? 180 : 0,
+  }, { stiffness: 200, damping: 25 })
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center">
+          <CreditCard className="w-5 h-5 text-amber-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-white">3D Flip Card</h3>
+          <p className="text-xs text-white/40">Click to flip with spring physics</p>
+        </div>
+      </div>
+
+      <div
+        className="h-56 flex items-center justify-center cursor-pointer"
+        style={{ perspective: '1000px' }}
+        onClick={() => setIsFlipped(!isFlipped)}
+      >
+        <div
+          className="relative w-72 h-44"
+          style={{
+            transformStyle: 'preserve-3d',
+            transform: `rotateY(${flipStyle.rotateY}deg)`,
+          }}
+        >
+          {/* Front */}
+          <div
+            className="absolute inset-0 bg-gradient-to-br from-violet-600 via-purple-600 to-indigo-700 rounded-2xl p-6 shadow-2xl"
+            style={{ backfaceVisibility: 'hidden' }}
+          >
+            <div className="flex justify-between items-start mb-8">
+              <Cpu className="w-10 h-10 text-amber-300" />
+              <span className="text-white/60 text-xs">PREMIUM</span>
+            </div>
+            <div className="text-white/80 text-lg tracking-[0.25em] font-mono mb-4">
+              •••• •••• •••• 4242
+            </div>
+            <div className="flex justify-between">
+              <div>
+                <p className="text-white/50 text-xs">CARD HOLDER</p>
+                <p className="text-white text-sm">JOHN DOE</p>
+              </div>
+              <div>
+                <p className="text-white/50 text-xs">EXPIRES</p>
+                <p className="text-white text-sm">12/28</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Back */}
+          <div
+            className="absolute inset-0 bg-gradient-to-br from-gray-800 to-gray-900 rounded-2xl shadow-2xl overflow-hidden"
+            style={{ backfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}
+          >
+            <div className="h-12 bg-gray-700 mt-6" />
+            <div className="p-6">
+              <div className="bg-white/90 h-10 rounded flex items-center justify-end px-4 mb-4">
+                <span className="text-gray-800 font-mono text-sm">123</span>
+              </div>
+              <p className="text-white/40 text-xs leading-relaxed">
+                This card is property of SpringKit Bank. If found, please return to any branch.
+                Unauthorized use is prohibited.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p className="text-center text-white/30 text-sm">Click the card to flip</p>
+    </div>
+  )
+}
+
+// Animated Progress Ring
+function ProgressRingDemo() {
+  const [targetProgress, setTargetProgress] = useState(0)
+  const [displayProgress, setDisplayProgress] = useState(0)
+  const [isAnimating, setIsAnimating] = useState(false)
+  const springRef = useRef<ReturnType<typeof createSpringValue> | null>(null)
+
+  const circumference = 2 * Math.PI * 45
+
+  useEffect(() => {
+    springRef.current = createSpringValue(0, {
+      stiffness: 80,
+      damping: 15,
+      onUpdate: (v) => setDisplayProgress(v)
+    })
+    return () => springRef.current?.destroy()
+  }, [])
+
+  useEffect(() => {
+    springRef.current?.set(targetProgress)
+  }, [targetProgress])
+
+  const strokeDashoffset = circumference - (displayProgress / 100) * circumference
+
+  const startAnimation = () => {
+    if (isAnimating) return
+    setIsAnimating(true)
+    setTargetProgress(0)
+    springRef.current?.jump(0)
+    setTimeout(() => {
+      setTargetProgress(100)
+      setTimeout(() => setIsAnimating(false), 1500)
+    }, 100)
+  }
+
+  const randomProgress = () => {
+    setTargetProgress(Math.floor(Math.random() * 100))
+  }
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 flex items-center justify-center">
+          <Activity className="w-5 h-5 text-emerald-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-white">Progress Ring</h3>
+          <p className="text-xs text-white/40">Spring-animated circular progress</p>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-center py-6">
+        <div className="relative">
+          <svg width="140" height="140" className="transform -rotate-90">
+            {/* Background circle */}
+            <circle
+              cx="70"
+              cy="70"
+              r="45"
+              fill="none"
+              stroke="rgba(255,255,255,0.1)"
+              strokeWidth="10"
+            />
+            {/* Progress circle */}
+            <circle
+              cx="70"
+              cy="70"
+              r="45"
+              fill="none"
+              stroke="url(#progressGradient)"
+              strokeWidth="10"
+              strokeLinecap="round"
+              strokeDasharray={circumference}
+              strokeDashoffset={strokeDashoffset}
+            />
+            <defs>
+              <linearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#10b981" />
+                <stop offset="100%" stopColor="#14b8a6" />
+              </linearGradient>
+            </defs>
+          </svg>
+          <div className="absolute inset-0 flex items-center justify-center">
+            <span className="text-3xl font-bold text-white">{Math.round(displayProgress)}%</span>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          onClick={startAnimation}
+          disabled={isAnimating}
+          className="flex-1 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-all"
+        >
+          Animate to 100%
+        </button>
+        <button
+          onClick={randomProgress}
+          className="px-4 py-2.5 bg-white/5 hover:bg-white/10 text-white/70 text-sm font-medium rounded-lg transition-colors"
+        >
+          Random
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// Elastic Sidebar Menu
+function ElasticMenuDemo() {
+  const [isOpen, setIsOpen] = useState(false)
+  const [hoveredItem, setHoveredItem] = useState<number | null>(null)
+
+  const menuItems = [
+    { icon: User, label: 'Profile', color: 'text-blue-400' },
+    { icon: Mail, label: 'Messages', color: 'text-green-400', badge: 3 },
+    { icon: Settings, label: 'Settings', color: 'text-purple-400' },
+    { icon: Bell, label: 'Notifications', color: 'text-amber-400', badge: 12 },
+    { icon: ShoppingCart, label: 'Cart', color: 'text-pink-400' },
+  ]
+
+  const menuStyle = useSpring({
+    width: isOpen ? 200 : 60,
+    opacity: 1,
+  }, { stiffness: 300, damping: 30 })
+
+  const trail = useTrail(menuItems.length, {
+    x: isOpen ? 0 : -10,
+    opacity: isOpen ? 1 : 0,
+  }, { stiffness: 400, damping: 30 })
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 flex items-center justify-center">
+          <Menu className="w-5 h-5 text-violet-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-white">Elastic Menu</h3>
+          <p className="text-xs text-white/40">Hover to expand with spring</p>
+        </div>
+      </div>
+
+      <div className="flex justify-center py-4">
+        <div
+          className="bg-gray-900/80 rounded-2xl p-3 transition-shadow"
+          style={{
+            width: menuStyle.width,
+            boxShadow: isOpen ? '0 20px 40px rgba(0,0,0,0.3)' : '0 10px 20px rgba(0,0,0,0.2)',
+          }}
+          onMouseEnter={() => setIsOpen(true)}
+          onMouseLeave={() => { setIsOpen(false); setHoveredItem(null) }}
+        >
+          <div className="space-y-1">
+            {menuItems.map((item, i) => {
+              const Icon = item.icon
+              const itemStyle = useSpring({
+                scale: hoveredItem === i ? 1.05 : 1,
+                x: hoveredItem === i ? 4 : 0,
+              }, { stiffness: 400, damping: 25 })
+
+              return (
+                <div
+                  key={item.label}
+                  className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-white/10 cursor-pointer transition-colors"
+                  style={{
+                    transform: `translateX(${itemStyle.x}px) scale(${itemStyle.scale})`,
+                  }}
+                  onMouseEnter={() => setHoveredItem(i)}
+                  onMouseLeave={() => setHoveredItem(null)}
+                >
+                  <div className="relative">
+                    <Icon className={`w-5 h-5 ${item.color}`} />
+                    {item.badge && (
+                      <span className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full text-[10px] text-white flex items-center justify-center font-bold">
+                        {item.badge > 9 ? '9+' : item.badge}
+                      </span>
+                    )}
+                  </div>
+                  <span
+                    className="text-white/80 text-sm whitespace-nowrap overflow-hidden"
+                    style={{
+                      opacity: trail[i]?.opacity ?? 0,
+                      transform: `translateX(${trail[i]?.x ?? -10}px)`,
+                    }}
+                  >
+                    {item.label}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Animated Toggle Switch
+function ToggleSwitchDemo() {
+  const [toggles, setToggles] = useState({
+    wifi: true,
+    sound: false,
+    darkMode: true,
+    notifications: true,
+  })
+
+  const toggleItems = [
+    { key: 'wifi', label: 'Wi-Fi', icon: Wifi, color: 'text-blue-400' },
+    { key: 'sound', label: 'Sound', icon: Volume2, color: 'text-green-400' },
+    { key: 'darkMode', label: 'Dark Mode', icon: Moon, color: 'text-purple-400' },
+    { key: 'notifications', label: 'Notifications', icon: Bell, color: 'text-amber-400' },
+  ]
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 flex items-center justify-center">
+          <Settings className="w-5 h-5 text-cyan-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-white">Toggle Switches</h3>
+          <p className="text-xs text-white/40">Spring-animated toggle controls</p>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {toggleItems.map(item => {
+          const isOn = toggles[item.key as keyof typeof toggles]
+          const Icon = item.icon
+
+          return (
+            <ToggleSwitch
+              key={item.key}
+              label={item.label}
+              isOn={isOn}
+              onToggle={() => setToggles(prev => ({ ...prev, [item.key]: !prev[item.key as keyof typeof prev] }))}
+              icon={<Icon className={`w-4 h-4 ${isOn ? item.color : 'text-white/30'}`} />}
+            />
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function ToggleSwitch({ label, isOn, onToggle, icon }: {
+  label: string
+  isOn: boolean
+  onToggle: () => void
+  icon: React.ReactNode
+}) {
+  const style = useSpring({
+    x: isOn ? 24 : 0,
+    bgOpacity: isOn ? 1 : 0,
+  }, { stiffness: 400, damping: 25 })
+
+  return (
+    <div className="flex items-center justify-between p-3 bg-white/5 rounded-xl">
+      <div className="flex items-center gap-3">
+        {icon}
+        <span className={`text-sm ${isOn ? 'text-white' : 'text-white/50'}`}>{label}</span>
+      </div>
+      <button
+        onClick={onToggle}
+        className="relative w-14 h-8 rounded-full transition-colors"
+        style={{
+          backgroundColor: isOn ? 'rgba(6, 182, 212, 0.9)' : 'rgba(255, 255, 255, 0.1)',
+        }}
+      >
+        <div
+          className="absolute top-1 left-1 w-6 h-6 bg-white rounded-full shadow-lg flex items-center justify-center"
+          style={{
+            transform: `translateX(${style.x}px)`,
+          }}
+        >
+          {isOn ? (
+            <Check className="w-3 h-3 text-cyan-500" />
+          ) : (
+            <X className="w-3 h-3 text-gray-400" />
+          )}
+        </div>
+      </button>
+    </div>
+  )
+}
+
+// ============================================================================
+// SPECTACULAR ANIMATED DEMOS
+// ============================================================================
+
+// Liquid Button Effect
+function LiquidButtonDemo() {
+  const [isHovered, setIsHovered] = useState(false)
+  const [isPressed, setIsPressed] = useState(false)
+  const [ripples, setRipples] = useState<Array<{ id: number; x: number; y: number }>>([])
+
+  const buttonStyle = useSpring({
+    scale: isPressed ? 0.95 : isHovered ? 1.05 : 1,
+    y: isHovered ? -4 : 0,
+    glow: isHovered ? 1 : 0,
+  }, { stiffness: 400, damping: 25 })
+
+  const addRipple = (e: React.MouseEvent<HTMLButtonElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = e.clientX - rect.left
+    const y = e.clientY - rect.top
+    const id = Date.now()
+    setRipples(prev => [...prev, { id, x, y }])
+    setTimeout(() => setRipples(prev => prev.filter(r => r.id !== id)), 600)
+  }
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-fuchsia-500/20 to-pink-500/20 flex items-center justify-center">
+          <Sparkles className="w-5 h-5 text-fuchsia-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-white">Liquid Button</h3>
+          <p className="text-xs text-white/40">Satisfying click interaction</p>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-center h-40">
+        <button
+          onMouseEnter={() => setIsHovered(true)}
+          onMouseLeave={() => { setIsHovered(false); setIsPressed(false) }}
+          onMouseDown={() => setIsPressed(true)}
+          onMouseUp={() => setIsPressed(false)}
+          onClick={addRipple}
+          className="relative px-10 py-5 bg-gradient-to-r from-fuchsia-500 via-purple-500 to-pink-500 rounded-2xl font-bold text-white text-lg overflow-hidden"
+          style={{
+            transform: `scale(${buttonStyle.scale}) translateY(${buttonStyle.y}px)`,
+            boxShadow: `0 ${10 + buttonStyle.glow * 10}px ${30 + buttonStyle.glow * 20}px rgba(192, 38, 211, ${0.3 + buttonStyle.glow * 0.3})`,
+          }}
+        >
+          <span className="relative z-10 flex items-center gap-2">
+            <Rocket className="w-5 h-5" />
+            Click Me!
+          </span>
+          {ripples.map(ripple => (
+            <RippleEffect key={ripple.id} x={ripple.x} y={ripple.y} />
+          ))}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function RippleEffect({ x, y }: { x: number; y: number }) {
+  const style = useSpring({
+    scale: 4,
+    opacity: 0,
+  }, { stiffness: 100, damping: 20 })
+
+  return (
+    <div
+      className="absolute w-20 h-20 bg-white/30 rounded-full pointer-events-none"
+      style={{
+        left: x - 40,
+        top: y - 40,
+        transform: `scale(${style.scale})`,
+        opacity: style.opacity,
+      }}
+    />
+  )
+}
+
+// Animated Counter with Odometer Effect - Auto-incrementing
+function OdometerDemo() {
+  const [value, setValue] = useState(1234)
+  const [isAutoRunning, setIsAutoRunning] = useState(true)
+  const digits = value.toString().padStart(4, '0').split('')
+
+  // Auto-increment effect
+  useEffect(() => {
+    if (!isAutoRunning) return
+    const interval = setInterval(() => {
+      setValue(v => (v + 1) % 10000)
+    }, 800)
+    return () => clearInterval(interval)
+  }, [isAutoRunning])
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center">
+            <Activity className="w-5 h-5 text-amber-400" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-white">Odometer Counter</h3>
+            <p className="text-xs text-white/40">Spring-powered number animation</p>
+          </div>
+        </div>
+        <button
+          onClick={() => setIsAutoRunning(!isAutoRunning)}
+          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${
+            isAutoRunning
+              ? 'bg-amber-500 text-white'
+              : 'bg-white/10 text-white/60 hover:bg-white/20'
+          }`}
+        >
+          {isAutoRunning ? 'Stop' : 'Auto'}
+        </button>
+      </div>
+
+      <div className="flex justify-center gap-1 mb-6">
+        {digits.map((digit, i) => (
+          <OdometerDigit key={i} value={parseInt(digit)} />
+        ))}
+      </div>
+
+      <div className="flex gap-2 justify-center">
+        <button
+          onClick={() => { setIsAutoRunning(false); setValue(v => Math.max(0, v - 100)) }}
+          className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors"
+        >
+          -100
+        </button>
+        <button
+          onClick={() => { setIsAutoRunning(false); setValue(v => (v + 100) % 10000) }}
+          className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-lg"
+        >
+          +100
+        </button>
+        <button
+          onClick={() => { setIsAutoRunning(false); setValue(Math.floor(Math.random() * 9999)) }}
+          className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-colors"
+        >
+          <Shuffle className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function OdometerDigit({ value }: { value: number }) {
+  const style = useSpring({ y: -value * 48 }, { stiffness: 150, damping: 20 })
+
+  return (
+    <div className="w-12 h-14 bg-gradient-to-b from-gray-800 to-gray-900 rounded-lg overflow-hidden relative">
+      <div className="absolute inset-x-0 top-0 h-4 bg-gradient-to-b from-black/50 to-transparent z-10" />
+      <div className="absolute inset-x-0 bottom-0 h-4 bg-gradient-to-t from-black/50 to-transparent z-10" />
+      <div
+        className="absolute left-0 right-0"
+        style={{ transform: `translateY(${style.y}px)` }}
+      >
+        {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => (
+          <div key={n} className="h-14 flex items-center justify-center text-3xl font-bold text-white font-mono">
+            {n}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// Elastic Pull-to-Refresh
+function PullToRefreshDemo() {
+  const [isRefreshing, setIsRefreshing] = useState(false)
+  const [pullDistance, setPullDistance] = useState(0)
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  const pullStyle = useSpring({
+    y: isRefreshing ? 60 : 0,
+    rotate: isRefreshing ? 360 : pullDistance * 2,
+    scale: isRefreshing ? 1 : Math.min(1, pullDistance / 80),
+  }, { stiffness: 200, damping: 20 })
+
+  const handleRefresh = () => {
+    if (isRefreshing) return
+    setIsRefreshing(true)
+    setTimeout(() => {
+      setIsRefreshing(false)
+      setPullDistance(0)
+    }, 2000)
+  }
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500/20 to-cyan-500/20 flex items-center justify-center">
+          <RefreshCw className="w-5 h-5 text-blue-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-white">Pull to Refresh</h3>
+          <p className="text-xs text-white/40">Elastic loading indicator</p>
+        </div>
+      </div>
+
+      <div
+        ref={containerRef}
+        className="relative h-48 bg-black/20 rounded-xl overflow-hidden"
+      >
+        {/* Refresh indicator */}
+        <div
+          className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center"
+          style={{
+            top: -40 + pullStyle.y,
+            transform: `translateX(-50%) scale(${pullStyle.scale})`,
+          }}
+        >
+          <RefreshCw
+            className={`w-8 h-8 text-blue-400 ${isRefreshing ? 'animate-spin' : ''}`}
+            style={{ transform: `rotate(${pullStyle.rotate}deg)` }}
+          />
+          <span className="text-xs text-white/50 mt-2">
+            {isRefreshing ? 'Refreshing...' : 'Pull down'}
+          </span>
+        </div>
+
+        {/* Content */}
+        <div
+          className="absolute inset-0 p-4 space-y-3"
+          style={{ transform: `translateY(${pullStyle.y}px)` }}
+        >
+          {[1, 2, 3].map(i => (
+            <div key={i} className="flex items-center gap-3 p-3 bg-white/5 rounded-lg">
+              <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500/30 to-cyan-500/30" />
+              <div className="flex-1">
+                <div className="h-3 bg-white/10 rounded w-24 mb-2" />
+                <div className="h-2 bg-white/5 rounded w-32" />
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Pull button */}
+        <button
+          onClick={handleRefresh}
+          disabled={isRefreshing}
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 px-6 py-2 bg-blue-500/20 hover:bg-blue-500/30 disabled:opacity-50 text-blue-400 text-sm rounded-lg transition-colors"
+        >
+          {isRefreshing ? 'Refreshing...' : 'Trigger Refresh'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// Animated Tabs
+function AnimatedTabsDemo() {
+  const [activeTab, setActiveTab] = useState(0)
+  const tabs = ['Overview', 'Features', 'Pricing', 'FAQ']
+
+  const indicatorStyle = useSpring({
+    x: activeTab * 90,
+  }, { stiffness: 300, damping: 30 })
+
+  const contentStyle = useSpring({
+    opacity: 1,
+    y: 0,
+  }, { stiffness: 200, damping: 20 })
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 flex items-center justify-center">
+          <Layers className="w-5 h-5 text-violet-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-white">Animated Tabs</h3>
+          <p className="text-xs text-white/40">Smooth tab indicator</p>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="relative mb-6">
+        <div className="flex bg-white/5 rounded-xl p-1">
+          {tabs.map((tab, i) => (
+            <button
+              key={tab}
+              onClick={() => setActiveTab(i)}
+              className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition-colors relative z-10 ${
+                activeTab === i ? 'text-white' : 'text-white/50 hover:text-white/70'
+              }`}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+        {/* Indicator */}
+        <div
+          className="absolute top-1 bottom-1 w-[calc(25%-2px)] bg-gradient-to-r from-violet-500 to-purple-500 rounded-lg"
+          style={{ transform: `translateX(${indicatorStyle.x}px)` }}
+        />
+      </div>
+
+      {/* Content */}
+      <div
+        className="h-24 bg-black/20 rounded-xl p-4 flex items-center justify-center"
+        style={{
+          opacity: contentStyle.opacity,
+          transform: `translateY(${contentStyle.y}px)`,
+        }}
+      >
+        <div className="text-center">
+          <h4 className="text-white font-medium mb-1">{tabs[activeTab]}</h4>
+          <p className="text-white/40 text-sm">Content for {tabs[activeTab].toLowerCase()} tab</p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Bouncy Cards Grid
+function BouncyCardsDemo() {
+  const [hoveredCard, setHoveredCard] = useState<number | null>(null)
+
+  const cards = [
+    { icon: Rocket, color: 'from-orange-500 to-red-500', label: 'Launch' },
+    { icon: Globe, color: 'from-blue-500 to-cyan-500', label: 'Explore' },
+    { icon: Star, color: 'from-yellow-500 to-amber-500', label: 'Favorite' },
+    { icon: Heart, color: 'from-pink-500 to-rose-500', label: 'Love' },
+  ]
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500/20 to-pink-500/20 flex items-center justify-center">
+          <Box className="w-5 h-5 text-rose-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-white">Bouncy Cards</h3>
+          <p className="text-xs text-white/40">Hover for spring effect</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        {cards.map((card, i) => (
+          <BouncyCard
+            key={i}
+            icon={card.icon}
+            color={card.color}
+            label={card.label}
+            isHovered={hoveredCard === i}
+            onHover={() => setHoveredCard(i)}
+            onLeave={() => setHoveredCard(null)}
+            neighborHovered={hoveredCard !== null && hoveredCard !== i}
+          />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function BouncyCard({ icon: Icon, color, label, isHovered, onHover, onLeave, neighborHovered }: {
+  icon: React.ElementType
+  color: string
+  label: string
+  isHovered: boolean
+  onHover: () => void
+  onLeave: () => void
+  neighborHovered: boolean
+}) {
+  const style = useSpring({
+    scale: isHovered ? 1.1 : neighborHovered ? 0.95 : 1,
+    y: isHovered ? -8 : neighborHovered ? 4 : 0,
+    rotate: isHovered ? 3 : 0,
+  }, { stiffness: 300, damping: 20 })
+
+  return (
+    <div
+      onMouseEnter={onHover}
+      onMouseLeave={onLeave}
+      className={`bg-gradient-to-br ${color} rounded-xl p-6 cursor-pointer shadow-lg`}
+      style={{
+        transform: `scale(${style.scale}) translateY(${style.y}px) rotate(${style.rotate}deg)`,
+      }}
+    >
+      <Icon className="w-8 h-8 text-white mb-2" />
+      <span className="text-white font-medium">{label}</span>
+    </div>
+  )
+}
+
+// Floating Action Button
+function FloatingActionDemo() {
+  const [isOpen, setIsOpen] = useState(false)
+
+  const actions = [
+    { icon: Mail, color: 'bg-blue-500', label: 'Email' },
+    { icon: Bell, color: 'bg-amber-500', label: 'Notify' },
+    { icon: Heart, color: 'bg-pink-500', label: 'Like' },
+    { icon: Star, color: 'bg-purple-500', label: 'Star' },
+  ]
+
+  const mainStyle = useSpring({
+    rotate: isOpen ? 45 : 0,
+    scale: isOpen ? 1.1 : 1,
+  }, { stiffness: 300, damping: 20 })
+
+  const trail = useTrail(actions.length, {
+    scale: isOpen ? 1 : 0,
+    y: isOpen ? 0 : 20,
+    opacity: isOpen ? 1 : 0,
+  }, { stiffness: 300, damping: 25 })
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 flex items-center justify-center">
+          <Plus className="w-5 h-5 text-emerald-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-white">Floating Action</h3>
+          <p className="text-xs text-white/40">Expandable action menu</p>
+        </div>
+      </div>
+
+      <div className="relative h-56 bg-black/20 rounded-xl overflow-hidden flex items-end justify-end p-4">
+        {/* Action buttons */}
+        <div className="absolute bottom-20 right-4 flex flex-col-reverse gap-3">
+          {actions.map((action, i) => (
+            <div
+              key={i}
+              className="flex items-center gap-2"
+              style={{
+                transform: `scale(${trail[i]?.scale ?? 0}) translateY(${trail[i]?.y ?? 20}px)`,
+                opacity: trail[i]?.opacity ?? 0,
+              }}
+            >
+              <span className="text-white/70 text-sm bg-black/40 px-2 py-1 rounded">
+                {action.label}
+              </span>
+              <button className={`w-10 h-10 ${action.color} rounded-full flex items-center justify-center shadow-lg`}>
+                <action.icon className="w-5 h-5 text-white" />
+              </button>
+            </div>
+          ))}
+        </div>
+
+        {/* Main FAB */}
+        <button
+          onClick={() => setIsOpen(!isOpen)}
+          className="w-14 h-14 bg-gradient-to-r from-emerald-500 to-teal-500 rounded-full flex items-center justify-center shadow-lg shadow-emerald-500/30 z-10"
+          style={{
+            transform: `rotate(${mainStyle.rotate}deg) scale(${mainStyle.scale})`,
+          }}
+        >
+          <Plus className="w-6 h-6 text-white" />
+        </button>
       </div>
     </div>
   )
@@ -1335,17 +2448,19 @@ function OrchestrationDemo() {
 }
 
 function AdvancedDragDemo() {
-  const containerRef = useRef<HTMLDivElement>(null)
   const [pos, api] = useDrag({
-    bounds: { left: -120, right: 120, top: -60, bottom: 60 },
+    bounds: { left: -130, right: 130, top: -70, bottom: 70 },
     rubberBand: true,
-    rubberBandFactor: 0.2,
+    rubberBandFactor: 0.15,
   })
 
-  const bgStyle = useSpring({
-    scale: api.isDragging ? 1.02 : 1,
-    borderOpacity: api.isDragging ? 0.5 : 0.1,
-  }, { stiffness: 400, damping: 30 })
+  // Calculate distance from center for visual feedback
+  const distance = Math.sqrt(pos.x * pos.x + pos.y * pos.y)
+  const maxDistance = 150
+  const normalizedDistance = Math.min(distance / maxDistance, 1)
+
+  // Dynamic color based on position
+  const hue = (pos.x + 130) / 260 * 60 + 180 // Cyan to blue range
 
   return (
     <div className="glass rounded-2xl p-6 border border-white/10">
@@ -1354,50 +2469,82 @@ function AdvancedDragDemo() {
           <MousePointer2 className="w-5 h-5 text-cyan-400" />
         </div>
         <div>
-          <h3 className="text-lg font-semibold text-white">useDrag</h3>
-          <p className="text-xs text-white/40">With rubber band physics</p>
+          <h3 className="text-lg font-semibold text-white">useDrag Hook</h3>
+          <p className="text-xs text-white/40">Drag with rubber band physics</p>
         </div>
       </div>
 
-      <div
-        ref={containerRef}
-        className="h-48 bg-black/20 rounded-xl relative overflow-hidden transition-transform"
-        style={{
-          transform: `scale(${bgStyle.scale})`,
-          borderColor: `rgba(6, 182, 212, ${bgStyle.borderOpacity})`,
-          borderWidth: 2,
-          borderStyle: 'solid'
-        }}
-      >
-        {/* Bounds indicator */}
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-60 h-32 border border-dashed border-white/10 rounded-lg" />
-        {/* Center crosshair */}
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-px bg-white/10" />
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-px h-4 bg-white/10" />
+      <div className="h-52 bg-black/20 rounded-xl relative overflow-hidden">
+        {/* Grid pattern */}
+        <div className="absolute inset-0" style={{
+          backgroundImage: 'radial-gradient(circle, rgba(255,255,255,0.05) 1px, transparent 1px)',
+          backgroundSize: '20px 20px',
+        }} />
 
-        {/* Draggable element - centered with transform */}
+        {/* Bounds indicator */}
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[260px] h-[140px] border border-dashed border-cyan-500/20 rounded-xl" />
+
+        {/* Connection line from center to ball */}
+        <svg className="absolute inset-0 w-full h-full pointer-events-none">
+          <line
+            x1="50%"
+            y1="50%"
+            x2={`calc(50% + ${pos.x}px)`}
+            y2={`calc(50% + ${pos.y}px)`}
+            stroke={`hsla(${hue}, 80%, 60%, ${0.3 + normalizedDistance * 0.4})`}
+            strokeWidth="2"
+            strokeDasharray="4 4"
+          />
+        </svg>
+
+        {/* Center anchor point */}
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-white/20 border-2 border-white/30" />
+
+        {/* Trail effect */}
         <div
-          ref={api.ref}
-          className="absolute w-16 h-16 bg-gradient-to-br from-cyan-500 to-blue-500 rounded-2xl cursor-grab active:cursor-grabbing flex items-center justify-center shadow-lg select-none transition-shadow"
+          className="absolute w-14 h-14 rounded-2xl pointer-events-none"
           style={{
             left: '50%',
             top: '50%',
-            transform: `translate(calc(-50% + ${pos.x}px), calc(-50% + ${pos.y}px))`,
-            boxShadow: api.isDragging ? '0 20px 40px rgba(6, 182, 212, 0.4)' : '0 10px 30px rgba(6, 182, 212, 0.2)'
+            transform: `translate(calc(-50% + ${pos.x * 0.3}px), calc(-50% + ${pos.y * 0.3}px))`,
+            backgroundColor: `hsla(${hue}, 80%, 50%, 0.1)`,
+            filter: 'blur(8px)',
+          }}
+        />
+
+        {/* Draggable element */}
+        <div
+          ref={api.ref}
+          className="absolute w-14 h-14 rounded-2xl cursor-grab active:cursor-grabbing flex items-center justify-center shadow-lg select-none"
+          style={{
+            left: '50%',
+            top: '50%',
+            transform: `translate(calc(-50% + ${pos.x}px), calc(-50% + ${pos.y}px)) scale(${api.isDragging ? 1.1 : 1})`,
+            background: `linear-gradient(135deg, hsl(${hue}, 80%, 55%), hsl(${hue + 30}, 80%, 45%))`,
+            boxShadow: api.isDragging
+              ? `0 20px 40px hsla(${hue}, 80%, 50%, 0.4), 0 0 30px hsla(${hue}, 80%, 50%, 0.2)`
+              : `0 10px 30px hsla(${hue}, 80%, 50%, 0.2)`,
+            transition: 'transform 0.1s, box-shadow 0.2s',
           }}
         >
-          <GripVertical className="w-6 h-6 text-white" />
+          <GripVertical className="w-6 h-6 text-white/90" />
         </div>
       </div>
 
-      <div className="flex justify-center gap-8 mt-4 text-sm font-mono">
-        <span className="text-white/40">x: <span className="text-cyan-400">{pos.x.toFixed(0)}</span></span>
-        <span className="text-white/40">y: <span className="text-cyan-400">{pos.y.toFixed(0)}</span></span>
-        <span className="text-white/40">
-          <span className={api.isDragging ? 'text-cyan-400' : 'text-white/30'}>
-            {api.isDragging ? 'dragging' : 'idle'}
+      <div className="flex justify-between items-center mt-4">
+        <div className="flex gap-6 text-sm font-mono">
+          <span className="text-white/40">x: <span className="text-cyan-400">{pos.x.toFixed(0)}</span></span>
+          <span className="text-white/40">y: <span className="text-cyan-400">{pos.y.toFixed(0)}</span></span>
+        </div>
+        <div className="flex items-center gap-2">
+          <div
+            className="w-2 h-2 rounded-full"
+            style={{ backgroundColor: api.isDragging ? '#22d3ee' : '#475569' }}
+          />
+          <span className={`text-xs ${api.isDragging ? 'text-cyan-400' : 'text-white/30'}`}>
+            {api.isDragging ? 'Dragging' : 'Idle'}
           </span>
-        </span>
+        </div>
       </div>
     </div>
   )
@@ -1405,27 +2552,41 @@ function AdvancedDragDemo() {
 
 function DecayDemo() {
   const boxRef = useRef<HTMLDivElement>(null)
+  const animRef = useRef<ReturnType<typeof decay> | null>(null)
   const [velocity, setVelocity] = useState(800)
   const [position, setPosition] = useState(0)
   const [isAnimating, setIsAnimating] = useState(false)
 
   const fling = () => {
     if (!boxRef.current || isAnimating) return
+
+    // Stop any existing animation
+    animRef.current?.stop()
+
     setIsAnimating(true)
     boxRef.current.style.transform = 'translateX(0)'
     setPosition(0)
 
-    decay({
-      velocity: velocity / 60, // Convert to per-frame velocity
-      deceleration: 0.95,
-      clamp: [0, 280],
-      onUpdate: v => {
-        if (boxRef.current) boxRef.current.style.transform = `translateX(${v}px)`
-        setPosition(v)
-      },
-      onComplete: () => setIsAnimating(false)
-    }).start()
+    // Small delay to ensure reset is visible
+    setTimeout(() => {
+      animRef.current = decay({
+        velocity: velocity * 0.5, // Scale velocity appropriately
+        deceleration: 0.992,
+        clamp: [0, 280],
+        onUpdate: v => {
+          if (boxRef.current) boxRef.current.style.transform = `translateX(${v}px)`
+          setPosition(v)
+        },
+        onComplete: () => setIsAnimating(false)
+      })
+      animRef.current.start()
+    }, 50)
   }
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => animRef.current?.stop()
+  }, [])
 
   return (
     <div className="glass rounded-2xl p-6 border border-white/10">
@@ -1479,6 +2640,157 @@ function DecayDemo() {
       <div className="text-center font-mono text-sm text-white/40">
         Position: <span className="text-teal-400">{position.toFixed(0)}px</span>
       </div>
+    </div>
+  )
+}
+
+// Ball Drop with Floor Collision - Physics Demo
+function BallDropDemo() {
+  const [balls, setBalls] = useState<Array<{
+    id: number
+    y: number
+    vy: number
+    color: string
+    size: number
+  }>>([])
+  const animationRef = useRef<number | null>(null)
+  const containerHeight = 200
+  const floorY = containerHeight - 20
+
+  // Physics simulation
+  useEffect(() => {
+    const gravity = 0.5
+    const restitution = 0.7 // Bounciness
+    const friction = 0.99
+
+    const animate = () => {
+      setBalls(prev => prev.map(ball => {
+        let { y, vy } = ball
+
+        // Apply gravity
+        vy += gravity
+
+        // Update position
+        y += vy
+
+        // Floor collision with spring bounce
+        const ballBottom = y + ball.size / 2
+        if (ballBottom >= floorY) {
+          y = floorY - ball.size / 2
+          vy = -Math.abs(vy) * restitution
+
+          // Stop if velocity is very low
+          if (Math.abs(vy) < 1) {
+            vy = 0
+          }
+        }
+
+        // Apply friction
+        vy *= friction
+
+        return { ...ball, y, vy }
+      }).filter(ball => {
+        // Remove balls that have settled
+        const isSettled = ball.vy === 0 && ball.y >= floorY - ball.size / 2 - 1
+        return !isSettled || Date.now() % 100 < 50 // Keep some settled balls briefly
+      }))
+
+      animationRef.current = requestAnimationFrame(animate)
+    }
+
+    animationRef.current = requestAnimationFrame(animate)
+    return () => {
+      if (animationRef.current) cancelAnimationFrame(animationRef.current)
+    }
+  }, [])
+
+  const dropBall = () => {
+    const colors = [
+      'from-orange-500 to-amber-500',
+      'from-pink-500 to-rose-500',
+      'from-cyan-500 to-blue-500',
+      'from-violet-500 to-purple-500',
+      'from-emerald-500 to-teal-500',
+    ]
+    const newBall = {
+      id: Date.now(),
+      y: 20,
+      vy: 0,
+      color: colors[Math.floor(Math.random() * colors.length)],
+      size: 30 + Math.random() * 20,
+    }
+    setBalls(prev => [...prev.slice(-8), newBall]) // Keep max 8 balls
+  }
+
+  const dropMultiple = () => {
+    const count = 5
+    for (let i = 0; i < count; i++) {
+      setTimeout(() => dropBall(), i * 100)
+    }
+  }
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500/20 to-amber-500/20 flex items-center justify-center">
+            <Box className="w-5 h-5 text-orange-400" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-white">Ball Drop</h3>
+            <p className="text-xs text-white/40">Gravity + floor collision</p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={dropBall}
+            className="px-4 py-2 bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 text-sm font-medium rounded-lg transition-colors"
+          >
+            Drop 1
+          </button>
+          <button
+            onClick={dropMultiple}
+            className="px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white text-sm font-medium rounded-lg"
+          >
+            Drop 5
+          </button>
+        </div>
+      </div>
+
+      <div
+        className="relative bg-black/20 rounded-xl overflow-hidden"
+        style={{ height: containerHeight }}
+      >
+        {/* Floor */}
+        <div className="absolute bottom-0 left-0 right-0 h-5 bg-gradient-to-t from-orange-500/30 to-transparent" />
+        <div className="absolute bottom-5 left-0 right-0 h-px bg-orange-500/50" />
+
+        {/* Balls */}
+        {balls.map(ball => (
+          <div
+            key={ball.id}
+            className={`absolute left-1/2 bg-gradient-to-br ${ball.color} rounded-full shadow-lg`}
+            style={{
+              width: ball.size,
+              height: ball.size,
+              transform: `translate(-50%, 0)`,
+              top: ball.y - ball.size / 2,
+              boxShadow: `0 ${Math.min(10, Math.abs(ball.vy) * 2)}px ${Math.min(30, Math.abs(ball.vy) * 5)}px rgba(0,0,0,0.3)`,
+            }}
+          />
+        ))}
+
+        {/* Hint text */}
+        {balls.length === 0 && (
+          <div className="absolute inset-0 flex items-center justify-center text-white/20 text-sm">
+            Click to drop balls
+          </div>
+        )}
+      </div>
+
+      <p className="text-center text-white/30 text-xs mt-4">
+        Balls bounce with decreasing energy until they settle
+      </p>
     </div>
   )
 }
@@ -1613,24 +2925,88 @@ export function Examples() {
           </div>
         </AnimatedDiv>
 
-        {/* Interactive Controls Section */}
+        {/* Spectacular Effects Section */}
+        <AnimatedDiv
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.35 }}
+          className="mb-12"
+        >
+          <h2 className="text-2xl font-bold text-white mb-2">Spectacular Effects</h2>
+          <p className="text-white/40 mb-6">Eye-catching animations that showcase SpringKit's power</p>
+
+          <div className="grid lg:grid-cols-3 gap-6">
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.36 }}>
+              <LiquidButtonDemo />
+            </AnimatedDiv>
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.37 }}>
+              <OdometerDemo />
+            </AnimatedDiv>
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.38 }}>
+              <BouncyCardsDemo />
+            </AnimatedDiv>
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.39 }}>
+              <AnimatedTabsDemo />
+            </AnimatedDiv>
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.395 }}>
+              <FloatingActionDemo />
+            </AnimatedDiv>
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.398 }}>
+              <PullToRefreshDemo />
+            </AnimatedDiv>
+          </div>
+        </AnimatedDiv>
+
+        {/* Real-World UI Components Section */}
         <AnimatedDiv
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4 }}
           className="mb-12"
         >
+          <h2 className="text-2xl font-bold text-white mb-2">Real-World UI Components</h2>
+          <p className="text-white/40 mb-6">Production-ready animated components for your apps</p>
+
+          <div className="grid lg:grid-cols-3 gap-6">
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.42 }}>
+              <CardStackDemo />
+            </AnimatedDiv>
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.44 }}>
+              <FlipCardDemo />
+            </AnimatedDiv>
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.46 }}>
+              <NotificationDemo />
+            </AnimatedDiv>
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.48 }}>
+              <ProgressRingDemo />
+            </AnimatedDiv>
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
+              <ElasticMenuDemo />
+            </AnimatedDiv>
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.52 }}>
+              <ToggleSwitchDemo />
+            </AnimatedDiv>
+          </div>
+        </AnimatedDiv>
+
+        {/* Interactive Controls Section */}
+        <AnimatedDiv
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.55 }}
+          className="mb-12"
+        >
           <h2 className="text-2xl font-bold text-white mb-2">Interactive Controls</h2>
           <p className="text-white/40 mb-6">Click, drag, and hover to experience spring physics</p>
 
           <div className="grid lg:grid-cols-3 gap-6">
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.45 }}>
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.57 }}>
               <MorphingShapes />
             </AnimatedDiv>
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.59 }}>
               <MagneticButtonsDemo />
             </AnimatedDiv>
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.55 }}>
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.61 }}>
               <IconCarousel />
             </AnimatedDiv>
           </div>
@@ -1670,6 +3046,10 @@ export function Examples() {
 
             <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.85 }}>
               <DecayDemo />
+            </AnimatedDiv>
+
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.87 }}>
+              <BallDropDemo />
             </AnimatedDiv>
 
             <AnimatedDiv
