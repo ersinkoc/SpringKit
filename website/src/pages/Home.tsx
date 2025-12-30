@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom'
-import { motion, useSpring, useTransform, useMotionValue, animate } from 'framer-motion'
-import { ArrowRight, Zap, Feather, Layers, MousePointer2, Sparkles, Copy, Check, Github, Package, Play, Pause, RotateCcw, ChevronDown, Terminal, Code2, Cpu, Timer, Box, Waves } from 'lucide-react'
+import { motion, useSpring, useMotionValue } from 'framer-motion'
+import { ArrowRight, Zap, Feather, Layers, MousePointer2, Sparkles, Copy, Check, Github, Package, Play, RotateCcw, ChevronDown, Terminal, Code2, Cpu, Timer, Box, Waves } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Highlight, themes } from 'prism-react-renderer'
