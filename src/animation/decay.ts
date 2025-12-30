@@ -1,5 +1,6 @@
 import { globalLoop, type Animatable, AnimationState } from './loop.js'
 import { clamp } from '../utils/math.js'
+import { validateDecayConfig } from '../utils/warnings.js'
 
 /**
  * Decay animation configuration interface
@@ -46,6 +47,9 @@ class DecayAnimationImpl implements DecayAnimation, Animatable {
   finished: Promise<void>
 
   constructor(config: DecayConfig) {
+    // Validate config in development mode
+    validateDecayConfig(config)
+
     this.value = 0
     this.velocity = config.velocity
     this.deceleration = config.deceleration ?? 0.998

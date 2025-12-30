@@ -3,6 +3,7 @@ import { defaultConfig } from './config.js'
 import { simulateSpring } from './physics.js'
 import { globalLoop, type Animatable, AnimationState } from '../animation/loop.js'
 import { clamp } from '../utils/math.js'
+import { validateSpringConfig } from '../utils/warnings.js'
 
 /**
  * Spring animation control interface
@@ -20,6 +21,8 @@ export interface SpringAnimation {
   reverse(): void
   /** Update the target value */
   set(to: number): void
+  /** Update target while preserving current velocity (for smooth interruptions) */
+  setWithVelocity(to: number, velocity?: number): void
   /** Check if currently animating */
   isAnimating(): boolean
   /** Check if paused */
@@ -58,6 +61,9 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
     to: number,
     config: SpringConfig = {}
   ) {
+    // Validate config in development mode
+    validateSpringConfig(config)
+
     this.from = from
     this.to = to
     this.clampedFrom = from
@@ -121,6 +127,24 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
     this.to = to
     this.clampedTo = to
     this.target = to
+  }
+
+  setWithVelocity(to: number, velocity?: number): void {
+    // Update from to current position for smooth continuation
+    this.from = this.position
+    this.clampedFrom = this.position
+    this.to = to
+    this.clampedTo = to
+    this.target = to
+
+    // Use provided velocity or preserve current velocity
+    if (velocity !== undefined) {
+      this.velocity = velocity
+    }
+    // If not running, start the animation
+    if (this.state !== AnimationState.Running) {
+      this.start()
+    }
   }
 
   update(_now: number): void {

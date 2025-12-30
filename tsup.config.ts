@@ -10,7 +10,7 @@ export default defineConfig([
     sourcemap: true,
     clean: true,
     minify: true,
-    target: 'es2020',
+    target: 'es2021',
     treeshake: true,
     outDir: 'dist',
     outExtension({ format }) {
@@ -30,7 +30,7 @@ export default defineConfig([
     splitting: false,
     sourcemap: true,
     minify: true,
-    target: 'es2020',
+    target: 'es2021',
     external: ['react', 'react-dom'],
     noExternal: [/^\.\.\/\.\.\//, /^@oxog/],
     treeshake: true,

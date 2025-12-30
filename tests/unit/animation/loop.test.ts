@@ -180,4 +180,137 @@ describe('AnimationLoop', () => {
       expect(globalLoop.size).toBe(0)
     })
   })
+
+  describe('onFrame callback', () => {
+    it('should call onFrame callback with delta time', async () => {
+      const frameCallback = vi.fn()
+      const unsubscribe = globalLoop.onFrame(frameCallback)
+
+      const animation: Animatable = {
+        update: vi.fn(),
+        isComplete: () => false,
+      }
+
+      globalLoop.add(animation)
+
+      // Wait for some frames
+      await new Promise(resolve => setTimeout(resolve, 50))
+
+      expect(frameCallback).toHaveBeenCalled()
+
+      // Delta time should be positive
+      const deltaTime = frameCallback.mock.calls[0]?.[0]
+      expect(deltaTime).toBeGreaterThan(0)
+
+      unsubscribe()
+      globalLoop.remove(animation)
+    })
+
+    it('should allow unsubscribing from onFrame', async () => {
+      const frameCallback = vi.fn()
+      const unsubscribe = globalLoop.onFrame(frameCallback)
+
+      const animation: Animatable = {
+        update: vi.fn(),
+        isComplete: () => false,
+      }
+
+      globalLoop.add(animation)
+
+      // Wait for some frames
+      await new Promise(resolve => setTimeout(resolve, 30))
+
+      const callCountBeforeUnsubscribe = frameCallback.mock.calls.length
+
+      unsubscribe()
+
+      // Wait for more frames
+      await new Promise(resolve => setTimeout(resolve, 30))
+
+      // Should not have received more calls after unsubscribe
+      expect(frameCallback.mock.calls.length).toBe(callCountBeforeUnsubscribe)
+
+      globalLoop.remove(animation)
+    })
+  })
+
+  describe('animation ID tracking', () => {
+    it('should return unique ID when adding animation', () => {
+      const animation1: Animatable = {
+        update: vi.fn(),
+        isComplete: () => false,
+      }
+      const animation2: Animatable = {
+        update: vi.fn(),
+        isComplete: () => false,
+      }
+
+      const id1 = globalLoop.add(animation1)
+      const id2 = globalLoop.add(animation2)
+
+      expect(id1).not.toBe(id2)
+      expect(typeof id1).toBe('number')
+      expect(typeof id2).toBe('number')
+
+      globalLoop.remove(animation1)
+      globalLoop.remove(animation2)
+    })
+
+    it('should return same ID when adding same animation twice', () => {
+      const animation: Animatable = {
+        update: vi.fn(),
+        isComplete: () => false,
+      }
+
+      const id1 = globalLoop.add(animation)
+      const id2 = globalLoop.add(animation)
+
+      expect(id1).toBe(id2)
+
+      globalLoop.remove(animation)
+    })
+  })
+
+  describe('getFPS', () => {
+    it('should return a reasonable FPS value', async () => {
+      const animation: Animatable = {
+        update: vi.fn(),
+        isComplete: () => false,
+      }
+
+      globalLoop.add(animation)
+
+      // Wait for some frames to establish timing
+      await new Promise(resolve => setTimeout(resolve, 100))
+
+      const fps = globalLoop.getFPS()
+
+      // FPS should be a positive number (likely around 60 on most systems)
+      expect(fps).toBeGreaterThan(0)
+      expect(fps).toBeLessThanOrEqual(240) // Reasonable upper bound
+
+      globalLoop.remove(animation)
+    })
+  })
+
+  describe('getAliveCount', () => {
+    it('should return count of alive animations', () => {
+      const animation1: Animatable = {
+        update: vi.fn(),
+        isComplete: () => false,
+      }
+      const animation2: Animatable = {
+        update: vi.fn(),
+        isComplete: () => false,
+      }
+
+      globalLoop.add(animation1)
+      globalLoop.add(animation2)
+
+      expect(globalLoop.getAliveCount()).toBe(2)
+
+      globalLoop.remove(animation1)
+      globalLoop.remove(animation2)
+    })
+  })
 })

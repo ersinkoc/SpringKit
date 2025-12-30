@@ -48,18 +48,31 @@ export function simulateSpring(
     restDelta = 0.01,
   } = config
 
+  // Calculate displacement from target (cached for reuse)
+  const displacement = target - position
+  const absDisplacement = Math.abs(displacement)
+  const absVelocity = Math.abs(velocity)
+
+  // Early exit optimization: if already at rest, skip expensive calculations
+  // This significantly improves performance for springs that have settled
+  if (absDisplacement <= restDelta && absVelocity <= restSpeed) {
+    return {
+      position: target, // Snap to exact target
+      velocity: 0,
+      isRest: true,
+    }
+  }
+
   // Time step for 60fps animation
   // This ensures the spring simulation is stable with typical stiffness values
   const dt = 1 / 60
-
-  // Calculate displacement from target
-  const displacement = target - position
 
   // Calculate spring force (Hooke's law: F = -k * x)
   const springForce = stiffness * displacement
 
   // Calculate damping force (opposes velocity: F = -c * v)
-  const dampingForce = damping * velocity
+  // Optimization: skip multiplication if velocity is negligible
+  const dampingForce = absVelocity > 0.0001 ? damping * velocity : 0
 
   // Calculate total force and acceleration (Newton's second law: a = F/m)
   const acceleration = (springForce - dampingForce) / mass
@@ -75,7 +88,7 @@ export function simulateSpring(
   // 1. Close to target position (displacement < restDelta)
   // 2. Moving slowly (velocity < restSpeed)
   const isRest =
-    Math.abs(displacement) <= restDelta &&
+    absDisplacement <= restDelta &&
     Math.abs(newVelocity) <= restSpeed
 
   return {

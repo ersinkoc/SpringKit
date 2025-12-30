@@ -279,4 +279,62 @@ describe('spring', () => {
       expect(onRest).toHaveBeenCalled()
     }, 2000)
   })
+
+  describe('setWithVelocity', () => {
+    it('should update target while preserving velocity', async () => {
+      const onUpdate = vi.fn()
+      const anim = spring(0, 100, {
+        onUpdate,
+        stiffness: 200,
+        damping: 20,
+      })
+
+      anim.start()
+
+      // Wait for some animation to build velocity
+      await new Promise(resolve => setTimeout(resolve, 50))
+
+      const velocityBefore = anim.getVelocity()
+
+      // Change target while preserving velocity
+      anim.setWithVelocity(200)
+
+      // Velocity should be preserved
+      expect(anim.getVelocity()).toBe(velocityBefore)
+
+      anim.stop()
+    })
+
+    it('should update target with explicit velocity', async () => {
+      const anim = spring(0, 100, {
+        stiffness: 200,
+        damping: 20,
+      })
+
+      anim.start()
+      await new Promise(resolve => setTimeout(resolve, 30))
+
+      // Change target with explicit velocity
+      anim.setWithVelocity(200, 500)
+
+      expect(anim.getVelocity()).toBe(500)
+
+      anim.stop()
+    })
+
+    it('should start animation if not running', () => {
+      const anim = spring(0, 100, {
+        stiffness: 200,
+        damping: 20,
+      })
+
+      // Call setWithVelocity without starting first
+      anim.setWithVelocity(200, 100)
+
+      // Animation should now be running
+      expect(anim.isAnimating()).toBe(true)
+
+      anim.stop()
+    })
+  })
 })

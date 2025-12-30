@@ -37,6 +37,12 @@ export {
   hslToRgb,
   rgbToHsl,
 } from './utils/color.js'
+export {
+  validateSpringConfig,
+  validateDragConfig,
+  validateDecayConfig,
+  clearWarnings,
+} from './utils/warnings.js'
 
 // ============ Physics Utilities ============
 
