@@ -1,33 +1,248 @@
 import { Link } from 'react-router-dom'
-import { motion, useSpring, useMotionValue } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { ArrowRight, Zap, Feather, Layers, MousePointer2, Sparkles, Copy, Check, Github, Package, Play, RotateCcw, ChevronDown, Terminal, Code2, Cpu, Timer, Box, Waves } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Highlight, themes } from 'prism-react-renderer'
 
 // ============================================================================
-// SPECTACULAR HERO SPRING VISUALIZATION
+// SPECTACULAR HERO SPRING VISUALIZATION WITH COLLISION PHYSICS
 // ============================================================================
 
+interface TrailPoint {
+  x: number
+  y: number
+}
+
+interface Ball {
+  id: number
+  x: number
+  y: number
+  vx: number
+  vy: number
+  radius: number
+  color: string
+  hue: number
+  isDragging: boolean
+  trail: TrailPoint[] // Trail positions for spring-delayed followers
+}
+
+const BALL_CONFIGS = [
+  { x: 0, y: 0, radius: 32, hue: 25, color: 'from-orange-400 via-orange-500 to-amber-600' },
+  { x: -80, y: -60, radius: 24, hue: 280, color: 'from-purple-400 via-purple-500 to-fuchsia-600' },
+  { x: 80, y: -40, radius: 28, hue: 180, color: 'from-cyan-400 via-cyan-500 to-teal-600' },
+  { x: -60, y: 70, radius: 22, hue: 340, color: 'from-rose-400 via-rose-500 to-pink-600' },
+  { x: 100, y: 50, radius: 26, hue: 140, color: 'from-green-400 via-emerald-500 to-teal-600' },
+]
+
+const TRAIL_COUNT = 3 // Number of trail shadows per ball
+const TRAIL_SPRING_FACTOR = [0.15, 0.08, 0.04] // Spring stiffness for each trail (lower = more delay)
+
 function HeroSpringDemo() {
-  const [isDragging, setIsDragging] = useState(false)
   const [preset, setPreset] = useState<'bouncy' | 'gentle' | 'stiff' | 'wobbly'>('bouncy')
+  const [balls, setBalls] = useState<Ball[]>(() =>
+    BALL_CONFIGS.map((cfg, i) => ({
+      id: i,
+      x: cfg.x,
+      y: cfg.y,
+      vx: 0,
+      vy: 0,
+      radius: cfg.radius,
+      color: cfg.color,
+      hue: cfg.hue,
+      isDragging: false,
+      trail: Array(TRAIL_COUNT).fill(null).map(() => ({ x: cfg.x, y: cfg.y })),
+    }))
+  )
+  const containerRef = useRef<HTMLDivElement>(null)
+  const animationRef = useRef<number | null>(null)
 
   const presetConfigs = {
-    bouncy: { stiffness: 400, damping: 10 },
-    gentle: { stiffness: 120, damping: 14 },
-    stiff: { stiffness: 700, damping: 30 },
-    wobbly: { stiffness: 180, damping: 8 },
+    bouncy: { stiffness: 400, damping: 10, restitution: 0.9 },
+    gentle: { stiffness: 120, damping: 14, restitution: 0.6 },
+    stiff: { stiffness: 700, damping: 30, restitution: 0.4 },
+    wobbly: { stiffness: 180, damping: 8, restitution: 0.95 },
   }
 
-  const x = useMotionValue(0)
-  const y = useMotionValue(0)
+  const config = presetConfigs[preset]
+  const bounds = { left: -200, right: 200, top: -180, bottom: 180 }
 
-  // Spring trail effect - multiple circles following with delay
-  const springConfig = presetConfigs[preset]
+  // Physics simulation
+  useEffect(() => {
+    const simulate = () => {
+      setBalls(prevBalls => {
+        const newBalls = prevBalls.map(ball => ({ ...ball }))
+        const dt = 1 / 60
+
+        for (let i = 0; i < newBalls.length; i++) {
+          const ball = newBalls[i]
+          if (ball.isDragging) continue
+
+          // Apply spring force towards rest position (0,0) with very weak attraction
+          const restX = BALL_CONFIGS[i].x
+          const restY = BALL_CONFIGS[i].y
+          const springForce = 0.5 // Very weak home force
+          const dx = restX - ball.x
+          const dy = restY - ball.y
+
+          // Only apply home force if far from rest and moving slowly
+          const distFromRest = Math.sqrt(dx * dx + dy * dy)
+          const speed = Math.sqrt(ball.vx * ball.vx + ball.vy * ball.vy)
+
+          if (distFromRest > 5 && speed < 50) {
+            ball.vx += dx * springForce * dt
+            ball.vy += dy * springForce * dt
+          }
+
+          // Apply damping
+          const dampingFactor = 1 - (config.damping * 0.01)
+          ball.vx *= dampingFactor
+          ball.vy *= dampingFactor
+
+          // Update position
+          ball.x += ball.vx * dt * 60
+          ball.y += ball.vy * dt * 60
+
+          // Boundary collision with spring bounce
+          if (ball.x - ball.radius < bounds.left) {
+            ball.x = bounds.left + ball.radius
+            ball.vx = Math.abs(ball.vx) * config.restitution
+          }
+          if (ball.x + ball.radius > bounds.right) {
+            ball.x = bounds.right - ball.radius
+            ball.vx = -Math.abs(ball.vx) * config.restitution
+          }
+          if (ball.y - ball.radius < bounds.top) {
+            ball.y = bounds.top + ball.radius
+            ball.vy = Math.abs(ball.vy) * config.restitution
+          }
+          if (ball.y + ball.radius > bounds.bottom) {
+            ball.y = bounds.bottom - ball.radius
+            ball.vy = -Math.abs(ball.vy) * config.restitution
+          }
+        }
+
+        // Ball-to-ball collision detection and response
+        for (let i = 0; i < newBalls.length; i++) {
+          for (let j = i + 1; j < newBalls.length; j++) {
+            const a = newBalls[i]
+            const b = newBalls[j]
+
+            const dx = b.x - a.x
+            const dy = b.y - a.y
+            const dist = Math.sqrt(dx * dx + dy * dy)
+            const minDist = a.radius + b.radius
+
+            if (dist < minDist && dist > 0) {
+              // Collision detected - calculate spring-based response
+              const overlap = minDist - dist
+              const nx = dx / dist
+              const ny = dy / dist
+
+              // Separate balls
+              const separationForce = overlap * 0.5
+              if (!a.isDragging) {
+                a.x -= nx * separationForce
+                a.y -= ny * separationForce
+              }
+              if (!b.isDragging) {
+                b.x += nx * separationForce
+                b.y += ny * separationForce
+              }
+
+              // Calculate relative velocity
+              const dvx = a.vx - b.vx
+              const dvy = a.vy - b.vy
+              const dvn = dvx * nx + dvy * ny
+
+              // Only resolve if balls are moving towards each other
+              if (dvn > 0) {
+                // Spring-based impulse with restitution
+                const impulse = dvn * config.restitution * 1.2
+
+                // Apply impulse based on mass (radius)
+                const totalMass = a.radius + b.radius
+                const aRatio = b.radius / totalMass
+                const bRatio = a.radius / totalMass
+
+                if (!a.isDragging) {
+                  a.vx -= impulse * nx * aRatio
+                  a.vy -= impulse * ny * aRatio
+                  // Add spring "pop" effect
+                  a.vx -= nx * overlap * config.stiffness * 0.01 * aRatio
+                  a.vy -= ny * overlap * config.stiffness * 0.01 * aRatio
+                }
+                if (!b.isDragging) {
+                  b.vx += impulse * nx * bRatio
+                  b.vy += impulse * ny * bRatio
+                  // Add spring "pop" effect
+                  b.vx += nx * overlap * config.stiffness * 0.01 * bRatio
+                  b.vy += ny * overlap * config.stiffness * 0.01 * bRatio
+                }
+              }
+            }
+          }
+        }
+
+        // Update trail positions with spring physics (trails follow their ball)
+        for (const ball of newBalls) {
+          for (let t = 0; t < ball.trail.length; t++) {
+            const trail = ball.trail[t]
+            const springFactor = TRAIL_SPRING_FACTOR[t]
+
+            // Spring towards ball position
+            trail.x += (ball.x - trail.x) * springFactor
+            trail.y += (ball.y - trail.y) * springFactor
+          }
+        }
+
+        return newBalls
+      })
+
+      animationRef.current = requestAnimationFrame(simulate)
+    }
+
+    animationRef.current = requestAnimationFrame(simulate)
+    return () => {
+      if (animationRef.current) cancelAnimationFrame(animationRef.current)
+    }
+  }, [config, bounds])
+
+  const handleDragStart = (ballId: number) => {
+    setBalls(prev => prev.map(b =>
+      b.id === ballId ? { ...b, isDragging: true, vx: 0, vy: 0 } : b
+    ))
+  }
+
+  const handleDrag = (ballId: number, info: { point: { x: number; y: number }; delta: { x: number; y: number } }) => {
+    if (!containerRef.current) return
+
+    const rect = containerRef.current.getBoundingClientRect()
+    const centerX = rect.left + rect.width / 2
+    const centerY = rect.top + rect.height / 2
+
+    const newX = info.point.x - centerX
+    const newY = info.point.y - centerY
+
+    setBalls(prev => prev.map(b =>
+      b.id === ballId ? {
+        ...b,
+        x: Math.max(bounds.left + b.radius, Math.min(bounds.right - b.radius, newX)),
+        y: Math.max(bounds.top + b.radius, Math.min(bounds.bottom - b.radius, newY)),
+        vx: info.delta.x * 2,
+        vy: info.delta.y * 2,
+      } : b
+    ))
+  }
+
+  const handleDragEnd = (ballId: number) => {
+    setBalls(prev => prev.map(b =>
+      b.id === ballId ? { ...b, isDragging: false } : b
+    ))
+  }
 
   return (
-    <div className="relative w-full h-[500px] flex items-center justify-center">
+    <div ref={containerRef} className="relative w-full h-[500px] flex items-center justify-center overflow-hidden">
       {/* Concentric rings */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
         {[...Array(5)].map((_, i) => (
@@ -50,64 +265,114 @@ function HeroSpringDemo() {
         ))}
       </div>
 
-      {/* Trail circles */}
-      {[0.15, 0.3, 0.45].map((delay, i) => (
-        <motion.div
-          key={i}
-          className="absolute rounded-full"
-          style={{
-            width: 60 - i * 12,
-            height: 60 - i * 12,
-            background: `radial-gradient(circle, hsla(25, 100%, ${55 - i * 10}%, ${0.3 - i * 0.08}) 0%, transparent 70%)`,
-            x: useSpring(x, { ...springConfig, stiffness: springConfig.stiffness * (1 - delay) }),
-            y: useSpring(y, { ...springConfig, stiffness: springConfig.stiffness * (1 - delay) }),
-          }}
-        />
-      ))}
+      {/* Trail shadows - rendered behind balls */}
+      {balls.map((ball) =>
+        ball.trail.map((trail, trailIndex) => {
+          const scale = 1 - (trailIndex + 1) * 0.15 // Each trail is smaller
+          const opacity = 0.3 - trailIndex * 0.08 // Each trail is more transparent
+          const trailRadius = ball.radius * scale
 
-      {/* Main draggable ball */}
-      <motion.div
-        drag
-        dragConstraints={{ left: -200, right: 200, top: -150, bottom: 150 }}
-        dragElastic={0.1}
-        onDragStart={() => setIsDragging(true)}
-        onDragEnd={() => setIsDragging(false)}
-        style={{ x, y }}
-        whileDrag={{ scale: 1.1 }}
-        transition={{
-          type: 'spring',
-          ...springConfig,
-        }}
-        className="relative cursor-grab active:cursor-grabbing z-10"
-      >
-        {/* Glow effect */}
+          return (
+            <motion.div
+              key={`trail-${ball.id}-${trailIndex}`}
+              className="absolute pointer-events-none"
+              animate={{
+                x: trail.x,
+                y: trail.y,
+              }}
+              transition={{
+                x: { type: 'tween', duration: 0 },
+                y: { type: 'tween', duration: 0 },
+              }}
+              style={{
+                width: trailRadius * 2,
+                height: trailRadius * 2,
+                marginLeft: -trailRadius,
+                marginTop: -trailRadius,
+                zIndex: 5 - trailIndex,
+              }}
+            >
+              <div
+                className="w-full h-full rounded-full"
+                style={{
+                  background: `radial-gradient(circle, hsla(${ball.hue}, 100%, 55%, ${opacity}) 0%, hsla(${ball.hue}, 100%, 45%, ${opacity * 0.5}) 50%, transparent 70%)`,
+                  filter: `blur(${2 + trailIndex * 2}px)`,
+                }}
+              />
+            </motion.div>
+          )
+        })
+      )}
+
+      {/* Balls */}
+      {balls.map((ball) => (
         <motion.div
-          className="absolute inset-0 rounded-full blur-xl"
-          style={{
-            background: 'radial-gradient(circle, hsla(25, 100%, 55%, 0.6) 0%, transparent 70%)',
-            width: 120,
-            height: 120,
-            marginLeft: -30,
-            marginTop: -30,
-          }}
+          key={ball.id}
+          drag
+          dragMomentum={false}
+          dragElastic={0}
+          onDragStart={() => handleDragStart(ball.id)}
+          onDrag={(_, info) => handleDrag(ball.id, info)}
+          onDragEnd={() => handleDragEnd(ball.id)}
           animate={{
-            scale: isDragging ? 1.3 : [1, 1.15, 1],
-            opacity: isDragging ? 0.8 : [0.6, 0.8, 0.6],
+            x: ball.x,
+            y: ball.y,
+            scale: ball.isDragging ? 1.15 : 1,
           }}
           transition={{
-            scale: { duration: 2, repeat: Infinity, ease: 'easeInOut' },
-            opacity: { duration: 2, repeat: Infinity, ease: 'easeInOut' },
+            x: { type: 'tween', duration: 0 },
+            y: { type: 'tween', duration: 0 },
+            scale: { type: 'spring', stiffness: 500, damping: 25 },
           }}
-        />
+          className="absolute cursor-grab active:cursor-grabbing"
+          style={{
+            width: ball.radius * 2,
+            height: ball.radius * 2,
+            marginLeft: -ball.radius,
+            marginTop: -ball.radius,
+            zIndex: ball.isDragging ? 20 : 10,
+          }}
+        >
+          {/* Glow effect */}
+          <motion.div
+            className="absolute rounded-full blur-xl"
+            style={{
+              background: `radial-gradient(circle, hsla(${ball.hue}, 100%, 55%, 0.5) 0%, transparent 70%)`,
+              width: ball.radius * 3,
+              height: ball.radius * 3,
+              left: '50%',
+              top: '50%',
+              marginLeft: -ball.radius * 1.5,
+              marginTop: -ball.radius * 1.5,
+            }}
+            animate={{
+              scale: ball.isDragging ? 1.3 : [1, 1.15, 1],
+              opacity: ball.isDragging ? 0.9 : [0.5, 0.7, 0.5],
+            }}
+            transition={{
+              scale: { duration: 2, repeat: Infinity, ease: 'easeInOut' },
+              opacity: { duration: 2, repeat: Infinity, ease: 'easeInOut' },
+            }}
+          />
 
-        {/* Ball */}
-        <div className="relative w-16 h-16 rounded-full bg-gradient-to-br from-orange-400 via-orange-500 to-amber-600 shadow-2xl flex items-center justify-center ring-4 ring-orange-500/20">
-          <Sparkles className="w-6 h-6 text-white/90" />
-        </div>
-      </motion.div>
+          {/* Ball */}
+          <div
+            className={`relative w-full h-full rounded-full bg-gradient-to-br ${ball.color} shadow-2xl flex items-center justify-center`}
+            style={{
+              boxShadow: `0 0 20px hsla(${ball.hue}, 100%, 50%, 0.3), inset 0 -2px 10px rgba(0,0,0,0.2)`,
+            }}
+          >
+            {ball.id === 0 && <Sparkles className="w-6 h-6 text-white/90" />}
+            {/* Highlight */}
+            <div
+              className="absolute top-1 left-1/4 w-1/3 h-1/4 rounded-full bg-white/30 blur-sm"
+            />
+          </div>
+        </motion.div>
+      ))}
 
       {/* Preset selector */}
-      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-2">
+      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-2 z-30">
         {(Object.keys(presetConfigs) as Array<keyof typeof presetConfigs>).map((p) => (
           <button
             key={p}
@@ -125,164 +390,204 @@ function HeroSpringDemo() {
 
       {/* Drag hint */}
       <motion.p
-        className="absolute top-4 left-1/2 -translate-x-1/2 text-sm text-white/40"
+        className="absolute top-4 left-1/2 -translate-x-1/2 text-sm text-white/40 z-30"
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 1 }}
       >
-        Drag the ball to feel the spring physics
+        Drag the balls and watch them collide with spring physics
       </motion.p>
     </div>
   )
 }
 
 // ============================================================================
-// INTERACTIVE PHYSICS PLAYGROUND
+// INTERACTIVE PHYSICS PLAYGROUND - ENHANCED VERSION
 // ============================================================================
 
+interface SpringConfig {
+  name: string
+  stiffness: number
+  damping: number
+  color: string
+  hue: number
+}
+
+const PRESET_SPRINGS: SpringConfig[] = [
+  { name: 'Bouncy', stiffness: 400, damping: 10, color: 'from-orange-400 to-amber-500', hue: 25 },
+  { name: 'Gentle', stiffness: 120, damping: 14, color: 'from-cyan-400 to-teal-500', hue: 180 },
+  { name: 'Stiff', stiffness: 700, damping: 30, color: 'from-purple-400 to-fuchsia-500', hue: 280 },
+]
+
 function PhysicsPlayground() {
-  const [stiffness, setStiffness] = useState(300)
-  const [damping, setDamping] = useState(20)
-  const [mass, setMass] = useState(1)
   const [isPlaying, setIsPlaying] = useState(false)
-  const [position, setPosition] = useState(0)
+  const [time, setTime] = useState(0)
+  const [positions, setPositions] = useState<number[]>([0, 0, 0])
+  const [graphData, setGraphData] = useState<number[][]>([[], [], []])
   const animationRef = useRef<number | null>(null)
   const startTimeRef = useRef<number>(0)
+  const canvasRef = useRef<HTMLCanvasElement>(null)
 
-  const simulateSpring = useCallback(() => {
-    const omega = Math.sqrt(stiffness / mass)
-    const zeta = damping / (2 * Math.sqrt(stiffness * mass))
+  // Calculate spring position at time t
+  const calculateSpringPosition = useCallback((config: SpringConfig, t: number): number => {
+    const omega = Math.sqrt(config.stiffness)
+    const zeta = config.damping / (2 * Math.sqrt(config.stiffness))
 
-    const step = (time: number) => {
-      if (!startTimeRef.current) startTimeRef.current = time
-      const elapsed = (time - startTimeRef.current) / 1000
+    if (zeta < 1) {
+      // Underdamped
+      const omegaD = omega * Math.sqrt(1 - zeta * zeta)
+      return 1 - Math.exp(-zeta * omega * t) * (Math.cos(omegaD * t) + (zeta * omega / omegaD) * Math.sin(omegaD * t))
+    } else if (zeta === 1) {
+      // Critically damped
+      return 1 - (1 + omega * t) * Math.exp(-omega * t)
+    } else {
+      // Overdamped
+      const r1 = -omega * (zeta - Math.sqrt(zeta * zeta - 1))
+      const r2 = -omega * (zeta + Math.sqrt(zeta * zeta - 1))
+      return 1 - (r2 * Math.exp(r1 * t) - r1 * Math.exp(r2 * t)) / (r2 - r1)
+    }
+  }, [])
 
-      let pos: number
-      if (zeta < 1) {
-        // Underdamped
-        const omegaD = omega * Math.sqrt(1 - zeta * zeta)
-        pos = Math.exp(-zeta * omega * elapsed) * Math.cos(omegaD * elapsed)
-      } else if (zeta === 1) {
-        // Critically damped
-        pos = (1 + omega * elapsed) * Math.exp(-omega * elapsed)
-      } else {
-        // Overdamped
-        const r1 = -omega * (zeta - Math.sqrt(zeta * zeta - 1))
-        const r2 = -omega * (zeta + Math.sqrt(zeta * zeta - 1))
-        pos = (Math.exp(r1 * elapsed) + Math.exp(r2 * elapsed)) / 2
-      }
+  // Draw the graph
+  const drawGraph = useCallback((data: number[][]) => {
+    const canvas = canvasRef.current
+    if (!canvas) return
 
-      // Map to visual range
-      const visualPos = (1 - pos) * 200
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return
 
-      if (Math.abs(pos) < 0.001 || elapsed > 5) {
-        setPosition(200)
-        setIsPlaying(false)
-        return
-      }
+    const width = canvas.width
+    const height = canvas.height
+    const padding = 20
 
-      setPosition(visualPos)
-      animationRef.current = requestAnimationFrame(step)
+    // Clear canvas
+    ctx.clearRect(0, 0, width, height)
+
+    // Draw grid
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.05)'
+    ctx.lineWidth = 1
+
+    // Horizontal grid lines
+    for (let i = 0; i <= 4; i++) {
+      const y = padding + (height - 2 * padding) * (i / 4)
+      ctx.beginPath()
+      ctx.moveTo(padding, y)
+      ctx.lineTo(width - padding, y)
+      ctx.stroke()
     }
 
-    animationRef.current = requestAnimationFrame(step)
-  }, [stiffness, damping, mass])
+    // Target line (value = 1)
+    ctx.strokeStyle = 'rgba(251, 146, 60, 0.3)'
+    ctx.setLineDash([4, 4])
+    const targetY = padding + (height - 2 * padding) * 0.1
+    ctx.beginPath()
+    ctx.moveTo(padding, targetY)
+    ctx.lineTo(width - padding, targetY)
+    ctx.stroke()
+    ctx.setLineDash([])
+
+    // Draw each spring curve
+    const colors = ['rgba(251, 146, 60, 0.9)', 'rgba(34, 211, 238, 0.9)', 'rgba(192, 132, 252, 0.9)']
+
+    data.forEach((points, index) => {
+      if (points.length < 2) return
+
+      // Main line
+      ctx.strokeStyle = colors[index]
+      ctx.lineWidth = 2.5
+      ctx.lineCap = 'round'
+      ctx.lineJoin = 'round'
+      ctx.beginPath()
+
+      points.forEach((value, i) => {
+        const x = padding + (width - 2 * padding) * (i / 180)
+        const y = padding + (height - 2 * padding) * (1 - value * 0.9)
+
+        if (i === 0) {
+          ctx.moveTo(x, y)
+        } else {
+          ctx.lineTo(x, y)
+        }
+      })
+
+      ctx.stroke()
+    })
+  }, [])
+
+  // Animation loop
+  useEffect(() => {
+    if (!isPlaying) return
+
+    const animate = (timestamp: number) => {
+      if (!startTimeRef.current) startTimeRef.current = timestamp
+      const elapsed = (timestamp - startTimeRef.current) / 1000
+
+      setTime(elapsed)
+
+      // Calculate positions for each spring
+      const newPositions = PRESET_SPRINGS.map(config =>
+        calculateSpringPosition(config, elapsed)
+      )
+      setPositions(newPositions)
+
+      // Update graph data
+      setGraphData(prev => {
+        const newData = prev.map((arr, i) => {
+          const newArr = [...arr, newPositions[i]]
+          if (newArr.length > 180) newArr.shift()
+          return newArr
+        })
+        return newData
+      })
+
+      if (elapsed < 3) {
+        animationRef.current = requestAnimationFrame(animate)
+      } else {
+        setIsPlaying(false)
+      }
+    }
+
+    animationRef.current = requestAnimationFrame(animate)
+
+    return () => {
+      if (animationRef.current) cancelAnimationFrame(animationRef.current)
+    }
+  }, [isPlaying, calculateSpringPosition])
+
+  // Draw graph when data changes
+  useEffect(() => {
+    drawGraph(graphData)
+  }, [graphData, drawGraph])
 
   const play = () => {
-    if (animationRef.current) cancelAnimationFrame(animationRef.current)
     startTimeRef.current = 0
-    setPosition(0)
+    setTime(0)
+    setPositions([0, 0, 0])
+    setGraphData([[], [], []])
     setIsPlaying(true)
-    simulateSpring()
   }
 
   const reset = () => {
     if (animationRef.current) cancelAnimationFrame(animationRef.current)
     setIsPlaying(false)
-    setPosition(0)
-    startTimeRef.current = 0
+    setTime(0)
+    setPositions([0, 0, 0])
+    setGraphData([[], [], []])
   }
-
-  useEffect(() => {
-    return () => {
-      if (animationRef.current) cancelAnimationFrame(animationRef.current)
-    }
-  }, [])
-
-  // Calculate damping ratio for display
-  const dampingRatio = damping / (2 * Math.sqrt(stiffness * mass))
-  const dampingType = dampingRatio < 1 ? 'Underdamped' : dampingRatio === 1 ? 'Critically Damped' : 'Overdamped'
 
   return (
     <div className="glass rounded-3xl p-8 relative overflow-hidden">
       {/* Background decoration */}
       <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-orange-500/10 to-transparent rounded-full blur-3xl" />
+      <div className="absolute bottom-0 left-0 w-48 h-48 bg-gradient-to-tr from-cyan-500/10 to-transparent rounded-full blur-3xl" />
 
-      <div className="relative grid lg:grid-cols-2 gap-8">
-        {/* Controls */}
-        <div className="space-y-6">
+      <div className="relative">
+        {/* Header */}
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
           <div>
-            <h3 className="text-xl font-bold text-white mb-2">Physics Playground</h3>
-            <p className="text-white/50 text-sm">Adjust parameters to see how they affect spring behavior</p>
+            <h3 className="text-xl font-bold text-white mb-1">Spring Comparison</h3>
+            <p className="text-white/50 text-sm">Watch how different spring configurations animate to the same target</p>
           </div>
-
-          {/* Sliders */}
-          <div className="space-y-5">
-            <div>
-              <div className="flex justify-between mb-2">
-                <label className="text-sm text-white/70">Stiffness</label>
-                <span className="text-sm text-orange-400 font-mono">{stiffness}</span>
-              </div>
-              <input
-                type="range"
-                min="50"
-                max="1000"
-                value={stiffness}
-                onChange={(e) => setStiffness(Number(e.target.value))}
-                className="w-full h-2 bg-white/10 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-orange-500 [&::-webkit-slider-thumb]:shadow-lg [&::-webkit-slider-thumb]:shadow-orange-500/50"
-              />
-            </div>
-
-            <div>
-              <div className="flex justify-between mb-2">
-                <label className="text-sm text-white/70">Damping</label>
-                <span className="text-sm text-orange-400 font-mono">{damping}</span>
-              </div>
-              <input
-                type="range"
-                min="1"
-                max="100"
-                value={damping}
-                onChange={(e) => setDamping(Number(e.target.value))}
-                className="w-full h-2 bg-white/10 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-orange-500 [&::-webkit-slider-thumb]:shadow-lg [&::-webkit-slider-thumb]:shadow-orange-500/50"
-              />
-            </div>
-
-            <div>
-              <div className="flex justify-between mb-2">
-                <label className="text-sm text-white/70">Mass</label>
-                <span className="text-sm text-orange-400 font-mono">{mass}</span>
-              </div>
-              <input
-                type="range"
-                min="0.1"
-                max="5"
-                step="0.1"
-                value={mass}
-                onChange={(e) => setMass(Number(e.target.value))}
-                className="w-full h-2 bg-white/10 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-orange-500 [&::-webkit-slider-thumb]:shadow-lg [&::-webkit-slider-thumb]:shadow-orange-500/50"
-              />
-            </div>
-          </div>
-
-          {/* Info badge */}
-          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5 w-fit">
-            <div className={`w-2 h-2 rounded-full ${dampingRatio < 1 ? 'bg-green-400' : dampingRatio === 1 ? 'bg-yellow-400' : 'bg-red-400'}`} />
-            <span className="text-sm text-white/70">{dampingType}</span>
-            <span className="text-sm text-white/40">(ζ = {dampingRatio.toFixed(2)})</span>
-          </div>
-
-          {/* Play/Reset buttons */}
           <div className="flex gap-3">
             <Button
               onClick={play}
@@ -290,7 +595,7 @@ function PhysicsPlayground() {
               className="gap-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white border-0"
             >
               <Play className="w-4 h-4" />
-              Play
+              {isPlaying ? 'Running...' : 'Compare'}
             </Button>
             <Button
               onClick={reset}
@@ -303,43 +608,624 @@ function PhysicsPlayground() {
           </div>
         </div>
 
-        {/* Visualization */}
-        <div className="relative h-64 bg-white/5 rounded-2xl overflow-hidden">
-          {/* Grid lines */}
-          <div className="absolute inset-0 grid-pattern opacity-20" />
+        {/* Legend */}
+        <div className="flex flex-wrap gap-4 mb-6">
+          {PRESET_SPRINGS.map((spring) => {
+            const zeta = spring.damping / (2 * Math.sqrt(spring.stiffness))
+            return (
+              <div key={spring.name} className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/5">
+                <div className={`w-3 h-3 rounded-full bg-gradient-to-r ${spring.color}`} />
+                <span className="text-sm text-white font-medium">{spring.name}</span>
+                <span className="text-xs text-white/40">ζ={zeta.toFixed(2)}</span>
+              </div>
+            )
+          })}
+        </div>
 
-          {/* Target line */}
-          <div className="absolute bottom-8 left-0 right-0 h-px bg-orange-500/30">
-            <span className="absolute -right-2 -top-3 text-xs text-orange-400/50">target</span>
+        <div className="grid lg:grid-cols-2 gap-8">
+          {/* Ball Animation */}
+          <div className="relative h-72 bg-white/5 rounded-2xl overflow-hidden">
+            {/* Grid pattern */}
+            <div className="absolute inset-0 grid-pattern opacity-10" />
+
+            {/* Start line */}
+            <div className="absolute top-8 left-0 right-0 h-px bg-white/10">
+              <span className="absolute left-2 -top-3 text-xs text-white/30">start</span>
+            </div>
+
+            {/* Target line */}
+            <div className="absolute bottom-12 left-0 right-0 h-px bg-orange-500/40">
+              <span className="absolute left-2 -top-3 text-xs text-orange-400/60">target</span>
+            </div>
+
+            {/* Vertical tracks */}
+            {PRESET_SPRINGS.map((_, i) => (
+              <div
+                key={i}
+                className="absolute top-8 bottom-12 w-px bg-white/5"
+                style={{ left: `${25 + i * 25}%` }}
+              />
+            ))}
+
+            {/* Balls */}
+            {PRESET_SPRINGS.map((spring, i) => {
+              const trackHeight = 200
+              const ballY = 32 + positions[i] * trackHeight
+
+              return (
+                <motion.div
+                  key={spring.name}
+                  className="absolute"
+                  style={{
+                    left: `${25 + i * 25}%`,
+                    top: ballY,
+                    transform: 'translate(-50%, -50%)',
+                  }}
+                >
+                  {/* Glow */}
+                  <div
+                    className={`absolute inset-0 rounded-full bg-gradient-to-r ${spring.color} blur-lg opacity-50`}
+                    style={{ width: 40, height: 40, margin: -8 }}
+                  />
+                  {/* Ball */}
+                  <div
+                    className={`w-6 h-6 rounded-full bg-gradient-to-br ${spring.color} shadow-lg`}
+                    style={{ boxShadow: `0 0 20px hsla(${spring.hue}, 100%, 50%, 0.4)` }}
+                  />
+                  {/* Label */}
+                  <span className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-xs text-white/40 whitespace-nowrap">
+                    {spring.name}
+                  </span>
+                </motion.div>
+              )
+            })}
+
+            {/* Time indicator */}
+            <div className="absolute bottom-2 right-3 text-xs text-white/30 font-mono">
+              {time.toFixed(2)}s
+            </div>
           </div>
 
-          {/* Spring line */}
-          <svg className="absolute inset-0 w-full h-full" preserveAspectRatio="none">
-            <line
-              x1="50%"
-              y1="16"
-              x2="50%"
-              y2={32 + position}
-              stroke="url(#springGradient)"
-              strokeWidth="2"
-              strokeDasharray="6 4"
+          {/* Real-time Graph */}
+          <div className="relative h-72 bg-white/5 rounded-2xl overflow-hidden p-4">
+            <div className="absolute top-4 left-4 text-xs text-white/30">Value over Time</div>
+            <canvas
+              ref={canvasRef}
+              width={400}
+              height={250}
+              className="w-full h-full"
             />
-            <defs>
-              <linearGradient id="springGradient" x1="0%" y1="0%" x2="0%" y2="100%">
-                <stop offset="0%" stopColor="rgba(251, 146, 60, 0.3)" />
-                <stop offset="100%" stopColor="rgba(251, 146, 60, 0.8)" />
-              </linearGradient>
-            </defs>
-          </svg>
+            {/* Y-axis labels */}
+            <div className="absolute left-2 top-6 text-xs text-white/20">1.0</div>
+            <div className="absolute left-2 bottom-6 text-xs text-white/20">0.0</div>
+          </div>
+        </div>
 
-          {/* Anchor point */}
-          <div className="absolute top-4 left-1/2 -translate-x-1/2 w-4 h-4 rounded-full bg-white/20 border-2 border-white/30" />
+        {/* Spring configs info */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-6">
+          {PRESET_SPRINGS.map((spring) => {
+            const zeta = spring.damping / (2 * Math.sqrt(spring.stiffness))
+            const dampingType = zeta < 1 ? 'Underdamped' : zeta === 1 ? 'Critical' : 'Overdamped'
 
-          {/* Ball */}
-          <motion.div
-            className="absolute left-1/2 -translate-x-1/2 w-10 h-10 rounded-full bg-gradient-to-br from-orange-400 to-amber-500 shadow-lg shadow-orange-500/30"
-            style={{ top: 24 + position }}
+            return (
+              <div key={spring.name} className="p-4 rounded-xl bg-white/5 border border-white/5">
+                <div className="flex items-center gap-2 mb-3">
+                  <div className={`w-2 h-2 rounded-full bg-gradient-to-r ${spring.color}`} />
+                  <span className="text-sm font-medium text-white">{spring.name}</span>
+                  <span className={`text-xs px-2 py-0.5 rounded-full ${
+                    zeta < 1 ? 'bg-green-500/20 text-green-400' :
+                    zeta === 1 ? 'bg-yellow-500/20 text-yellow-400' :
+                    'bg-red-500/20 text-red-400'
+                  }`}>
+                    {dampingType}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="text-white/40">Stiffness</div>
+                  <div className="text-white/70 font-mono">{spring.stiffness}</div>
+                  <div className="text-white/40">Damping</div>
+                  <div className="text-white/70 font-mono">{spring.damping}</div>
+                  <div className="text-white/40">Damping Ratio</div>
+                  <div className="text-white/70 font-mono">ζ = {zeta.toFixed(2)}</div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================================
+// STAGGER DEMO - Show stagger() animation with list items
+// ============================================================================
+
+const STAGGER_ITEMS = [
+  { icon: Zap, label: 'Lightning Fast', color: 'from-yellow-400 to-orange-500' },
+  { icon: Feather, label: 'Zero Dependencies', color: 'from-green-400 to-emerald-500' },
+  { icon: Layers, label: 'Full Orchestration', color: 'from-purple-400 to-pink-500' },
+  { icon: MousePointer2, label: 'Gesture Ready', color: 'from-blue-400 to-cyan-500' },
+  { icon: Waves, label: 'Smooth Interpolation', color: 'from-rose-400 to-red-500' },
+  { icon: Cpu, label: 'React Integration', color: 'from-indigo-400 to-violet-500' },
+]
+
+function StaggerDemo() {
+  const [isAnimating, setIsAnimating] = useState(false)
+  const [visibleItems, setVisibleItems] = useState<number[]>([])
+  const [staggerDelay, setStaggerDelay] = useState(100)
+
+  const runStagger = useCallback(() => {
+    setIsAnimating(true)
+    setVisibleItems([])
+
+    STAGGER_ITEMS.forEach((_, index) => {
+      setTimeout(() => {
+        setVisibleItems(prev => [...prev, index])
+      }, index * staggerDelay)
+    })
+
+    setTimeout(() => {
+      setIsAnimating(false)
+    }, STAGGER_ITEMS.length * staggerDelay + 500)
+  }, [staggerDelay])
+
+  const reset = () => {
+    setVisibleItems([])
+    setIsAnimating(false)
+  }
+
+  return (
+    <div className="glass rounded-3xl p-8 relative overflow-hidden">
+      <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-bl from-purple-500/10 to-transparent rounded-full blur-3xl" />
+      <div className="absolute bottom-0 left-0 w-48 h-48 bg-gradient-to-tr from-cyan-500/10 to-transparent rounded-full blur-3xl" />
+
+      <div className="relative">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+          <div>
+            <h3 className="text-xl font-bold text-white mb-1">Stagger Animation</h3>
+            <p className="text-white/50 text-sm">Create cascading animations with customizable delays</p>
+          </div>
+          <div className="flex gap-3">
+            <Button
+              onClick={runStagger}
+              disabled={isAnimating}
+              className="gap-2 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white border-0"
+            >
+              <Play className="w-4 h-4" />
+              {isAnimating ? 'Running...' : 'Stagger'}
+            </Button>
+            <Button
+              onClick={reset}
+              variant="outline"
+              className="gap-2 border-white/10 hover:bg-white/5"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Reset
+            </Button>
+          </div>
+        </div>
+
+        <div className="mb-6 flex items-center gap-4">
+          <span className="text-sm text-white/50">Delay:</span>
+          <input
+            type="range"
+            min="50"
+            max="300"
+            value={staggerDelay}
+            onChange={(e) => setStaggerDelay(Number(e.target.value))}
+            className="flex-1 h-2 bg-white/10 rounded-full appearance-none cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-gradient-to-r [&::-webkit-slider-thumb]:from-purple-500 [&::-webkit-slider-thumb]:to-pink-500"
           />
+          <span className="text-sm text-white/70 font-mono w-16">{staggerDelay}ms</span>
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+          {STAGGER_ITEMS.map((item, index) => {
+            const isVisible = visibleItems.includes(index)
+            const Icon = item.icon
+
+            return (
+              <motion.div
+                key={index}
+                initial={{ opacity: 0, y: 30, scale: 0.8 }}
+                animate={isVisible ? { opacity: 1, y: 0, scale: 1 } : { opacity: 0, y: 30, scale: 0.8 }}
+                transition={{ type: 'spring', stiffness: 400, damping: 15 }}
+                className="relative group"
+              >
+                <div className={`absolute inset-0 rounded-xl bg-gradient-to-r ${item.color} opacity-0 group-hover:opacity-20 transition-opacity blur-xl`} />
+                <div className="relative bg-white/5 rounded-xl p-4 border border-white/5 group-hover:border-white/10 transition-colors">
+                  <div className={`w-10 h-10 rounded-lg bg-gradient-to-r ${item.color} flex items-center justify-center mb-3`}>
+                    <Icon className="w-5 h-5 text-white" />
+                  </div>
+                  <span className="text-sm text-white/70">{item.label}</span>
+                </div>
+              </motion.div>
+            )
+          })}
+        </div>
+
+        <div className="mt-6 p-4 rounded-xl bg-black/30 border border-white/5">
+          <code className="text-xs text-white/60 font-mono">
+            <span className="text-purple-400">stagger</span>
+            <span className="text-white/40">(</span>
+            <span className="text-cyan-400">animations</span>
+            <span className="text-white/40">, {'{'}</span>
+            <span className="text-orange-400"> delay</span>
+            <span className="text-white/40">:</span>
+            <span className="text-green-400"> {staggerDelay}</span>
+            <span className="text-white/40"> {'}'})</span>
+          </code>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================================
+// COLOR INTERPOLATION DEMO
+// ============================================================================
+
+const COLOR_PRESETS = [
+  { name: 'Sunset', colors: ['#FF6B6B', '#FFA500', '#FFD93D'] },
+  { name: 'Ocean', colors: ['#0077B6', '#00B4D8', '#90E0EF'] },
+  { name: 'Forest', colors: ['#2D6A4F', '#40916C', '#95D5B2'] },
+  { name: 'Neon', colors: ['#FF00FF', '#8B5CF6', '#06B6D4'] },
+]
+
+function hexToRgbObj(hex: string): { r: number; g: number; b: number } {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex)
+  return result ? {
+    r: parseInt(result[1], 16),
+    g: parseInt(result[2], 16),
+    b: parseInt(result[3], 16),
+  } : { r: 0, g: 0, b: 0 }
+}
+
+function ColorInterpolationDemo() {
+  const [progress, setProgress] = useState(0)
+  const [selectedPreset, setSelectedPreset] = useState(0)
+  const [isAnimating, setIsAnimating] = useState(false)
+  const animationRef = useRef<number | null>(null)
+  const startTimeRef = useRef<number>(0)
+
+  const colors = COLOR_PRESETS[selectedPreset].colors
+
+  const interpolateColorValue = useCallback((t: number, colorArr: string[]) => {
+    if (colorArr.length === 2) {
+      const c1 = hexToRgbObj(colorArr[0])
+      const c2 = hexToRgbObj(colorArr[1])
+      const r = Math.round(c1.r + (c2.r - c1.r) * t)
+      const g = Math.round(c1.g + (c2.g - c1.g) * t)
+      const b = Math.round(c1.b + (c2.b - c1.b) * t)
+      return `rgb(${r}, ${g}, ${b})`
+    }
+    if (t < 0.5) {
+      const localT = t * 2
+      const c1 = hexToRgbObj(colorArr[0])
+      const c2 = hexToRgbObj(colorArr[1])
+      const r = Math.round(c1.r + (c2.r - c1.r) * localT)
+      const g = Math.round(c1.g + (c2.g - c1.g) * localT)
+      const b = Math.round(c1.b + (c2.b - c1.b) * localT)
+      return `rgb(${r}, ${g}, ${b})`
+    } else {
+      const localT = (t - 0.5) * 2
+      const c1 = hexToRgbObj(colorArr[1])
+      const c2 = hexToRgbObj(colorArr[2])
+      const r = Math.round(c1.r + (c2.r - c1.r) * localT)
+      const g = Math.round(c1.g + (c2.g - c1.g) * localT)
+      const b = Math.round(c1.b + (c2.b - c1.b) * localT)
+      return `rgb(${r}, ${g}, ${b})`
+    }
+  }, [])
+
+  const animate = useCallback(() => {
+    setIsAnimating(true)
+    setProgress(0)
+    startTimeRef.current = 0
+
+    const run = (timestamp: number) => {
+      if (!startTimeRef.current) startTimeRef.current = timestamp
+      const elapsed = (timestamp - startTimeRef.current) / 2000
+
+      if (elapsed < 1) {
+        setProgress(elapsed)
+        animationRef.current = requestAnimationFrame(run)
+      } else {
+        setProgress(1)
+        setIsAnimating(false)
+      }
+    }
+
+    animationRef.current = requestAnimationFrame(run)
+  }, [])
+
+  const reset = () => {
+    if (animationRef.current) cancelAnimationFrame(animationRef.current)
+    setProgress(0)
+    setIsAnimating(false)
+  }
+
+  useEffect(() => {
+    return () => {
+      if (animationRef.current) cancelAnimationFrame(animationRef.current)
+    }
+  }, [])
+
+  const currentColor = interpolateColorValue(progress, colors)
+
+  return (
+    <div className="glass rounded-3xl p-8 relative overflow-hidden">
+      <div
+        className="absolute top-0 right-0 w-96 h-96 rounded-full blur-3xl opacity-20 transition-colors duration-300"
+        style={{ background: currentColor }}
+      />
+
+      <div className="relative">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8">
+          <div>
+            <h3 className="text-xl font-bold text-white mb-1">Color Interpolation</h3>
+            <p className="text-white/50 text-sm">Smoothly transition between colors with spring physics</p>
+          </div>
+          <div className="flex gap-3">
+            <Button
+              onClick={animate}
+              disabled={isAnimating}
+              className="gap-2 text-white border-0"
+              style={{ background: `linear-gradient(to right, ${colors[0]}, ${colors[colors.length - 1]})` }}
+            >
+              <Play className="w-4 h-4" />
+              {isAnimating ? 'Running...' : 'Animate'}
+            </Button>
+            <Button
+              onClick={reset}
+              variant="outline"
+              className="gap-2 border-white/10 hover:bg-white/5"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Reset
+            </Button>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2 mb-8">
+          {COLOR_PRESETS.map((preset, i) => (
+            <button
+              key={preset.name}
+              onClick={() => { setSelectedPreset(i); reset() }}
+              className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+                selectedPreset === i
+                  ? 'bg-white/20 text-white'
+                  : 'bg-white/5 text-white/60 hover:bg-white/10'
+              }`}
+              style={{
+                borderWidth: 2,
+                borderStyle: 'solid',
+                borderImage: `linear-gradient(to right, ${preset.colors.join(', ')}) 1`,
+              }}
+            >
+              {preset.name}
+            </button>
+          ))}
+        </div>
+
+        <div className="space-y-6">
+          <div className="relative h-32 rounded-2xl overflow-hidden">
+            <div
+              className="absolute inset-0 transition-colors duration-100"
+              style={{ background: currentColor }}
+            />
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-center">
+                <div className="text-2xl font-bold text-white drop-shadow-lg">{(progress * 100).toFixed(0)}%</div>
+                <div className="text-sm text-white/80 font-mono drop-shadow">{currentColor}</div>
+              </div>
+            </div>
+          </div>
+
+          <div className="relative">
+            <div
+              className="h-4 rounded-full"
+              style={{ background: `linear-gradient(to right, ${colors.join(', ')})` }}
+            />
+            <motion.div
+              className="absolute top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white shadow-lg border-2"
+              style={{
+                left: `calc(${progress * 100}% - 12px)`,
+                borderColor: currentColor,
+              }}
+            />
+          </div>
+
+          <div className="flex justify-between">
+            {colors.map((color, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <div
+                  className="w-6 h-6 rounded-full shadow-lg"
+                  style={{ background: color }}
+                />
+                <span className="text-xs text-white/50 font-mono">{color}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="mt-6 p-4 rounded-xl bg-black/30 border border-white/5">
+          <code className="text-xs text-white/60 font-mono">
+            <span className="text-purple-400">interpolateColor</span>
+            <span className="text-white/40">(</span>
+            <span className="text-green-400">{progress.toFixed(2)}</span>
+            <span className="text-white/40">, [</span>
+            <span className="text-orange-400">'{colors[0]}'</span>
+            <span className="text-white/40">, </span>
+            <span className="text-orange-400">'{colors[colors.length - 1]}'</span>
+            <span className="text-white/40">])</span>
+          </code>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================================
+// INTERACTIVE DRAG DEMO - Rubber band physics
+// ============================================================================
+
+function DragDemo() {
+  const [position, setPosition] = useState({ x: 0, y: 0 })
+  const [velocity, setVelocity] = useState({ x: 0, y: 0 })
+  const [isDragging, setIsDragging] = useState(false)
+  const [trail, setTrail] = useState<{ x: number; y: number }[]>([])
+  const containerRef = useRef<HTMLDivElement>(null)
+  const bounds = { left: -150, right: 150, top: -100, bottom: 100 }
+
+  const handleDrag = (_: unknown, info: { point: { x: number; y: number }; delta: { x: number; y: number } }) => {
+    if (!containerRef.current) return
+
+    const rect = containerRef.current.getBoundingClientRect()
+    const centerX = rect.left + rect.width / 2
+    const centerY = rect.top + rect.height / 2
+
+    let newX = info.point.x - centerX
+    let newY = info.point.y - centerY
+
+    const rubberBand = (value: number, min: number, max: number) => {
+      if (value < min) {
+        const overshoot = min - value
+        return min - overshoot * 0.3
+      }
+      if (value > max) {
+        const overshoot = value - max
+        return max + overshoot * 0.3
+      }
+      return value
+    }
+
+    newX = rubberBand(newX, bounds.left, bounds.right)
+    newY = rubberBand(newY, bounds.top, bounds.bottom)
+
+    setPosition({ x: newX, y: newY })
+    setVelocity({ x: info.delta.x * 10, y: info.delta.y * 10 })
+
+    setTrail(prev => {
+      const newTrail = [...prev, { x: newX, y: newY }]
+      if (newTrail.length > 20) newTrail.shift()
+      return newTrail
+    })
+  }
+
+  const handleDragEnd = () => {
+    setIsDragging(false)
+    const springBack = () => {
+      setPosition(prev => {
+        let { x, y } = prev
+        const stiffness = 0.15
+        const damping = 0.8
+
+        if (x < bounds.left) x += (bounds.left - x) * stiffness
+        else if (x > bounds.right) x += (bounds.right - x) * stiffness
+
+        if (y < bounds.top) y += (bounds.top - y) * stiffness
+        else if (y > bounds.bottom) y += (bounds.bottom - y) * stiffness
+
+        const isSettled = Math.abs(x) < 1 && Math.abs(y) < 1
+        if (!isSettled) {
+          requestAnimationFrame(springBack)
+        }
+
+        return { x: x * damping, y: y * damping }
+      })
+    }
+
+    requestAnimationFrame(springBack)
+    setTimeout(() => setTrail([]), 500)
+  }
+
+  return (
+    <div className="glass rounded-3xl p-8 relative overflow-hidden">
+      <div className="absolute top-0 left-0 w-64 h-64 bg-gradient-to-br from-blue-500/10 to-transparent rounded-full blur-3xl" />
+      <div className="absolute bottom-0 right-0 w-48 h-48 bg-gradient-to-tl from-green-500/10 to-transparent rounded-full blur-3xl" />
+
+      <div className="relative">
+        <div className="mb-8">
+          <h3 className="text-xl font-bold text-white mb-1">Drag Spring with Rubber Band</h3>
+          <p className="text-white/50 text-sm">Drag the ball beyond bounds to feel the elastic resistance</p>
+        </div>
+
+        <div
+          ref={containerRef}
+          className="relative h-64 bg-white/5 rounded-2xl overflow-hidden"
+        >
+          <div className="absolute inset-0 grid-pattern opacity-10" />
+          <div className="absolute inset-8 border border-dashed border-white/10 rounded-xl" />
+          <div className="absolute top-6 left-1/2 -translate-x-1/2 text-xs text-white/30">bounds</div>
+
+          {trail.map((point, i) => (
+            <div
+              key={i}
+              className="absolute w-6 h-6 rounded-full bg-gradient-to-br from-blue-400/20 to-cyan-400/20"
+              style={{
+                left: '50%',
+                top: '50%',
+                transform: `translate(calc(-50% + ${point.x}px), calc(-50% + ${point.y}px))`,
+                opacity: (i / trail.length) * 0.5,
+              }}
+            />
+          ))}
+
+          <motion.div
+            drag
+            dragMomentum={false}
+            dragElastic={0}
+            onDragStart={() => setIsDragging(true)}
+            onDrag={handleDrag}
+            onDragEnd={handleDragEnd}
+            animate={{
+              x: position.x,
+              y: position.y,
+              scale: isDragging ? 1.2 : 1,
+            }}
+            transition={{
+              x: { type: 'tween', duration: 0 },
+              y: { type: 'tween', duration: 0 },
+              scale: { type: 'spring', stiffness: 500, damping: 25 },
+            }}
+            className="absolute left-1/2 top-1/2 -ml-6 -mt-6 cursor-grab active:cursor-grabbing z-10"
+          >
+            <div className="absolute inset-0 rounded-full bg-gradient-to-br from-blue-400 to-cyan-400 blur-xl opacity-50" style={{ width: 64, height: 64, margin: -8 }} />
+            <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-cyan-500 shadow-lg flex items-center justify-center">
+              <MousePointer2 className="w-5 h-5 text-white" />
+            </div>
+          </motion.div>
+
+          <div className="absolute bottom-3 right-3 text-xs text-white/30 font-mono">
+            x: {position.x.toFixed(0)} y: {position.y.toFixed(0)}
+          </div>
+
+          {isDragging && (
+            <div className="absolute bottom-3 left-3 text-xs text-cyan-400/60 font-mono">
+              v: ({velocity.x.toFixed(0)}, {velocity.y.toFixed(0)})
+            </div>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 mt-6">
+          <div className="p-4 rounded-xl bg-white/5 border border-white/5">
+            <div className="text-sm text-white/70 mb-2">Features</div>
+            <ul className="text-xs text-white/50 space-y-1">
+              <li>• Rubber band elasticity</li>
+              <li>• Momentum on release</li>
+              <li>• Spring back to bounds</li>
+            </ul>
+          </div>
+          <div className="p-4 rounded-xl bg-white/5 border border-white/5">
+            <div className="text-sm text-white/70 mb-2">SpringKit Code</div>
+            <code className="text-xs text-white/50 font-mono">
+              createDragSpring(el, {'{'}<br />
+              &nbsp;&nbsp;rubberBand: true,<br />
+              &nbsp;&nbsp;bounds: {'{ ... }'}<br />
+              {'}'})
+            </code>
+          </div>
         </div>
       </div>
     </div>
@@ -906,6 +1792,74 @@ const drag = createDragSpring(element, {
             >
               <PhysicsPlayground />
             </motion.div>
+          </div>
+        </section>
+
+        {/* Orchestration Section - Stagger Demo */}
+        <section className="relative py-32 px-4">
+          <div className="max-w-5xl mx-auto">
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.8 }}
+              className="text-center mb-16"
+            >
+              <h2 className="text-4xl md:text-5xl font-bold text-white mb-6">
+                Orchestrate with Ease
+              </h2>
+              <p className="text-white/50 text-lg max-w-2xl mx-auto">
+                Create complex animation sequences with stagger, parallel, and sequential orchestration.
+              </p>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0, y: 40 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.8, delay: 0.2 }}
+            >
+              <StaggerDemo />
+            </motion.div>
+          </div>
+        </section>
+
+        {/* Color & Gesture Demos */}
+        <section className="relative py-32 px-4 bg-black/20">
+          <div className="max-w-6xl mx-auto">
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.8 }}
+              className="text-center mb-16"
+            >
+              <h2 className="text-4xl md:text-5xl font-bold text-white mb-6">
+                Rich Interpolation & Gestures
+              </h2>
+              <p className="text-white/50 text-lg max-w-2xl mx-auto">
+                Interpolate between any values including colors, and build fluid gesture interactions.
+              </p>
+            </motion.div>
+
+            <div className="grid lg:grid-cols-2 gap-8">
+              <motion.div
+                initial={{ opacity: 0, x: -30 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.6 }}
+              >
+                <ColorInterpolationDemo />
+              </motion.div>
+              <motion.div
+                initial={{ opacity: 0, x: 30 }}
+                whileInView={{ opacity: 1, x: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.6, delay: 0.1 }}
+              >
+                <DragDemo />
+              </motion.div>
+            </div>
           </div>
         </section>
 
