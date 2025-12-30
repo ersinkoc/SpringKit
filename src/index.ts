@@ -16,6 +16,7 @@ export {
 export { sequence, parallel, stagger } from './animation/sequence.js'
 export { createTrail } from './animation/trail.js'
 export { decay } from './animation/decay.js'
+export { keyframes, parseKeyframeArray, isKeyframeArray } from './animation/keyframes.js'
 
 // ============ Interpolation ============
 
@@ -44,6 +45,20 @@ export {
   clearWarnings,
 } from './utils/warnings.js'
 
+// ============ MotionValue ============
+
+export {
+  MotionValue,
+  createMotionValue,
+  transformValue,
+  mapRange as motionMapRange,
+} from './core/MotionValue.js'
+export type {
+  MotionValueSubscriber,
+  MotionValueEvent,
+  MotionValueOptions,
+} from './core/MotionValue.js'
+
 // ============ Physics Utilities ============
 
 export {
@@ -58,6 +73,24 @@ export {
 // ============ Global Loop ============
 
 export { globalLoop, AnimationState } from './animation/loop.js'
+
+// ============ SVG Animations ============
+
+export {
+  createPathAnimation,
+  getPathLength,
+  preparePathForAnimation,
+  getPointAtProgress,
+} from './svg/path.js'
+
+// ============ Layout Animations (FLIP) ============
+
+export {
+  measureElement,
+  createFlip,
+  flip,
+  flipBatch,
+} from './layout/flip.js'
 
 // ============ Types ============
 

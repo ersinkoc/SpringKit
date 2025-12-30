@@ -1,14 +1,31 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import {
   Play, RotateCcw, GripVertical, ChevronRight, Sparkles, Layers, Zap,
   MousePointer2, ArrowRight, Activity, Target, Gauge, Box,
   Atom, Flame, Waves, Heart, Star, Moon, Sun, Cloud, Snowflake, Music,
   Rocket, Globe, Cpu, Eye, Shuffle, X, Check, Bell, Mail, Settings,
-  User, ShoppingCart, CreditCard, Lock, Unlock, Volume2, VolumeX,
-  Wifi, WifiOff, Battery, BatteryCharging, Download, Upload, RefreshCw,
-  MoreHorizontal, Menu, ChevronDown, ChevronUp, Plus, Minus, Send
+  User, ShoppingCart, CreditCard, Volume2,
+  Wifi, RefreshCw,
+  Menu, Plus
 } from 'lucide-react'
-import { useSpring, useDrag, useTrail } from '@oxog/springkit/react'
+import {
+  useSpring,
+  useDrag,
+  useTrail,
+  AnimatePresence,
+  Animated,
+  useMotionValue,
+  useMotionValueState,
+  useTransform,
+  useInView,
+  useScroll,
+  useScrollVelocity,
+  useReducedMotion,
+  useHover,
+  useTap,
+  useFocus,
+  useGestureAnimation,
+} from '@oxog/springkit/react'
 import {
   spring,
   springPresets,
@@ -27,7 +44,7 @@ import {
 // ANIMATED DIV COMPONENT - Using SpringKit instead of framer-motion
 // ============================================================================
 
-interface AnimatedDivProps extends React.HTMLAttributes<HTMLDivElement> {
+interface AnimatedDivProps extends Omit<React.HTMLAttributes<HTMLDivElement>, 'ref'> {
   initial?: { opacity?: number; y?: number; x?: number; scale?: number }
   animate?: { opacity?: number; y?: number; x?: number; scale?: number }
   whileInView?: { opacity?: number; y?: number; x?: number; scale?: number }
@@ -35,6 +52,7 @@ interface AnimatedDivProps extends React.HTMLAttributes<HTMLDivElement> {
   viewport?: { once?: boolean; margin?: string }
   transition?: { duration?: number; delay?: number; stiffness?: number; damping?: number }
   children?: React.ReactNode
+  ref?: React.RefObject<HTMLDivElement | null>
 }
 
 function AnimatedDiv({
@@ -47,9 +65,11 @@ function AnimatedDiv({
   children,
   className,
   style,
+  ref: externalRef,
   ...rest
 }: AnimatedDivProps) {
-  const ref = useRef<HTMLDivElement>(null)
+  const internalRef = useRef<HTMLDivElement>(null)
+  const ref = externalRef || internalRef
   const [isInView, setIsInView] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
   const hasAnimated = useRef(false)
@@ -258,7 +278,7 @@ function SpectacularHero() {
           <AnimatedDiv
             initial={{ opacity: 0, scale: 0.8 }}
             animate={{ opacity: 1, scale: 1 }}
-            transition={{ delay: 0.3, type: 'spring', stiffness: 200, damping: 20 }}
+            transition={{ delay: 0.3, stiffness: 200, damping: 20 }}
             ref={containerRef}
             onMouseMove={handleMouseMove}
             onMouseLeave={() => {
@@ -1184,7 +1204,7 @@ function NotificationDemo() {
 
       <div className="relative h-48 bg-black/20 rounded-xl overflow-hidden">
         <div className="absolute top-4 right-4 left-4 space-y-2">
-          {notifications.map((notif, i) => {
+          {notifications.map((notif) => {
             const Icon = icons[notif.type]
             return (
               <NotificationToast
@@ -2795,6 +2815,529 @@ function BallDropDemo() {
   )
 }
 
+// ============================================================================
+// ANIMATE PRESENCE DEMO - Exit animations for unmounting components
+// ============================================================================
+
+function AnimatePresenceDemo() {
+  const [items, setItems] = useState([
+    { id: 1, text: 'Item 1', color: 'from-orange-500 to-amber-500' },
+    { id: 2, text: 'Item 2', color: 'from-blue-500 to-cyan-500' },
+    { id: 3, text: 'Item 3', color: 'from-purple-500 to-pink-500' },
+  ])
+  const [nextId, setNextId] = useState(4)
+
+  const addItem = () => {
+    const colors = [
+      'from-orange-500 to-amber-500',
+      'from-blue-500 to-cyan-500',
+      'from-purple-500 to-pink-500',
+      'from-green-500 to-emerald-500',
+      'from-red-500 to-rose-500',
+    ]
+    setItems(prev => [
+      ...prev,
+      { id: nextId, text: `Item ${nextId}`, color: colors[nextId % colors.length] }
+    ])
+    setNextId(id => id + 1)
+  }
+
+  const removeItem = (id: number) => {
+    setItems(prev => prev.filter(item => item.id !== id))
+  }
+
+  const shuffleItems = () => {
+    setItems(prev => [...prev].sort(() => Math.random() - 0.5))
+  }
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500/20 to-amber-500/20 flex items-center justify-center">
+            <Sparkles className="w-5 h-5 text-orange-400" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-white">AnimatePresence</h3>
+            <p className="text-xs text-white/40">Exit animations for unmounting</p>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={addItem}
+            className="p-2 bg-green-500/20 hover:bg-green-500/30 text-green-400 rounded-lg transition-colors"
+            title="Add item"
+          >
+            <Plus className="w-4 h-4" />
+          </button>
+          <button
+            onClick={shuffleItems}
+            className="p-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 rounded-lg transition-colors"
+            title="Shuffle items"
+          >
+            <Shuffle className="w-4 h-4" />
+          </button>
+        </div>
+      </div>
+
+      <div className="min-h-[200px] flex flex-col gap-3">
+        <AnimatePresence>
+          {items.map(item => (
+            <Animated.div
+              key={item.id}
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.8 }}
+              config={{ stiffness: 300, damping: 20 }}
+              className={`flex items-center justify-between p-4 rounded-xl bg-gradient-to-r ${item.color} text-white`}
+            >
+              <span className="font-medium">{item.text}</span>
+              <button
+                onClick={() => removeItem(item.id)}
+                className="p-1.5 bg-white/20 hover:bg-white/30 rounded-lg transition-colors"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </Animated.div>
+          ))}
+        </AnimatePresence>
+
+        {items.length === 0 && (
+          <div className="flex-1 flex items-center justify-center text-white/30 text-sm">
+            Click + to add items
+          </div>
+        )}
+      </div>
+
+      <p className="text-center text-white/30 text-xs mt-4">
+        Items animate in and out with spring physics
+      </p>
+    </div>
+  )
+}
+
+// ============================================================================
+// MOTION VALUE DEMO - High-performance animations without re-renders
+// ============================================================================
+
+function MotionValueDemo() {
+  const x = useMotionValue(0)
+  const y = useMotionValue(0)
+
+  // Transform x position to rotation and scale
+  const rotate = useTransform(x, [-150, 0, 150], [-45, 0, 45])
+  const scale = useTransform(x, [-150, 0, 150], [0.8, 1, 0.8])
+  const opacity = useTransform(y, [-100, 0, 100], [0.3, 1, 0.3])
+  const backgroundColor = useTransform(
+    x,
+    [-150, 0, 150],
+    ['#ef4444', '#f97316', '#22c55e']
+  )
+
+  // Get reactive state for display
+  const xValue = useMotionValueState(x)
+  const rotateValue = useMotionValueState(rotate)
+
+  const containerRef = useRef<HTMLDivElement>(null)
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!containerRef.current) return
+    const rect = containerRef.current.getBoundingClientRect()
+    const centerX = rect.left + rect.width / 2
+    const centerY = rect.top + rect.height / 2
+    x.set(e.clientX - centerX)
+    y.set(e.clientY - centerY)
+  }
+
+  const handleMouseLeave = () => {
+    x.set(0)
+    y.set(0)
+  }
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 flex items-center justify-center">
+          <Activity className="w-5 h-5 text-purple-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-white">useMotionValue</h3>
+          <p className="text-xs text-white/40">No re-renders, 60fps animations</p>
+        </div>
+      </div>
+
+      <div
+        ref={containerRef}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+        className="h-48 bg-black/20 rounded-xl flex items-center justify-center relative overflow-hidden cursor-pointer"
+      >
+        <div
+          className="w-20 h-20 rounded-2xl flex items-center justify-center text-white font-bold shadow-2xl"
+          style={{
+            transform: `translateX(${x.get()}px) translateY(${y.get()}px) rotate(${rotate.get()}deg) scale(${scale.get()})`,
+            opacity: opacity.get(),
+            backgroundColor: backgroundColor.get(),
+          }}
+          ref={(el) => {
+            if (!el) return
+            x.subscribe((xVal) => {
+              const rotVal = (xVal / 150) * 45
+              const scaleVal = 1 - Math.abs(xVal / 150) * 0.2
+              el.style.transform = `translateX(${xVal}px) translateY(${y.get()}px) rotate(${rotVal}deg) scale(${scaleVal})`
+            })
+            y.subscribe((yVal) => {
+              el.style.opacity = String(1 - Math.abs(yVal / 100) * 0.7)
+            })
+            backgroundColor.subscribe((color) => {
+              el.style.backgroundColor = color
+            })
+          }}
+        >
+          <Zap className="w-8 h-8" />
+        </div>
+
+        <div className="absolute bottom-3 left-3 right-3 flex justify-between text-xs font-mono">
+          <span className="text-white/40">x: {xValue.toFixed(0)}</span>
+          <span className="text-white/40">rotate: {rotateValue.toFixed(1)}°</span>
+        </div>
+      </div>
+
+      <p className="text-center text-white/30 text-xs mt-4">
+        Move mouse - DOM updates without React re-renders
+      </p>
+    </div>
+  )
+}
+
+// ============================================================================
+// SCROLL PROGRESS DEMO - Scroll-linked animations
+// ============================================================================
+
+function ScrollProgressDemo() {
+  const { scrollYProgress } = useScroll()
+  const scrollVelocity = useScrollVelocity()
+
+  const progressValue = useMotionValueState(scrollYProgress)
+  const velocityValue = useMotionValueState(scrollVelocity)
+
+  // Transform scroll progress to various effects
+  const scaleX = useTransform(scrollYProgress, [0, 1], [0, 1])
+  const backgroundColor = useTransform(
+    scrollYProgress,
+    [0, 0.5, 1],
+    ['#3b82f6', '#8b5cf6', '#ec4899']
+  )
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500/20 to-indigo-500/20 flex items-center justify-center">
+          <Gauge className="w-5 h-5 text-blue-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-white">useScroll</h3>
+          <p className="text-xs text-white/40">Scroll-linked progress & velocity</p>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        {/* Progress bar */}
+        <div>
+          <div className="flex justify-between text-xs text-white/40 mb-2">
+            <span>Scroll Progress</span>
+            <span>{(progressValue * 100).toFixed(0)}%</span>
+          </div>
+          <div className="h-3 bg-black/30 rounded-full overflow-hidden">
+            <div
+              className="h-full rounded-full transition-none"
+              ref={(el) => {
+                if (!el) return
+                scaleX.subscribe((val) => {
+                  el.style.transform = `scaleX(${val})`
+                  el.style.transformOrigin = 'left'
+                })
+                backgroundColor.subscribe((color) => {
+                  el.style.backgroundColor = color
+                })
+              }}
+              style={{
+                transform: `scaleX(${scaleX.get()})`,
+                transformOrigin: 'left',
+                backgroundColor: backgroundColor.get(),
+              }}
+            />
+          </div>
+        </div>
+
+        {/* Velocity indicator */}
+        <div>
+          <div className="flex justify-between text-xs text-white/40 mb-2">
+            <span>Scroll Velocity</span>
+            <span className={velocityValue > 0 ? 'text-green-400' : velocityValue < 0 ? 'text-red-400' : ''}>
+              {velocityValue.toFixed(0)} px/s
+            </span>
+          </div>
+          <div className="h-8 bg-black/30 rounded-lg flex items-center justify-center relative overflow-hidden">
+            <div
+              className="absolute inset-y-0 w-1 bg-white/50 rounded"
+              style={{ left: '50%' }}
+            />
+            <div
+              className="w-4 h-4 rounded-full bg-gradient-to-r from-orange-500 to-amber-500 shadow-lg"
+              ref={(el) => {
+                if (!el) return
+                scrollVelocity.subscribe((vel) => {
+                  const clamped = Math.max(-500, Math.min(500, vel))
+                  el.style.transform = `translateX(${clamped / 5}px)`
+                })
+              }}
+            />
+          </div>
+        </div>
+      </div>
+
+      <p className="text-center text-white/30 text-xs mt-4">
+        Scroll the page to see real-time tracking
+      </p>
+    </div>
+  )
+}
+
+// ============================================================================
+// IN-VIEW DEMO - Viewport detection with animations
+// ============================================================================
+
+function InViewDemo() {
+  const { ref, isInView, progress } = useInView({
+    amount: 0.5,
+    once: false,
+  })
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500/20 to-emerald-500/20 flex items-center justify-center">
+          <Eye className="w-5 h-5 text-green-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-white">useInView</h3>
+          <p className="text-xs text-white/40">Trigger animations on visibility</p>
+        </div>
+      </div>
+
+      <div className="h-48 bg-black/20 rounded-xl overflow-y-auto p-4">
+        <div className="h-32" /> {/* Spacer */}
+
+        <div
+          ref={ref}
+          className={`
+            p-6 rounded-xl border-2 transition-all duration-500
+            ${isInView
+              ? 'bg-gradient-to-r from-green-500/20 to-emerald-500/20 border-green-500/50 scale-100 opacity-100'
+              : 'bg-black/30 border-white/10 scale-95 opacity-50'
+            }
+          `}
+        >
+          <div className="flex items-center gap-3">
+            <div className={`w-3 h-3 rounded-full ${isInView ? 'bg-green-500 animate-pulse' : 'bg-white/30'}`} />
+            <span className="text-white font-medium">
+              {isInView ? 'Element is visible!' : 'Scroll to reveal...'}
+            </span>
+          </div>
+          <div className="mt-3 text-xs text-white/50">
+            Visibility: {(progress * 100).toFixed(0)}%
+          </div>
+        </div>
+
+        <div className="h-32" /> {/* Spacer */}
+      </div>
+
+      <div className="flex items-center justify-center gap-4 mt-4">
+        <div className={`flex items-center gap-2 text-xs ${isInView ? 'text-green-400' : 'text-white/40'}`}>
+          <div className={`w-2 h-2 rounded-full ${isInView ? 'bg-green-500' : 'bg-white/30'}`} />
+          isInView: {String(isInView)}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================================
+// GESTURE HOOKS DEMO - Hover, Tap, Focus states
+// ============================================================================
+
+function GestureHooksDemo() {
+  const hover1 = useHover()
+  const hover2 = useHover()
+  const tap = useTap()
+  const focus = useFocus()
+
+  // Animated gesture states
+  const gestureAnim = useGestureAnimation({
+    default: { scale: 1, y: 0 },
+    hover: { scale: 1.05, y: -2 },
+    tap: { scale: 0.95, y: 0 },
+  })
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500/20 to-sky-500/20 flex items-center justify-center">
+          <MousePointer2 className="w-5 h-5 text-cyan-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-white">Gesture Hooks</h3>
+          <p className="text-xs text-white/40">useHover, useTap, useFocus</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        {/* Hover Demo */}
+        <div
+          ref={hover1.ref}
+          {...hover1.handlers}
+          className={`
+            p-4 rounded-xl border-2 transition-all cursor-pointer
+            ${hover1.isHovered
+              ? 'bg-purple-500/20 border-purple-500/50 scale-105'
+              : 'bg-black/20 border-white/10'
+            }
+          `}
+        >
+          <Heart className={`w-6 h-6 mx-auto mb-2 ${hover1.isHovered ? 'text-purple-400' : 'text-white/40'}`} />
+          <div className="text-center text-xs text-white/60">
+            {hover1.isHovered ? 'Hovering!' : 'Hover me'}
+          </div>
+        </div>
+
+        {/* Tap Demo */}
+        <div
+          ref={tap.ref}
+          {...tap.handlers}
+          className={`
+            p-4 rounded-xl border-2 transition-all cursor-pointer select-none
+            ${tap.isPressed
+              ? 'bg-orange-500/20 border-orange-500/50 scale-95'
+              : 'bg-black/20 border-white/10'
+            }
+          `}
+        >
+          <Star className={`w-6 h-6 mx-auto mb-2 ${tap.isPressed ? 'text-orange-400' : 'text-white/40'}`} />
+          <div className="text-center text-xs text-white/60">
+            {tap.isPressed ? 'Pressed!' : 'Press me'}
+          </div>
+        </div>
+
+        {/* Focus Demo */}
+        <button
+          ref={focus.ref}
+          {...focus.handlers}
+          className={`
+            p-4 rounded-xl border-2 transition-all outline-none
+            ${focus.isFocused
+              ? 'bg-blue-500/20 border-blue-500/50 ring-2 ring-blue-500/30'
+              : 'bg-black/20 border-white/10'
+            }
+          `}
+        >
+          <Target className={`w-6 h-6 mx-auto mb-2 ${focus.isFocused ? 'text-blue-400' : 'text-white/40'}`} />
+          <div className="text-center text-xs text-white/60">
+            {focus.isFocused ? 'Focused!' : 'Tab to focus'}
+          </div>
+        </button>
+
+        {/* Combined Animated */}
+        <div
+          ref={hover2.ref}
+          {...hover2.handlers}
+          className="p-4 rounded-xl border-2 bg-gradient-to-br from-green-500/10 to-emerald-500/10 border-green-500/30 cursor-pointer"
+          style={{
+            transform: `scale(${gestureAnim.scale}) translateY(${gestureAnim.y}px)`,
+          }}
+        >
+          <Sparkles className="w-6 h-6 mx-auto mb-2 text-green-400" />
+          <div className="text-center text-xs text-white/60">
+            Spring animated
+          </div>
+        </div>
+      </div>
+
+      <p className="text-center text-white/30 text-xs mt-4">
+        Declarative gesture state management
+      </p>
+    </div>
+  )
+}
+
+// ============================================================================
+// REDUCED MOTION DEMO - Accessibility support
+// ============================================================================
+
+function ReducedMotionDemo() {
+  const prefersReducedMotion = useReducedMotion()
+  const [showDemo, setShowDemo] = useState(false)
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-yellow-500/20 to-orange-500/20 flex items-center justify-center">
+          <Settings className="w-5 h-5 text-yellow-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-white">useReducedMotion</h3>
+          <p className="text-xs text-white/40">Accessibility-aware animations</p>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <div className={`
+          p-4 rounded-xl border-2
+          ${prefersReducedMotion
+            ? 'bg-yellow-500/10 border-yellow-500/30'
+            : 'bg-black/20 border-white/10'
+          }
+        `}>
+          <div className="flex items-center gap-3">
+            <div className={`w-3 h-3 rounded-full ${prefersReducedMotion ? 'bg-yellow-500' : 'bg-green-500'}`} />
+            <span className="text-white/80 text-sm">
+              prefers-reduced-motion: <span className="font-mono">{prefersReducedMotion ? 'reduce' : 'no-preference'}</span>
+            </span>
+          </div>
+        </div>
+
+        <button
+          onClick={() => setShowDemo(!showDemo)}
+          className="w-full px-4 py-3 bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white font-medium rounded-xl transition-colors"
+        >
+          {showDemo ? 'Hide' : 'Show'} Animation Demo
+        </button>
+
+        {showDemo && (
+          <div
+            className={`
+              h-16 bg-gradient-to-r from-yellow-500/20 to-orange-500/20 rounded-xl
+              flex items-center justify-center
+              ${prefersReducedMotion ? '' : 'animate-pulse'}
+            `}
+            style={prefersReducedMotion ? {} : {
+              animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+            }}
+          >
+            <span className="text-white/60 text-sm">
+              {prefersReducedMotion ? 'Animation disabled' : 'Pulsing animation'}
+            </span>
+          </div>
+        )}
+      </div>
+
+      <p className="text-center text-white/30 text-xs mt-4">
+        Respects system accessibility preferences
+      </p>
+    </div>
+  )
+}
+
 function PresetsComparison() {
   const boxRefs = useRef<(HTMLDivElement | null)[]>([])
   const [isRunning, setIsRunning] = useState(false)
@@ -3012,11 +3555,40 @@ export function Examples() {
           </div>
         </AnimatedDiv>
 
+        {/* Advanced Hooks Section - NEW */}
+        <AnimatedDiv
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.58 }}
+          className="mb-12"
+        >
+          <h2 className="text-2xl font-bold text-white mb-2">Advanced Hooks</h2>
+          <p className="text-white/40 mb-6">High-performance React hooks for complex animations</p>
+
+          <div className="grid lg:grid-cols-2 gap-6">
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.59 }}>
+              <MotionValueDemo />
+            </AnimatedDiv>
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.60 }}>
+              <ScrollProgressDemo />
+            </AnimatedDiv>
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.61 }}>
+              <InViewDemo />
+            </AnimatedDiv>
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.62 }}>
+              <GestureHooksDemo />
+            </AnimatedDiv>
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.63 }} className="lg:col-span-2">
+              <ReducedMotionDemo />
+            </AnimatedDiv>
+          </div>
+        </AnimatedDiv>
+
         {/* Core Demos Section */}
         <AnimatedDiv
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.6 }}
+          transition={{ delay: 0.65 }}
           className="mb-12"
         >
           <h2 className="text-2xl font-bold text-white mb-2">Core Features</h2>
@@ -3050,6 +3622,10 @@ export function Examples() {
 
             <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.87 }}>
               <BallDropDemo />
+            </AnimatedDiv>
+
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.88 }}>
+              <AnimatePresenceDemo />
             </AnimatedDiv>
 
             <AnimatedDiv

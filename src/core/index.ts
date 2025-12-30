@@ -21,3 +21,16 @@ export {
   isOverdamped,
 } from './physics.js'
 export type { SimulationResult } from './physics.js'
+
+// MotionValue - High-performance animated values
+export {
+  MotionValue,
+  createMotionValue,
+  transformValue,
+  mapRange,
+} from './MotionValue.js'
+export type {
+  MotionValueSubscriber,
+  MotionValueEvent,
+  MotionValueOptions,
+} from './MotionValue.js'

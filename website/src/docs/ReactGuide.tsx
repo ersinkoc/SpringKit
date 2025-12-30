@@ -19,8 +19,8 @@ export function ReactGuide() {
 
 function ReactIndex() {
   const guides = [
-    { title: 'Hooks', href: '/docs/react/hooks', desc: 'useSpring, useSpringValue, useSprings, and more', icon: Code2 },
-    { title: 'Components', href: '/docs/react/components', desc: 'Spring, Animated, Trail components', icon: Box },
+    { title: 'Hooks', href: '/docs/react/hooks', desc: 'useSpring, useMotionValue, useInView, useScroll, and more', icon: Code2 },
+    { title: 'Components', href: '/docs/react/components', desc: 'Spring, Animated, Trail, AnimatePresence', icon: Box },
     { title: 'Examples', href: '/docs/react/examples', desc: 'React examples and patterns', icon: Sparkles },
   ]
 
@@ -253,6 +253,175 @@ function DraggableCard() {
           </CardContent>
         </Card>
       </DocSection>
+
+      <DocSection title="useMotionValue">
+        <p className="text-muted-foreground mb-4">
+          High-performance animations without React re-renders:
+        </p>
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { useMotionValue, useTransform } from '@oxog/springkit/react'
+
+function MotionBox() {
+  const x = useMotionValue(0)
+  const y = useMotionValue(0)
+
+  // Derive new values from motion values
+  const rotate = useTransform(x, [-150, 0, 150], [-45, 0, 45])
+  const scale = useTransform(x, [-150, 0, 150], [0.8, 1, 0.8])
+
+  return (
+    <div
+      onMouseMove={(e) => {
+        x.set(e.clientX - 150)
+        y.set(e.clientY - 100)
+      }}
+      ref={(el) => {
+        if (!el) return
+        x.subscribe((xVal) => {
+          el.style.transform = \`translateX(\${xVal}px) rotate(\${rotate.get()}deg)\`
+        })
+      }}
+    />
+  )
+}`} />
+          </CardContent>
+        </Card>
+      </DocSection>
+
+      <DocSection title="useInView">
+        <p className="text-muted-foreground mb-4">
+          Detect when elements enter the viewport:
+        </p>
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { useInView } from '@oxog/springkit/react'
+
+function RevealOnScroll() {
+  const { ref, isInView, progress } = useInView({
+    amount: 0.5,  // 50% visible
+    once: true,   // Only trigger once
+  })
+
+  return (
+    <div
+      ref={ref}
+      style={{
+        opacity: isInView ? 1 : 0,
+        transform: \`translateY(\${isInView ? 0 : 50}px)\`,
+        transition: 'all 0.6s ease-out',
+      }}
+    >
+      Revealed when scrolled into view!
+      Progress: {(progress * 100).toFixed(0)}%
+    </div>
+  )
+}`} />
+          </CardContent>
+        </Card>
+      </DocSection>
+
+      <DocSection title="useScroll">
+        <p className="text-muted-foreground mb-4">
+          Track scroll position and progress:
+        </p>
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { useScroll, useTransform, useMotionValueState } from '@oxog/springkit/react'
+
+function ScrollProgress() {
+  const { scrollY, scrollYProgress } = useScroll()
+
+  // Get reactive state for rendering
+  const progress = useMotionValueState(scrollYProgress)
+
+  // Or derive new values
+  const opacity = useTransform(scrollYProgress, [0, 0.5], [1, 0])
+  const scale = useTransform(scrollYProgress, [0, 1], [1, 0.8])
+
+  return (
+    <div>
+      <div className="fixed top-0 left-0 right-0 h-1 bg-gray-200">
+        <div
+          className="h-full bg-orange-500"
+          style={{ width: \`\${progress * 100}%\` }}
+        />
+      </div>
+    </div>
+  )
+}`} />
+          </CardContent>
+        </Card>
+      </DocSection>
+
+      <DocSection title="useReducedMotion">
+        <p className="text-muted-foreground mb-4">
+          Respect user's motion preferences for accessibility:
+        </p>
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { useReducedMotion, useShouldAnimate } from '@oxog/springkit/react'
+
+function AccessibleAnimation() {
+  const prefersReducedMotion = useReducedMotion()
+  const shouldAnimate = useShouldAnimate()
+
+  return (
+    <div
+      style={{
+        // Skip animations for users who prefer reduced motion
+        transition: shouldAnimate ? 'transform 0.5s ease' : 'none',
+        transform: isOpen ? 'translateX(100px)' : 'translateX(0)',
+      }}
+    >
+      {prefersReducedMotion
+        ? 'Animations disabled'
+        : 'Animations enabled'
+      }
+    </div>
+  )
+}`} />
+          </CardContent>
+        </Card>
+      </DocSection>
+
+      <DocSection title="Gesture Hooks">
+        <p className="text-muted-foreground mb-4">
+          Track hover, tap, and focus states:
+        </p>
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { useHover, useTap, useFocus } from '@oxog/springkit/react'
+
+function InteractiveButton() {
+  const hover = useHover()
+  const tap = useTap()
+  const focus = useFocus()
+
+  return (
+    <button
+      ref={hover.ref}
+      {...hover.handlers}
+      {...tap.handlers}
+      {...focus.handlers}
+      style={{
+        transform: tap.isPressed
+          ? 'scale(0.95)'
+          : hover.isHovered
+            ? 'scale(1.05)'
+            : 'scale(1)',
+        boxShadow: focus.isFocused
+          ? '0 0 0 3px rgba(249,115,22,0.5)'
+          : 'none',
+      }}
+    >
+      {hover.isHovered ? 'Hovering!' : 'Hover me'}
+    </button>
+  )
+}`} />
+          </CardContent>
+        </Card>
+      </DocSection>
     </DocLayout>
   )
 }
@@ -349,6 +518,88 @@ function ReactComponents() {
     </div>
   )}
 </Trail>`} />
+          </CardContent>
+        </Card>
+      </DocSection>
+
+      <DocSection title="AnimatePresence">
+        <p className="text-muted-foreground mb-4">
+          Animate components as they mount and unmount:
+        </p>
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { AnimatePresence, Animated } from '@oxog/springkit/react'
+
+function Modal({ isOpen, onClose, children }) {
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <Animated.div
+          key="modal"
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.9 }}
+          config={{ stiffness: 300, damping: 25 }}
+          className="fixed inset-0 flex items-center justify-center"
+        >
+          <div className="bg-white rounded-xl p-6">
+            {children}
+          </div>
+        </Animated.div>
+      )}
+    </AnimatePresence>
+  )
+}
+
+// List with exit animations
+function AnimatedList({ items, onRemove }) {
+  return (
+    <AnimatePresence mode="popLayout">
+      {items.map((item) => (
+        <Animated.div
+          key={item.id}
+          initial={{ opacity: 0, x: -50 }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: 50 }}
+          onClick={() => onRemove(item.id)}
+        >
+          {item.text}
+        </Animated.div>
+      ))}
+    </AnimatePresence>
+  )
+}`} />
+          </CardContent>
+        </Card>
+      </DocSection>
+
+      <DocSection title="usePresence">
+        <p className="text-muted-foreground mb-4">
+          Control exit animations manually:
+        </p>
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { AnimatePresence, usePresence } from '@oxog/springkit/react'
+
+function FadeOut() {
+  const { isPresent, onExitComplete } = usePresence()
+
+  useEffect(() => {
+    if (!isPresent) {
+      // Element is exiting, play animation then call onExitComplete
+      const timeout = setTimeout(() => {
+        onExitComplete()
+      }, 500)
+      return () => clearTimeout(timeout)
+    }
+  }, [isPresent])
+
+  return (
+    <div style={{ opacity: isPresent ? 1 : 0, transition: '0.5s' }}>
+      Custom exit animation
+    </div>
+  )
+}`} />
           </CardContent>
         </Card>
       </DocSection>

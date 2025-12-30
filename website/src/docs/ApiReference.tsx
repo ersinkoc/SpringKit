@@ -1,9 +1,9 @@
 import { Routes, Route, Link } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
 import { DocLayout, DocSection, CodeBlock } from '@/components/docs'
-import { Book, FileType, Zap, Atom, Layers, Blend, Play, RotateCcw, Box } from 'lucide-react'
+import { Book, FileType, Zap, Atom, Layers, Blend, Play, RotateCcw, Box, Activity, Eye, Gauge, MousePointer2 } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
-import { spring, createSpringValue, createSpringGroup, interpolate } from '@oxog/springkit'
+import { spring, createSpringValue, createSpringGroup, interpolate, createMotionValue, transformValue } from '@oxog/springkit'
 
 export function ApiReference() {
   return (
@@ -13,6 +13,7 @@ export function ApiReference() {
       <Route path="/spring-value" element={<SpringValueApi />} />
       <Route path="/spring-group" element={<SpringGroupApi />} />
       <Route path="/interpolate" element={<InterpolateApi />} />
+      <Route path="/motion-value" element={<MotionValueApi />} />
       <Route path="/types" element={<TypesApi />} />
     </Routes>
   )
@@ -24,6 +25,7 @@ function ApiIndex() {
     { name: 'createSpringValue()', href: '/docs/api/spring-value', desc: 'Create an animated value', icon: Atom },
     { name: 'createSpringGroup()', href: '/docs/api/spring-group', desc: 'Create coordinated animations', icon: Layers },
     { name: 'interpolate()', href: '/docs/api/interpolate', desc: 'Map values to ranges', icon: Blend },
+    { name: 'MotionValue', href: '/docs/api/motion-value', desc: 'High-performance animated values', icon: Activity },
     { name: 'Types', href: '/docs/api/types', desc: 'TypeScript type definitions', icon: FileType },
   ]
 
@@ -69,6 +71,24 @@ function ApiIndex() {
           ].map((fn) => (
             <div key={fn} className="px-4 py-3 rounded-lg bg-white/5 border border-white/10 font-mono text-sm text-orange-300">
               {fn}
+            </div>
+          ))}
+        </div>
+      </DocSection>
+
+      <DocSection title="MotionValue Functions">
+        <p className="text-muted-foreground mb-4">
+          High-performance animated values that update without React re-renders:
+        </p>
+        <div className="grid md:grid-cols-2 gap-3">
+          {[
+            { fn: 'createMotionValue(initial, options?)', desc: 'Create a MotionValue instance' },
+            { fn: 'transformValue(source, transform)', desc: 'Create a derived MotionValue' },
+            { fn: 'motionMapRange(source, input, output)', desc: 'Map MotionValue to range' },
+          ].map((item) => (
+            <div key={item.fn} className="p-3 rounded-lg bg-white/5 border border-white/10">
+              <code className="font-mono text-sm text-orange-300 block mb-1">{item.fn}</code>
+              <span className="text-muted-foreground text-xs">{item.desc}</span>
             </div>
           ))}
         </div>
@@ -662,6 +682,187 @@ progress.subscribe(() => {
 progress.set(100)`} />
           </CardContent>
         </Card>
+      </DocSection>
+    </DocLayout>
+  )
+}
+
+function MotionValueApi() {
+  const boxRef = useRef<HTMLDivElement>(null)
+  const motionValueRef = useRef<ReturnType<typeof createMotionValue> | null>(null)
+  const [displayValue, setDisplayValue] = useState(0)
+
+  useEffect(() => {
+    motionValueRef.current = createMotionValue(0, {
+      spring: { stiffness: 200, damping: 20 }
+    })
+    motionValueRef.current.subscribe((v) => {
+      setDisplayValue(v)
+      if (boxRef.current) {
+        boxRef.current.style.transform = `translateX(${v}px)`
+      }
+    })
+    return () => motionValueRef.current?.destroy()
+  }, [])
+
+  return (
+    <DocLayout
+      title="MotionValue"
+      description="High-performance animated values without React re-renders"
+      icon={Activity}
+    >
+      <DocSection title="Overview">
+        <p className="text-muted-foreground">
+          MotionValue is designed for high-frequency animations where React's state updates would cause performance issues.
+          Unlike useState, MotionValue updates don't trigger re-renders - they directly manipulate the DOM for smooth 60fps animations.
+        </p>
+      </DocSection>
+
+      <DocSection title="Interactive Demo">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-4 mb-4">
+              <button
+                onClick={() => motionValueRef.current?.set(200)}
+                className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-medium"
+              >
+                Animate to 200
+              </button>
+              <button
+                onClick={() => motionValueRef.current?.set(0)}
+                className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg text-sm font-medium"
+              >
+                Reset to 0
+              </button>
+              <button
+                onClick={() => motionValueRef.current?.jump(100)}
+                className="px-4 py-2 bg-purple-500 hover:bg-purple-600 text-white rounded-lg text-sm font-medium"
+              >
+                Jump to 100
+              </button>
+            </div>
+            <div className="h-16 bg-black/20 rounded-lg relative overflow-hidden">
+              <div
+                ref={boxRef}
+                className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 bg-gradient-to-br from-orange-500 to-amber-500 rounded-xl flex items-center justify-center text-white font-bold shadow-lg"
+              >
+                {displayValue.toFixed(0)}
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </DocSection>
+
+      <DocSection title="createMotionValue()">
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { createMotionValue } from '@oxog/springkit'
+
+// Create a basic MotionValue
+const x = createMotionValue(0)
+
+// With spring configuration
+const scale = createMotionValue(1, {
+  spring: { stiffness: 300, damping: 30 }
+})
+
+// Subscribe to changes (no React re-render!)
+x.subscribe((value) => {
+  element.style.transform = \`translateX(\${value}px)\`
+})
+
+// Animate to new value with spring physics
+x.set(100)
+
+// Jump instantly without animation
+x.jump(50)
+
+// Stop current animation
+x.stop()
+
+// Get current value and velocity
+console.log(x.get())         // Current value
+console.log(x.getVelocity()) // Current velocity
+console.log(x.isAnimating()) // Is animation running?
+
+// Listen to events
+x.on('animationStart', () => console.log('Started!'))
+x.on('animationEnd', () => console.log('Ended!'))
+x.on('change', () => console.log('Changed!'))
+
+// Cleanup
+x.destroy()`} />
+          </CardContent>
+        </Card>
+      </DocSection>
+
+      <DocSection title="transformValue()">
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { createMotionValue, transformValue } from '@oxog/springkit'
+
+const x = createMotionValue(0)
+
+// Create derived values
+const opacity = transformValue(x, v => 1 - v / 100)
+const rotate = transformValue(x, v => v * 0.5)
+const color = transformValue(x, v =>
+  v < 50 ? '#ef4444' : '#22c55e'
+)
+
+// Derived values auto-update when source changes
+x.set(100)
+console.log(opacity.get()) // 0
+console.log(rotate.get())  // 50`} />
+          </CardContent>
+        </Card>
+      </DocSection>
+
+      <DocSection title="motionMapRange()">
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { createMotionValue, motionMapRange } from '@oxog/springkit'
+
+const scrollY = createMotionValue(0)
+
+// Map scroll (0-500) to opacity (1-0)
+const opacity = motionMapRange(
+  scrollY,
+  [0, 500],   // input range
+  [1, 0]      // output range
+)
+
+// With clamping (no extrapolation)
+const progress = motionMapRange(
+  scrollY,
+  [0, 500],
+  [0, 1],
+  { clamp: true }
+)`} />
+          </CardContent>
+        </Card>
+      </DocSection>
+
+      <DocSection title="MotionValue Methods">
+        <div className="grid md:grid-cols-2 gap-3">
+          {[
+            { method: 'get()', desc: 'Get current value synchronously' },
+            { method: 'set(value, animate?)', desc: 'Set value with optional animation' },
+            { method: 'jump(value)', desc: 'Instantly set value without animation' },
+            { method: 'stop()', desc: 'Stop running animation' },
+            { method: 'getVelocity()', desc: 'Get current velocity' },
+            { method: 'isAnimating()', desc: 'Check if animating' },
+            { method: 'subscribe(callback)', desc: 'Subscribe to value changes' },
+            { method: 'on(event, callback)', desc: 'Listen to events' },
+            { method: 'setConfig(config)', desc: 'Update spring configuration' },
+            { method: 'destroy()', desc: 'Cleanup and dispose' },
+          ].map((item) => (
+            <div key={item.method} className="p-3 rounded-lg bg-white/5 border border-white/10">
+              <code className="font-mono text-sm text-orange-300 block mb-1">{item.method}</code>
+              <span className="text-muted-foreground text-xs">{item.desc}</span>
+            </div>
+          ))}
+        </div>
       </DocSection>
     </DocLayout>
   )

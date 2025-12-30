@@ -14,6 +14,10 @@ export interface SpringValue {
   set(to: number, config?: Partial<SpringConfig>): void
   /** Set value immediately without animation */
   jump(to: number): void
+  /** Stop current animation at current position */
+  stop(): void
+  /** Update spring configuration */
+  setConfig(config: Partial<SpringConfig>): void
   /** Subscribe to value changes */
   subscribe(callback: (value: number) => void): () => void
   /** Check if currently animating */
@@ -95,6 +99,20 @@ class SpringValueImpl implements SpringValue {
     }
     this.value = to
     this.notify()
+  }
+
+  stop(): void {
+    if (this.currentAnimation) {
+      this.currentAnimation.destroy()
+      this.currentAnimation = null
+    }
+    if (this.resolveComplete) {
+      this.resolveComplete()
+    }
+  }
+
+  setConfig(config: Partial<SpringConfig>): void {
+    this.config = { ...this.config, ...config }
   }
 
   subscribe(callback: (value: number) => void): () => void {
