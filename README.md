@@ -21,19 +21,22 @@
 
 ## Features
 
-- **Real Physics** - Spring, damping, mass
-- **Animated Values** - Subscribe to changes
-- **Interpolation** - Values & colors
-- **Interruptible** - Pause, resume, reverse
-- **Orchestration** - Sequence, parallel, stagger
-- **Trail Effect** - Follow animations
-- **Drag Spring** - Rubber band physics
-- **Scroll Spring** - Momentum & bounce
-- **Decay** - Natural deceleration
-- **Presets** - bounce, gentle, stiff...
-- **React** - Hooks & components
-- **Zero Dependencies**
-- **< 3KB** - Tiny bundle
+- **Real Physics** - Spring, damping, mass with configurable parameters
+- **Memory Safe** - WeakRef-based tracking, automatic garbage collection
+- **Frame-drop Resilient** - Delta time clamping prevents animation jumps
+- **Animated Values** - Subscribe to changes with `onFrame` callbacks
+- **Interpolation** - Values & colors with extrapolation modes
+- **Interruptible** - Pause, resume, reverse with velocity preservation
+- **Orchestration** - Sequence, parallel, stagger with promises
+- **Trail Effect** - Follow animations with staggered delays
+- **Drag Spring** - Rubber band physics with bounds
+- **Scroll Spring** - Momentum & bounce with snap points
+- **Decay** - Natural deceleration with velocity
+- **Presets** - bounce, gentle, stiff, wobbly...
+- **Physics Utils** - `calculateDampingRatio`, `isUnderdamped`, `isOverdamped`
+- **React** - Hooks & components (`useSpring`, `useTrail`, `useDrag`)
+- **Zero Dependencies** - No runtime dependencies
+- **~7KB gzipped** - Tiny bundle size
 
 ## Installation
 
