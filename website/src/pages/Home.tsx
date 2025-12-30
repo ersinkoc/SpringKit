@@ -1,12 +1,142 @@
 import { Link } from 'react-router-dom'
-import { motion } from 'framer-motion'
 import { ArrowRight, Zap, Feather, Layers, MousePointer2, Sparkles, Copy, Check, Github, Package, Play, RotateCcw, ChevronDown, Terminal, Code2, Cpu, Timer, Box, Waves } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Highlight, themes } from 'prism-react-renderer'
+import { useSpring, useDrag } from '@oxog/springkit/react'
+
+// ============================================================================
+// ANIMATED DIV COMPONENT - Using SpringKit instead of framer-motion
+// ============================================================================
+
+interface AnimatedDivProps extends React.HTMLAttributes<HTMLDivElement> {
+  initial?: { opacity?: number; y?: number; x?: number; scale?: number }
+  animate?: { opacity?: number; y?: number; x?: number; scale?: number; rotate?: number }
+  whileInView?: { opacity?: number; y?: number; x?: number; scale?: number }
+  whileHover?: { y?: number; scale?: number }
+  viewport?: { once?: boolean; margin?: string }
+  transition?: { duration?: number; delay?: number; ease?: number[] | string; repeat?: number; type?: string; stiffness?: number; damping?: number }
+  children?: React.ReactNode
+}
+
+function AnimatedDiv({
+  initial,
+  animate,
+  whileInView,
+  whileHover,
+  viewport,
+  transition,
+  children,
+  className,
+  style,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  ...rest
+}: AnimatedDivProps) {
+  // Filter out animation props that shouldn't be passed to DOM
+  const { ...props } = rest as Record<string, unknown>
+  // Remove any animation-related props that might leak through
+  delete props.initial
+  delete props.animate
+  delete props.whileInView
+  delete props.whileHover
+  delete props.viewport
+  delete props.transition
+  const ref = useRef<HTMLDivElement>(null)
+  const [isInView, setIsInView] = useState(false)
+  const [isHovered, setIsHovered] = useState(false)
+  const [isMounted, setIsMounted] = useState(false)
+  const hasAnimated = useRef(false)
+
+  // Intersection Observer for whileInView
+  useEffect(() => {
+    if (!whileInView || !ref.current) return
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            if (viewport?.once && hasAnimated.current) return
+            setIsInView(true)
+            hasAnimated.current = true
+          } else if (!viewport?.once) {
+            setIsInView(false)
+          }
+        })
+      },
+      {
+        rootMargin: viewport?.margin || '0px',
+        threshold: 0.1
+      }
+    )
+
+    observer.observe(ref.current)
+    return () => observer.disconnect()
+  }, [whileInView, viewport?.once, viewport?.margin])
+
+  // Auto-animate on mount if using animate (not whileInView)
+  useEffect(() => {
+    if (!whileInView && animate) {
+      const delay = (transition?.delay || 0) * 1000
+      const timer = setTimeout(() => setIsMounted(true), delay)
+      return () => clearTimeout(timer)
+    } else if (!whileInView && !animate) {
+      // No animation needed, show immediately
+      setIsMounted(true)
+    }
+  }, [])
+
+  // Determine if we should show animated state
+  const shouldShowAnimated = whileInView ? isInView : isMounted
+
+  // Calculate current values
+  const currentValues = shouldShowAnimated
+    ? {
+        opacity: (whileInView || animate)?.opacity ?? 1,
+        y: (whileInView || animate)?.y ?? 0,
+        x: (whileInView || animate)?.x ?? 0,
+        scale: (whileInView || animate)?.scale ?? 1,
+      }
+    : {
+        opacity: initial?.opacity ?? 1,
+        y: initial?.y ?? 0,
+        x: initial?.x ?? 0,
+        scale: initial?.scale ?? 1,
+      }
+
+  // Apply hover overrides
+  if (whileHover && isHovered) {
+    if (whileHover.y !== undefined) currentValues.y = whileHover.y
+    if (whileHover.scale !== undefined) currentValues.scale = whileHover.scale
+  }
+
+  const transform = `translate(${currentValues.x}px, ${currentValues.y}px) scale(${currentValues.scale})`
+
+  // Use CSS transitions for smooth animations
+  const transitionDuration = transition?.duration ?? 0.5
+  const cssTransition = `opacity ${transitionDuration}s ease-out, transform ${transitionDuration}s ease-out`
+
+  return (
+    <div
+      ref={ref}
+      className={className}
+      style={{
+        ...style,
+        opacity: currentValues.opacity,
+        transform,
+        transition: cssTransition,
+      }}
+      onMouseEnter={() => whileHover && setIsHovered(true)}
+      onMouseLeave={() => whileHover && setIsHovered(false)}
+      {...props}
+    >
+      {children}
+    </div>
+  )
+}
 
 // ============================================================================
 // SPECTACULAR HERO SPRING VISUALIZATION WITH COLLISION PHYSICS
+// All positions are RELATIVE to the container center (0,0 = center of rings)
 // ============================================================================
 
 interface TrailPoint {
@@ -16,15 +146,15 @@ interface TrailPoint {
 
 interface Ball {
   id: number
-  x: number
-  y: number
+  x: number // Position relative to container center
+  y: number // Position relative to container center
   vx: number
   vy: number
   radius: number
   color: string
   hue: number
   isDragging: boolean
-  trail: TrailPoint[] // Trail positions for spring-delayed followers
+  trail: TrailPoint[] // Trail positions relative to container center
 }
 
 const BALL_CONFIGS = [
@@ -40,6 +170,15 @@ const TRAIL_SPRING_FACTOR = [0.15, 0.08, 0.04] // Spring stiffness for each trai
 
 function HeroSpringDemo() {
   const [preset, setPreset] = useState<'bouncy' | 'gentle' | 'stiff' | 'wobbly'>('bouncy')
+  const containerRef = useRef<HTMLDivElement>(null)
+  const animationRef = useRef<number | null>(null)
+  const draggingBallRef = useRef<number | null>(null)
+  const dragOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
+
+  // Extended bounds - balls can roam far but will be pulled back
+  const bounds = { left: -400, right: 400, top: -350, bottom: 350 }
+
+  // Initialize balls with relative positions (relative to container center)
   const [balls, setBalls] = useState<Ball[]>(() =>
     BALL_CONFIGS.map((cfg, i) => ({
       id: i,
@@ -54,8 +193,6 @@ function HeroSpringDemo() {
       trail: Array(TRAIL_COUNT).fill(null).map(() => ({ x: cfg.x, y: cfg.y })),
     }))
   )
-  const containerRef = useRef<HTMLDivElement>(null)
-  const animationRef = useRef<number | null>(null)
 
   const presetConfigs = {
     bouncy: { stiffness: 400, damping: 10, restitution: 0.9 },
@@ -65,7 +202,6 @@ function HeroSpringDemo() {
   }
 
   const config = presetConfigs[preset]
-  const bounds = { left: -200, right: 200, top: -180, bottom: 180 }
 
   // Physics simulation
   useEffect(() => {
@@ -78,12 +214,14 @@ function HeroSpringDemo() {
           const ball = newBalls[i]
           if (ball.isDragging) continue
 
-          // Apply spring force towards rest position (0,0) with very weak attraction
-          const restX = BALL_CONFIGS[i].x
-          const restY = BALL_CONFIGS[i].y
-          const springForce = 0.5 // Very weak home force
-          const dx = restX - ball.x
-          const dy = restY - ball.y
+          // Home position is the original config position
+          const homeX = BALL_CONFIGS[i].x
+          const homeY = BALL_CONFIGS[i].y
+
+          // Apply spring force towards home position with very weak attraction
+          const springForce = 0.5 // Weak home force
+          const dx = homeX - ball.x
+          const dy = homeY - ball.y
 
           // Only apply home force if far from rest and moving slowly
           const distFromRest = Math.sqrt(dx * dx + dy * dy)
@@ -206,47 +344,188 @@ function HeroSpringDemo() {
     return () => {
       if (animationRef.current) cancelAnimationFrame(animationRef.current)
     }
-  }, [config, bounds])
+  }, [config])
 
-  const handleDragStart = (ballId: number) => {
-    setBalls(prev => prev.map(b =>
-      b.id === ballId ? { ...b, isDragging: true, vx: 0, vy: 0 } : b
-    ))
+  // Find which ball is at a given position (relative to container center)
+  const findBallAtPosition = (relX: number, relY: number): number | null => {
+    // Check from front to back (higher z-index first)
+    for (let i = balls.length - 1; i >= 0; i--) {
+      const ball = balls[i]
+      const dx = relX - ball.x
+      const dy = relY - ball.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      if (dist <= ball.radius) {
+        return ball.id
+      }
+    }
+    return null
   }
 
-  const handleDrag = (ballId: number, info: { point: { x: number; y: number }; delta: { x: number; y: number } }) => {
+  const handlePointerDown = (e: React.PointerEvent) => {
     if (!containerRef.current) return
 
     const rect = containerRef.current.getBoundingClientRect()
     const centerX = rect.left + rect.width / 2
     const centerY = rect.top + rect.height / 2
 
-    const newX = info.point.x - centerX
-    const newY = info.point.y - centerY
+    // Convert to relative coords
+    const relX = e.clientX - centerX
+    const relY = e.clientY - centerY
+
+    // Find which ball was clicked
+    const ballId = findBallAtPosition(relX, relY)
+    if (ballId === null) return
+
+    // Store offset from ball center to pointer
+    const ball = balls.find(b => b.id === ballId)!
+    dragOffsetRef.current = {
+      x: ball.x - relX,
+      y: ball.y - relY
+    }
+
+    draggingBallRef.current = ballId
+    e.currentTarget.setPointerCapture(e.pointerId)
+
+    setBalls(prev => prev.map(b =>
+      b.id === ballId ? { ...b, isDragging: true, vx: 0, vy: 0 } : b
+    ))
+  }
+
+  const handlePointerMove = (e: React.PointerEvent) => {
+    if (!containerRef.current || draggingBallRef.current === null) return
+
+    const ballId = draggingBallRef.current
+    const rect = containerRef.current.getBoundingClientRect()
+    const centerX = rect.left + rect.width / 2
+    const centerY = rect.top + rect.height / 2
+
+    // Convert screen coords to relative coords (relative to container center)
+    // Add back the offset so we drag from where we grabbed
+    const newX = e.clientX - centerX + dragOffsetRef.current.x
+    const newY = e.clientY - centerY + dragOffsetRef.current.y
+
+    // Clamp to bounds
+    const clampedX = Math.max(bounds.left, Math.min(bounds.right, newX))
+    const clampedY = Math.max(bounds.top, Math.min(bounds.bottom, newY))
 
     setBalls(prev => prev.map(b =>
       b.id === ballId ? {
         ...b,
-        x: Math.max(bounds.left + b.radius, Math.min(bounds.right - b.radius, newX)),
-        y: Math.max(bounds.top + b.radius, Math.min(bounds.bottom - b.radius, newY)),
-        vx: info.delta.x * 2,
-        vy: info.delta.y * 2,
+        x: clampedX,
+        y: clampedY,
+        vx: e.movementX * 2,
+        vy: e.movementY * 2,
       } : b
     ))
   }
 
-  const handleDragEnd = (ballId: number) => {
+  const handlePointerUp = (e: React.PointerEvent) => {
+    const ballId = draggingBallRef.current
+    if (ballId === null) return
+
+    e.currentTarget.releasePointerCapture(e.pointerId)
+    draggingBallRef.current = null
+
     setBalls(prev => prev.map(b =>
       b.id === ballId ? { ...b, isDragging: false } : b
     ))
   }
 
   return (
-    <div ref={containerRef} className="relative w-full h-[500px] flex items-center justify-center overflow-hidden">
+    <div
+      ref={containerRef}
+      className="relative w-full h-[500px] flex items-center justify-center overflow-visible cursor-grab active:cursor-grabbing touch-none select-none"
+      onPointerDown={handlePointerDown}
+      onPointerMove={handlePointerMove}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+    >
+      {/* All balls and trails are positioned relative to container center */}
+      <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+        {/* Trail shadows - rendered behind balls, positioned relative to center */}
+        {balls.map((ball) =>
+          ball.trail.map((trail, trailIndex) => {
+            const scale = 1 - (trailIndex + 1) * 0.15
+            const opacity = 0.3 - trailIndex * 0.08
+            const trailRadius = ball.radius * scale
+
+            return (
+              <div
+                key={`trail-${ball.id}-${trailIndex}`}
+                className="absolute pointer-events-none"
+                style={{
+                  left: '50%',
+                  top: '50%',
+                  width: trailRadius * 2,
+                  height: trailRadius * 2,
+                  transform: `translate(calc(-50% + ${trail.x}px), calc(-50% + ${trail.y}px))`,
+                  zIndex: 5 - trailIndex,
+                }}
+              >
+                <div
+                  className="w-full h-full rounded-full"
+                  style={{
+                    background: `radial-gradient(circle, hsla(${ball.hue}, 100%, 55%, ${opacity}) 0%, hsla(${ball.hue}, 100%, 45%, ${opacity * 0.5}) 50%, transparent 70%)`,
+                    filter: `blur(${2 + trailIndex * 2}px)`,
+                  }}
+                />
+              </div>
+            )
+          })
+        )}
+
+        {/* Balls - positioned relative to center */}
+        {balls.map((ball) => (
+          <div
+            key={ball.id}
+            className="absolute pointer-events-none"
+            style={{
+              left: '50%',
+              top: '50%',
+              width: ball.radius * 2,
+              height: ball.radius * 2,
+              transform: `translate(calc(-50% + ${ball.x}px), calc(-50% + ${ball.y}px)) scale(${ball.isDragging ? 1.15 : 1})`,
+              zIndex: ball.isDragging ? 20 : 10,
+            }}
+          >
+            {/* Glow effect */}
+            <div
+              className="absolute rounded-full blur-xl pointer-events-none"
+              style={{
+                background: `radial-gradient(circle, hsla(${ball.hue}, 100%, 55%, 0.5) 0%, transparent 70%)`,
+                width: ball.radius * 3,
+                height: ball.radius * 3,
+                left: '50%',
+                top: '50%',
+                marginLeft: -ball.radius * 1.5,
+                marginTop: -ball.radius * 1.5,
+                transform: `scale(${ball.isDragging ? 1.3 : 1})`,
+                opacity: ball.isDragging ? 0.9 : 0.6,
+                transition: 'transform 0.3s, opacity 0.3s',
+              }}
+            />
+
+            {/* Ball */}
+            <div
+              className={`relative w-full h-full rounded-full bg-gradient-to-br ${ball.color} shadow-2xl flex items-center justify-center`}
+              style={{
+                boxShadow: `0 0 20px hsla(${ball.hue}, 100%, 50%, 0.3), inset 0 -2px 10px rgba(0,0,0,0.2)`,
+              }}
+            >
+              {ball.id === 0 && <Sparkles className="w-6 h-6 text-white/90" />}
+              {/* Highlight */}
+              <div
+                className="absolute top-1 left-1/4 w-1/3 h-1/4 rounded-full bg-white/30 blur-sm pointer-events-none"
+              />
+            </div>
+          </div>
+        ))}
+      </div>
+
       {/* Concentric rings */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
         {[...Array(5)].map((_, i) => (
-          <motion.div
+          <AnimatedDiv
             key={i}
             className="absolute rounded-full border border-orange-500/10"
             style={{
@@ -264,112 +543,6 @@ function HeroSpringDemo() {
           />
         ))}
       </div>
-
-      {/* Trail shadows - rendered behind balls */}
-      {balls.map((ball) =>
-        ball.trail.map((trail, trailIndex) => {
-          const scale = 1 - (trailIndex + 1) * 0.15 // Each trail is smaller
-          const opacity = 0.3 - trailIndex * 0.08 // Each trail is more transparent
-          const trailRadius = ball.radius * scale
-
-          return (
-            <motion.div
-              key={`trail-${ball.id}-${trailIndex}`}
-              className="absolute pointer-events-none"
-              animate={{
-                x: trail.x,
-                y: trail.y,
-              }}
-              transition={{
-                x: { type: 'tween', duration: 0 },
-                y: { type: 'tween', duration: 0 },
-              }}
-              style={{
-                width: trailRadius * 2,
-                height: trailRadius * 2,
-                marginLeft: -trailRadius,
-                marginTop: -trailRadius,
-                zIndex: 5 - trailIndex,
-              }}
-            >
-              <div
-                className="w-full h-full rounded-full"
-                style={{
-                  background: `radial-gradient(circle, hsla(${ball.hue}, 100%, 55%, ${opacity}) 0%, hsla(${ball.hue}, 100%, 45%, ${opacity * 0.5}) 50%, transparent 70%)`,
-                  filter: `blur(${2 + trailIndex * 2}px)`,
-                }}
-              />
-            </motion.div>
-          )
-        })
-      )}
-
-      {/* Balls */}
-      {balls.map((ball) => (
-        <motion.div
-          key={ball.id}
-          drag
-          dragMomentum={false}
-          dragElastic={0}
-          onDragStart={() => handleDragStart(ball.id)}
-          onDrag={(_, info) => handleDrag(ball.id, info)}
-          onDragEnd={() => handleDragEnd(ball.id)}
-          animate={{
-            x: ball.x,
-            y: ball.y,
-            scale: ball.isDragging ? 1.15 : 1,
-          }}
-          transition={{
-            x: { type: 'tween', duration: 0 },
-            y: { type: 'tween', duration: 0 },
-            scale: { type: 'spring', stiffness: 500, damping: 25 },
-          }}
-          className="absolute cursor-grab active:cursor-grabbing"
-          style={{
-            width: ball.radius * 2,
-            height: ball.radius * 2,
-            marginLeft: -ball.radius,
-            marginTop: -ball.radius,
-            zIndex: ball.isDragging ? 20 : 10,
-          }}
-        >
-          {/* Glow effect */}
-          <motion.div
-            className="absolute rounded-full blur-xl"
-            style={{
-              background: `radial-gradient(circle, hsla(${ball.hue}, 100%, 55%, 0.5) 0%, transparent 70%)`,
-              width: ball.radius * 3,
-              height: ball.radius * 3,
-              left: '50%',
-              top: '50%',
-              marginLeft: -ball.radius * 1.5,
-              marginTop: -ball.radius * 1.5,
-            }}
-            animate={{
-              scale: ball.isDragging ? 1.3 : [1, 1.15, 1],
-              opacity: ball.isDragging ? 0.9 : [0.5, 0.7, 0.5],
-            }}
-            transition={{
-              scale: { duration: 2, repeat: Infinity, ease: 'easeInOut' },
-              opacity: { duration: 2, repeat: Infinity, ease: 'easeInOut' },
-            }}
-          />
-
-          {/* Ball */}
-          <div
-            className={`relative w-full h-full rounded-full bg-gradient-to-br ${ball.color} shadow-2xl flex items-center justify-center`}
-            style={{
-              boxShadow: `0 0 20px hsla(${ball.hue}, 100%, 50%, 0.3), inset 0 -2px 10px rgba(0,0,0,0.2)`,
-            }}
-          >
-            {ball.id === 0 && <Sparkles className="w-6 h-6 text-white/90" />}
-            {/* Highlight */}
-            <div
-              className="absolute top-1 left-1/4 w-1/3 h-1/4 rounded-full bg-white/30 blur-sm"
-            />
-          </div>
-        </motion.div>
-      ))}
 
       {/* Preset selector */}
       <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-2 z-30">
@@ -389,14 +562,14 @@ function HeroSpringDemo() {
       </div>
 
       {/* Drag hint */}
-      <motion.p
+      <AnimatedDiv
         className="absolute top-4 left-1/2 -translate-x-1/2 text-sm text-white/40 z-30"
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 1 }}
       >
-        Drag the balls and watch them collide with spring physics
-      </motion.p>
+        <p>Drag the balls and watch them collide with spring physics</p>
+      </AnimatedDiv>
     </div>
   )
 }
@@ -653,7 +826,7 @@ function PhysicsPlayground() {
               const ballY = 32 + positions[i] * trackHeight
 
               return (
-                <motion.div
+                <AnimatedDiv
                   key={spring.name}
                   className="absolute"
                   style={{
@@ -676,7 +849,7 @@ function PhysicsPlayground() {
                   <span className="absolute -bottom-6 left-1/2 -translate-x-1/2 text-xs text-white/40 whitespace-nowrap">
                     {spring.name}
                   </span>
-                </motion.div>
+                </AnimatedDiv>
               )
             })}
 
@@ -825,7 +998,7 @@ function StaggerDemo() {
             const Icon = item.icon
 
             return (
-              <motion.div
+              <AnimatedDiv
                 key={index}
                 initial={{ opacity: 0, y: 30, scale: 0.8 }}
                 animate={isVisible ? { opacity: 1, y: 0, scale: 1 } : { opacity: 0, y: 30, scale: 0.8 }}
@@ -839,7 +1012,7 @@ function StaggerDemo() {
                   </div>
                   <span className="text-sm text-white/70">{item.label}</span>
                 </div>
-              </motion.div>
+              </AnimatedDiv>
             )
           })}
         </div>
@@ -1027,7 +1200,7 @@ function ColorInterpolationDemo() {
               className="h-4 rounded-full"
               style={{ background: `linear-gradient(to right, ${colors.join(', ')})` }}
             />
-            <motion.div
+            <AnimatedDiv
               className="absolute top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-white shadow-lg border-2"
               style={{
                 left: `calc(${progress * 100}% - 12px)`,
@@ -1071,74 +1244,34 @@ function ColorInterpolationDemo() {
 // ============================================================================
 
 function DragDemo() {
-  const [position, setPosition] = useState({ x: 0, y: 0 })
-  const [velocity, setVelocity] = useState({ x: 0, y: 0 })
-  const [isDragging, setIsDragging] = useState(false)
   const [trail, setTrail] = useState<{ x: number; y: number }[]>([])
-  const containerRef = useRef<HTMLDivElement>(null)
-  const bounds = { left: -150, right: 150, top: -100, bottom: 100 }
 
-  const handleDrag = (_: unknown, info: { point: { x: number; y: number }; delta: { x: number; y: number } }) => {
-    if (!containerRef.current) return
+  // Use SpringKit's useDrag hook with rubber band physics
+  const [pos, api] = useDrag({
+    bounds: { left: -150, right: 150, top: -100, bottom: 100 },
+    rubberBand: true,
+    rubberBandFactor: 0.3,
+  })
 
-    const rect = containerRef.current.getBoundingClientRect()
-    const centerX = rect.left + rect.width / 2
-    const centerY = rect.top + rect.height / 2
-
-    let newX = info.point.x - centerX
-    let newY = info.point.y - centerY
-
-    const rubberBand = (value: number, min: number, max: number) => {
-      if (value < min) {
-        const overshoot = min - value
-        return min - overshoot * 0.3
-      }
-      if (value > max) {
-        const overshoot = value - max
-        return max + overshoot * 0.3
-      }
-      return value
-    }
-
-    newX = rubberBand(newX, bounds.left, bounds.right)
-    newY = rubberBand(newY, bounds.top, bounds.bottom)
-
-    setPosition({ x: newX, y: newY })
-    setVelocity({ x: info.delta.x * 10, y: info.delta.y * 10 })
-
-    setTrail(prev => {
-      const newTrail = [...prev, { x: newX, y: newY }]
-      if (newTrail.length > 20) newTrail.shift()
-      return newTrail
-    })
-  }
-
-  const handleDragEnd = () => {
-    setIsDragging(false)
-    const springBack = () => {
-      setPosition(prev => {
-        let { x, y } = prev
-        const stiffness = 0.15
-        const damping = 0.8
-
-        if (x < bounds.left) x += (bounds.left - x) * stiffness
-        else if (x > bounds.right) x += (bounds.right - x) * stiffness
-
-        if (y < bounds.top) y += (bounds.top - y) * stiffness
-        else if (y > bounds.bottom) y += (bounds.bottom - y) * stiffness
-
-        const isSettled = Math.abs(x) < 1 && Math.abs(y) < 1
-        if (!isSettled) {
-          requestAnimationFrame(springBack)
-        }
-
-        return { x: x * damping, y: y * damping }
+  // Track trail during drag
+  useEffect(() => {
+    if (api.isDragging) {
+      setTrail(prev => {
+        const newTrail = [...prev, { x: pos.x, y: pos.y }]
+        if (newTrail.length > 20) newTrail.shift()
+        return newTrail
       })
+    } else {
+      // Clear trail after drag ends
+      const timer = setTimeout(() => setTrail([]), 500)
+      return () => clearTimeout(timer)
     }
+  }, [pos.x, pos.y, api.isDragging])
 
-    requestAnimationFrame(springBack)
-    setTimeout(() => setTrail([]), 500)
-  }
+  // Spring for scale animation
+  const scaleSpring = useSpring({
+    scale: api.isDragging ? 1.2 : 1,
+  }, { stiffness: 500, damping: 25 })
 
   return (
     <div className="glass rounded-3xl p-8 relative overflow-hidden">
@@ -1151,10 +1284,7 @@ function DragDemo() {
           <p className="text-white/50 text-sm">Drag the ball beyond bounds to feel the elastic resistance</p>
         </div>
 
-        <div
-          ref={containerRef}
-          className="relative h-64 bg-white/5 rounded-2xl overflow-hidden"
-        >
+        <div className="relative h-64 bg-white/5 rounded-2xl overflow-hidden">
           <div className="absolute inset-0 grid-pattern opacity-10" />
           <div className="absolute inset-8 border border-dashed border-white/10 rounded-xl" />
           <div className="absolute top-6 left-1/2 -translate-x-1/2 text-xs text-white/30">bounds</div>
@@ -1172,40 +1302,22 @@ function DragDemo() {
             />
           ))}
 
-          <motion.div
-            drag
-            dragMomentum={false}
-            dragElastic={0}
-            onDragStart={() => setIsDragging(true)}
-            onDrag={handleDrag}
-            onDragEnd={handleDragEnd}
-            animate={{
-              x: position.x,
-              y: position.y,
-              scale: isDragging ? 1.2 : 1,
+          <div
+            ref={api.ref}
+            className="absolute left-1/2 top-1/2 -ml-6 -mt-6 cursor-grab active:cursor-grabbing z-10 touch-none"
+            style={{
+              transform: `translate(${pos.x}px, ${pos.y}px) scale(${scaleSpring.scale})`,
             }}
-            transition={{
-              x: { type: 'tween', duration: 0 },
-              y: { type: 'tween', duration: 0 },
-              scale: { type: 'spring', stiffness: 500, damping: 25 },
-            }}
-            className="absolute left-1/2 top-1/2 -ml-6 -mt-6 cursor-grab active:cursor-grabbing z-10"
           >
             <div className="absolute inset-0 rounded-full bg-gradient-to-br from-blue-400 to-cyan-400 blur-xl opacity-50" style={{ width: 64, height: 64, margin: -8 }} />
             <div className="w-12 h-12 rounded-full bg-gradient-to-br from-blue-400 to-cyan-500 shadow-lg flex items-center justify-center">
               <MousePointer2 className="w-5 h-5 text-white" />
             </div>
-          </motion.div>
-
-          <div className="absolute bottom-3 right-3 text-xs text-white/30 font-mono">
-            x: {position.x.toFixed(0)} y: {position.y.toFixed(0)}
           </div>
 
-          {isDragging && (
-            <div className="absolute bottom-3 left-3 text-xs text-cyan-400/60 font-mono">
-              v: ({velocity.x.toFixed(0)}, {velocity.y.toFixed(0)})
-            </div>
-          )}
+          <div className="absolute bottom-3 right-3 text-xs text-white/30 font-mono">
+            x: {pos.x.toFixed(0)} y: {pos.y.toFixed(0)}
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-4 mt-6">
@@ -1321,7 +1433,7 @@ function FeatureCard({ icon: Icon, title, description, gradient, delay }: {
   delay: number
 }) {
   return (
-    <motion.div
+    <AnimatedDiv
       initial={{ opacity: 0, y: 30 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: '-50px' }}
@@ -1345,7 +1457,7 @@ function FeatureCard({ icon: Icon, title, description, gradient, delay }: {
           {description}
         </p>
       </div>
-    </motion.div>
+    </AnimatedDiv>
   )
 }
 
@@ -1410,7 +1522,7 @@ function Stats() {
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 lg:gap-6">
       {stats.map((stat, i) => (
-        <motion.div
+        <AnimatedDiv
           key={stat.label}
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
@@ -1425,7 +1537,7 @@ function Stats() {
             </div>
             <div className="text-sm text-white/40">{stat.label}</div>
           </div>
-        </motion.div>
+        </AnimatedDiv>
       ))}
     </div>
   )
@@ -1457,13 +1569,9 @@ function ComparisonTable() {
           </tr>
         </thead>
         <tbody>
-          {libraries.map((lib, i) => (
-            <motion.tr
+          {libraries.map((lib) => (
+            <tr
               key={lib.name}
-              initial={{ opacity: 0, x: -20 }}
-              whileInView={{ opacity: 1, x: 0 }}
-              viewport={{ once: true }}
-              transition={{ delay: i * 0.1 }}
               className={`border-b border-white/5 ${lib.name === 'SpringKit' ? 'bg-orange-500/5' : ''}`}
             >
               <td className="py-4 px-4">
@@ -1482,7 +1590,7 @@ function ComparisonTable() {
               <td className="text-center py-4 px-4">
                 {lib.presets ? <Check className="w-4 h-4 text-green-400 mx-auto" /> : <span className="text-white/30">—</span>}
               </td>
-            </motion.tr>
+            </tr>
           ))}
         </tbody>
       </table>
@@ -1551,7 +1659,7 @@ const drag = createDragSpring(element, {
       {/* Animated background */}
       <div className="fixed inset-0 mesh-gradient">
         {/* Floating orbs */}
-        <motion.div
+        <AnimatedDiv
           className="absolute top-1/4 left-1/4 w-[600px] h-[600px] rounded-full bg-gradient-to-br from-orange-500/20 to-transparent blur-3xl"
           animate={{
             x: [0, 50, 0],
@@ -1564,7 +1672,7 @@ const drag = createDragSpring(element, {
             ease: 'easeInOut',
           }}
         />
-        <motion.div
+        <AnimatedDiv
           className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] rounded-full bg-gradient-to-tl from-rose-500/15 to-transparent blur-3xl"
           animate={{
             x: [0, -40, 0],
@@ -1593,13 +1701,13 @@ const drag = createDragSpring(element, {
             <div className="grid lg:grid-cols-2 gap-12 lg:gap-20 items-center">
               {/* Left: Content */}
               <div className="space-y-8">
-                <motion.div
+                <AnimatedDiv
                   initial={{ opacity: 0, y: 30 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.8, ease: [0.21, 0.47, 0.32, 0.98] }}
                 >
                   {/* Badge */}
-                  <motion.div
+                  <AnimatedDiv
                     className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass-subtle mb-8"
                     whileHover={{ scale: 1.02 }}
                   >
@@ -1608,7 +1716,7 @@ const drag = createDragSpring(element, {
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500" />
                     </span>
                     <span className="text-sm text-white/70">v1.0.0 — Production Ready</span>
-                  </motion.div>
+                  </AnimatedDiv>
 
                   {/* Headline */}
                   <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold leading-[1.1] tracking-tight">
@@ -1616,20 +1724,20 @@ const drag = createDragSpring(element, {
                     <br />
                     <span className="text-gradient">Spring Animations</span>
                   </h1>
-                </motion.div>
+                </AnimatedDiv>
 
-                <motion.p
+                <AnimatedDiv
                   initial={{ opacity: 0, y: 30 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.8, delay: 0.1, ease: [0.21, 0.47, 0.32, 0.98] }}
+                  transition={{ delay: 0.1, stiffness: 100, damping: 15 }}
                   className="text-lg md:text-xl text-white/50 max-w-xl leading-relaxed"
                 >
-                  A zero-dependency animation library that brings natural, fluid motion
-                  to your UI with real spring physics, gesture support, and React integration.
-                </motion.p>
+                  <p>A zero-dependency animation library that brings natural, fluid motion
+                  to your UI with real spring physics, gesture support, and React integration.</p>
+                </AnimatedDiv>
 
                 {/* CTA Buttons */}
-                <motion.div
+                <AnimatedDiv
                   initial={{ opacity: 0, y: 30 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.8, delay: 0.2, ease: [0.21, 0.47, 0.32, 0.98] }}
@@ -1647,10 +1755,10 @@ const drag = createDragSpring(element, {
                       Star on GitHub
                     </Button>
                   </a>
-                </motion.div>
+                </AnimatedDiv>
 
                 {/* Install command */}
-                <motion.div
+                <AnimatedDiv
                   initial={{ opacity: 0, y: 30 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.8, delay: 0.3, ease: [0.21, 0.47, 0.32, 0.98] }}
@@ -1660,35 +1768,35 @@ const drag = createDragSpring(element, {
                     <code className="text-sm text-white/70 font-mono">{installCode}</code>
                     <CopyButton text={installCode} />
                   </div>
-                </motion.div>
+                </AnimatedDiv>
               </div>
 
               {/* Right: Interactive Demo */}
-              <motion.div
+              <AnimatedDiv
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 transition={{ duration: 1, delay: 0.2, ease: [0.21, 0.47, 0.32, 0.98] }}
                 className="hidden lg:block"
               >
                 <HeroSpringDemo />
-              </motion.div>
+              </AnimatedDiv>
             </div>
 
             {/* Scroll indicator */}
-            <motion.div
+            <AnimatedDiv
               className="absolute bottom-8 left-1/2 -translate-x-1/2"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               transition={{ delay: 1.5 }}
             >
-              <motion.div
+              <AnimatedDiv
                 animate={{ y: [0, 8, 0] }}
                 transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
                 className="text-white/30"
               >
                 <ChevronDown className="w-6 h-6" />
-              </motion.div>
-            </motion.div>
+              </AnimatedDiv>
+            </AnimatedDiv>
           </div>
         </section>
 
@@ -1702,7 +1810,7 @@ const drag = createDragSpring(element, {
         {/* Features Section */}
         <section className="relative py-32 px-4">
           <div className="max-w-6xl mx-auto">
-            <motion.div
+            <AnimatedDiv
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
@@ -1716,7 +1824,7 @@ const drag = createDragSpring(element, {
                 A complete animation toolkit with physics-based springs, gesture support,
                 orchestration, and seamless React integration.
               </p>
-            </motion.div>
+            </AnimatedDiv>
 
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               <FeatureCard
@@ -1768,7 +1876,7 @@ const drag = createDragSpring(element, {
         {/* Interactive Playground Section */}
         <section className="relative py-32 px-4 bg-black/20">
           <div className="max-w-5xl mx-auto">
-            <motion.div
+            <AnimatedDiv
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
@@ -1782,23 +1890,23 @@ const drag = createDragSpring(element, {
                 Experiment with spring parameters in real-time.
                 Adjust stiffness, damping, and mass to see how they affect motion.
               </p>
-            </motion.div>
+            </AnimatedDiv>
 
-            <motion.div
+            <AnimatedDiv
               initial={{ opacity: 0, y: 40 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.8, delay: 0.2 }}
             >
               <PhysicsPlayground />
-            </motion.div>
+            </AnimatedDiv>
           </div>
         </section>
 
         {/* Orchestration Section - Stagger Demo */}
         <section className="relative py-32 px-4">
           <div className="max-w-5xl mx-auto">
-            <motion.div
+            <AnimatedDiv
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
@@ -1811,23 +1919,23 @@ const drag = createDragSpring(element, {
               <p className="text-white/50 text-lg max-w-2xl mx-auto">
                 Create complex animation sequences with stagger, parallel, and sequential orchestration.
               </p>
-            </motion.div>
+            </AnimatedDiv>
 
-            <motion.div
+            <AnimatedDiv
               initial={{ opacity: 0, y: 40 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.8, delay: 0.2 }}
             >
               <StaggerDemo />
-            </motion.div>
+            </AnimatedDiv>
           </div>
         </section>
 
         {/* Color & Gesture Demos */}
         <section className="relative py-32 px-4 bg-black/20">
           <div className="max-w-6xl mx-auto">
-            <motion.div
+            <AnimatedDiv
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
@@ -1840,25 +1948,25 @@ const drag = createDragSpring(element, {
               <p className="text-white/50 text-lg max-w-2xl mx-auto">
                 Interpolate between any values including colors, and build fluid gesture interactions.
               </p>
-            </motion.div>
+            </AnimatedDiv>
 
             <div className="grid lg:grid-cols-2 gap-8">
-              <motion.div
+              <AnimatedDiv
                 initial={{ opacity: 0, x: -30 }}
                 whileInView={{ opacity: 1, x: 0 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.6 }}
               >
                 <ColorInterpolationDemo />
-              </motion.div>
-              <motion.div
+              </AnimatedDiv>
+              <AnimatedDiv
                 initial={{ opacity: 0, x: 30 }}
                 whileInView={{ opacity: 1, x: 0 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.6, delay: 0.1 }}
               >
                 <DragDemo />
-              </motion.div>
+              </AnimatedDiv>
             </div>
           </div>
         </section>
@@ -1866,7 +1974,7 @@ const drag = createDragSpring(element, {
         {/* Code Examples Section */}
         <section className="relative py-32 px-4">
           <div className="max-w-6xl mx-auto">
-            <motion.div
+            <AnimatedDiv
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
@@ -1880,11 +1988,11 @@ const drag = createDragSpring(element, {
                 Get started in seconds with an intuitive API that feels natural.
                 Works with vanilla JavaScript or React.
               </p>
-            </motion.div>
+            </AnimatedDiv>
 
             <div className="grid lg:grid-cols-2 gap-8">
               {/* Vanilla JS */}
-              <motion.div
+              <AnimatedDiv
                 initial={{ opacity: 0, x: -30 }}
                 whileInView={{ opacity: 1, x: 0 }}
                 viewport={{ once: true }}
@@ -1896,10 +2004,10 @@ const drag = createDragSpring(element, {
                   <span className="font-medium text-white">Vanilla JavaScript</span>
                 </div>
                 <CodeBlock code={vanillaExample} filename="animation.ts" />
-              </motion.div>
+              </AnimatedDiv>
 
               {/* React */}
-              <motion.div
+              <AnimatedDiv
                 initial={{ opacity: 0, x: 30 }}
                 whileInView={{ opacity: 1, x: 0 }}
                 viewport={{ once: true }}
@@ -1911,11 +2019,11 @@ const drag = createDragSpring(element, {
                   <span className="font-medium text-white">React Hooks</span>
                 </div>
                 <CodeBlock code={reactExample} filename="BouncyCard.tsx" />
-              </motion.div>
+              </AnimatedDiv>
             </div>
 
             {/* Gesture Example */}
-            <motion.div
+            <AnimatedDiv
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
@@ -1927,14 +2035,14 @@ const drag = createDragSpring(element, {
                 <span className="font-medium text-white">Gesture Support</span>
               </div>
               <CodeBlock code={gestureExample} filename="drag.ts" />
-            </motion.div>
+            </AnimatedDiv>
           </div>
         </section>
 
         {/* Comparison Section */}
         <section className="relative py-32 px-4 bg-black/20">
           <div className="max-w-4xl mx-auto">
-            <motion.div
+            <AnimatedDiv
               initial={{ opacity: 0, y: 30 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
@@ -1947,9 +2055,9 @@ const drag = createDragSpring(element, {
               <p className="text-white/50 text-lg max-w-2xl mx-auto">
                 SpringKit delivers premium features at a fraction of the bundle size.
               </p>
-            </motion.div>
+            </AnimatedDiv>
 
-            <motion.div
+            <AnimatedDiv
               initial={{ opacity: 0, y: 40 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
@@ -1957,14 +2065,14 @@ const drag = createDragSpring(element, {
               className="glass rounded-2xl overflow-hidden"
             >
               <ComparisonTable />
-            </motion.div>
+            </AnimatedDiv>
           </div>
         </section>
 
         {/* CTA Section */}
         <section className="relative py-32 px-4">
           <div className="max-w-4xl mx-auto">
-            <motion.div
+            <AnimatedDiv
               initial={{ opacity: 0, scale: 0.95 }}
               whileInView={{ opacity: 1, scale: 1 }}
               viewport={{ once: true }}
@@ -1975,7 +2083,7 @@ const drag = createDragSpring(element, {
               <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-orange-500/20 via-amber-500/20 to-rose-500/20 blur-3xl" />
 
               <div className="relative glass rounded-3xl p-12 md:p-16 text-center border border-white/10">
-                <motion.div
+                <AnimatedDiv
                   initial={{ opacity: 0, y: 20 }}
                   whileInView={{ opacity: 1, y: 0 }}
                   viewport={{ once: true }}
@@ -2004,9 +2112,9 @@ const drag = createDragSpring(element, {
                       </Button>
                     </Link>
                   </div>
-                </motion.div>
+                </AnimatedDiv>
               </div>
-            </motion.div>
+            </AnimatedDiv>
           </div>
         </section>
 

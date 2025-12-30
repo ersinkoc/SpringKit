@@ -1,8 +1,8 @@
-import { useState } from 'react'
-import { motion } from 'framer-motion'
+import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { DocLayout, DocSection, CodeBlock } from '@/components/docs'
 import { Palette, Play } from 'lucide-react'
+import { createSpringValue } from '@oxog/springkit'
 
 const presets = [
   { name: 'default', config: { stiffness: 100, damping: 10 }, description: 'Standard spring animation' },
@@ -16,11 +16,24 @@ const presets = [
 ]
 
 function PresetCard({ name, config, description }: { name: string; config: { stiffness: number; damping: number }; description: string }) {
-  const [isAnimating, setIsAnimating] = useState(false)
+  const [position, setPosition] = useState(8)
+  const springRef = useRef<ReturnType<typeof createSpringValue> | null>(null)
+
+  useEffect(() => {
+    springRef.current = createSpringValue(8, {
+      ...config,
+      onUpdate: setPosition,
+    })
+    return () => springRef.current?.destroy()
+  }, [config.stiffness, config.damping])
 
   const handlePlay = () => {
-    setIsAnimating(true)
-    setTimeout(() => setIsAnimating(false), 1500)
+    if (!springRef.current) return
+    // Animate to end, then back to start
+    springRef.current.set(200)
+    setTimeout(() => {
+      springRef.current?.set(8)
+    }, 750)
   }
 
   return (
@@ -42,17 +55,9 @@ function PresetCard({ name, config, description }: { name: string; config: { sti
 
         {/* Animation preview */}
         <div className="h-12 bg-white/5 rounded-lg mb-4 relative overflow-hidden">
-          <motion.div
+          <div
             className="absolute top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg bg-gradient-to-br from-orange-500 to-amber-500"
-            animate={{
-              x: isAnimating ? [8, 'calc(100% - 40px)', 8] : 8,
-            }}
-            transition={{
-              type: 'spring',
-              stiffness: config.stiffness,
-              damping: config.damping,
-              duration: isAnimating ? 1.5 : 0,
-            }}
+            style={{ transform: `translateY(-50%) translateX(${position}px)` }}
           />
         </div>
 
