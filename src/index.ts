@@ -55,6 +55,10 @@ export {
   isOverdamped,
 } from './core/physics.js'
 
+// ============ Global Loop ============
+
+export { globalLoop, AnimationState } from './animation/loop.js'
+
 // ============ Types ============
 
 export * from './types.js'
