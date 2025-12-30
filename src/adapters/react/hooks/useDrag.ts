@@ -12,6 +12,8 @@ export interface DragAPI {
   set(values: { x?: number; y?: number }): void
   /** Reset to initial position */
   reset(): void
+  /** Whether currently dragging */
+  isDragging: boolean
 }
 
 /**
@@ -53,6 +55,7 @@ export function useDrag(config: DragSpringConfig = {}): [
   const dragSpringRef = useRef<DragSpring | null>(null)
   const positionRef = useRef({ x: 0, y: 0 })
   const [element, setElement] = useState<HTMLElement | null>(null)
+  const [isDragging, setIsDragging] = useState(false)
   const [, forceUpdate] = useState({})
   const configRef = useRef(config)
 
@@ -76,6 +79,14 @@ export function useDrag(config: DragSpringConfig = {}): [
       // Create drag spring with the element
       dragSpringRef.current = createDragSpring(element, {
         ...configRef.current,
+        onDragStart: (e) => {
+          setIsDragging(true)
+          configRef.current.onDragStart?.(e)
+        },
+        onDragEnd: (x, y, velocity) => {
+          setIsDragging(false)
+          configRef.current.onDragEnd?.(x, y, velocity)
+        },
         onUpdate: (x, y) => {
           positionRef.current = { x, y }
           forceUpdate({})
@@ -103,5 +114,5 @@ export function useDrag(config: DragSpringConfig = {}): [
     forceUpdate({})
   }
 
-  return [positionRef.current, { ref: refCallback, set, reset }]
+  return [positionRef.current, { ref: refCallback, set, reset, isDragging }]
 }

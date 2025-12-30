@@ -242,16 +242,16 @@ function OrchestrationDemo() {
 
     // Reset
     boxRefs.current.forEach(box => {
-      if (box) box.style.transform = 'translateX(0)'
+      if (box) box.style.left = '8px'
     })
 
     const createAnim = (index: number) => () => {
-      return spring(0, 200, {
+      return spring(0, 100, {
         stiffness: 180,
         damping: 20,
         onUpdate: v => {
           const box = boxRefs.current[index]
-          if (box) box.style.transform = `translateX(${v}px)`
+          if (box) box.style.left = `${8 + v}px`
         }
       }).start()
     }
@@ -265,10 +265,10 @@ function OrchestrationDemo() {
         // Stagger with manual delays
         const boxes = boxRefs.current.filter(Boolean) as HTMLDivElement[]
         await stagger(boxes, (box, index) => {
-          return spring(0, 200, {
+          return spring(0, 100, {
             stiffness: 180,
             damping: 20,
-            onUpdate: v => { box.style.transform = `translateX(${v}px)` }
+            onUpdate: v => { box.style.left = `${8 + v}px` }
           }).start()
         }, { delay: 100 })
       }
@@ -305,8 +305,9 @@ function OrchestrationDemo() {
           <div key={i} className="h-10 bg-zinc-800/30 rounded-lg relative overflow-hidden">
             <div
               ref={el => { boxRefs.current[i] = el }}
-              className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg"
+              className="absolute top-1/2 -translate-y-1/2 w-8 h-8 rounded-lg"
               style={{
+                left: '8px',
                 backgroundColor: ['#10b981', '#22d3ee', '#a78bfa'][i],
                 boxShadow: `0 4px 20px ${['#10b98140', '#22d3ee40', '#a78bfa40'][i]}`
               }}
