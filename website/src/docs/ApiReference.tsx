@@ -53,7 +53,7 @@ function ApiIndex() {
         ))}
       </div>
 
-      <DocSection title="Other Functions">
+      <DocSection title="Animation Functions">
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
           {[
             'interpolateColor()',
@@ -67,6 +67,44 @@ function ApiIndex() {
           ].map((fn) => (
             <div key={fn} className="px-4 py-3 rounded-lg bg-white/5 border border-white/10 font-mono text-sm text-orange-300">
               {fn}
+            </div>
+          ))}
+        </div>
+      </DocSection>
+
+      <DocSection title="Physics Utilities">
+        <p className="text-muted-foreground mb-4">
+          Helper functions for analyzing spring behavior:
+        </p>
+        <div className="grid md:grid-cols-2 gap-3">
+          {[
+            { fn: 'calculateDampingRatio(damping, stiffness, mass)', desc: 'Calculate damping ratio (ζ)' },
+            { fn: 'isUnderdamped(config)', desc: 'Check if spring will oscillate (ζ < 1)' },
+            { fn: 'isOverdamped(config)', desc: 'Check if spring is sluggish (ζ > 1)' },
+            { fn: 'isCriticallyDamped(config)', desc: 'Check if spring is critically damped (ζ ≈ 1)' },
+          ].map((item) => (
+            <div key={item.fn} className="p-3 rounded-lg bg-white/5 border border-white/10">
+              <code className="font-mono text-sm text-orange-300 block mb-1">{item.fn}</code>
+              <span className="text-muted-foreground text-xs">{item.desc}</span>
+            </div>
+          ))}
+        </div>
+      </DocSection>
+
+      <DocSection title="Global Loop">
+        <p className="text-muted-foreground mb-4">
+          Access the global animation loop for monitoring and debugging:
+        </p>
+        <div className="grid md:grid-cols-2 gap-3">
+          {[
+            { fn: 'globalLoop.onFrame(callback)', desc: 'Subscribe to frame updates with delta time' },
+            { fn: 'globalLoop.getFPS()', desc: 'Get current frame rate' },
+            { fn: 'globalLoop.getAliveCount()', desc: 'Get number of active animations' },
+            { fn: 'globalLoop.size', desc: 'Total animations in loop' },
+          ].map((item) => (
+            <div key={item.fn} className="p-3 rounded-lg bg-white/5 border border-white/10">
+              <code className="font-mono text-sm text-orange-300 block mb-1">{item.fn}</code>
+              <span className="text-muted-foreground text-xs">{item.desc}</span>
             </div>
           ))}
         </div>
