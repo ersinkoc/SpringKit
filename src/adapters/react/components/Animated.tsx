@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState, useContext, useCallback } from 'react'
+import React, { useEffect, useRef, useState, useContext, useCallback, memo } from 'react'
 import { createSpringGroup } from '../../../index.js'
 import type { SpringConfig } from '../../../types.js'
 import { PresenceContext } from '../context/PresenceContext.js'
@@ -99,8 +99,8 @@ function extractNumericValues(style: AnimatedStyle): Record<string, number> {
  */
 function createAnimatedComponent<T extends React.ElementType>(
   tag: T
-): React.ForwardRefExoticComponent<React.ComponentPropsWithoutRef<T> & AnimatedElementProps> {
-  return React.forwardRef<HTMLElement, React.ComponentPropsWithoutRef<T> & AnimatedElementProps>(
+) {
+  const AnimatedComponent = React.forwardRef<HTMLElement, React.ComponentPropsWithoutRef<T> & AnimatedElementProps>(
     (
       {
         children,
@@ -426,6 +426,9 @@ function createAnimatedComponent<T extends React.ElementType>(
       )
     }
   )
+
+  AnimatedComponent.displayName = `Animated.${String(tag)}`
+  return memo(AnimatedComponent)
 }
 
 /**
