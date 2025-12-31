@@ -49,6 +49,7 @@ const navItems: NavItem[] = [
   {
     title: 'Advanced Features',
     children: [
+      { title: 'Variants System', href: '/docs/advanced/variants' },
       { title: 'Timeline API', href: '/docs/advanced/timeline' },
       { title: 'SVG Morphing', href: '/docs/advanced/morph' },
       { title: 'Scroll-Linked', href: '/docs/advanced/scroll-linked' },

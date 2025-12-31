@@ -7,9 +7,43 @@ export { createSpringValue } from './core/spring-value.js'
 export { createSpringGroup } from './core/spring-group.js'
 export {
   springPresets,
+  physicsPresets,
   configFromDuration,
   configFromBounce,
+  getPhysicsPreset,
+  createFeeling,
+  adjustSpeed,
+  adjustBounce,
 } from './core/config.js'
+export type { PhysicsPresetName } from './core/config.js'
+
+// ============ Variants System ============
+
+export {
+  resolveVariant,
+  getVariant,
+  mergeVariants,
+  isTransformProperty,
+  isAnimatable,
+  parseValueWithUnit,
+  buildTransformString,
+  applyValuesToElement,
+  calculateStaggerDelays,
+  createOrchestration,
+  variantPresets,
+  createVariantPreset,
+  isVariants,
+  isVariant,
+} from './core/variants.js'
+export type {
+  AnimationValues,
+  VariantTransition,
+  Variant,
+  Variants,
+  OrchestrationOptions,
+  ResolvedVariant,
+  OrchestrationSequence,
+} from './core/variants.js'
 
 // ============ Animation Orchestration ============
 

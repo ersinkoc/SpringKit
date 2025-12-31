@@ -25,10 +25,18 @@ import {
   useTap,
   useFocus,
   useGestureAnimation,
+  useVariants,
+  useStaggerChildren,
+  VariantProvider,
 } from '@oxog/springkit/react'
 import {
   spring,
   springPresets,
+  physicsPresets,
+  getPhysicsPreset,
+  createFeeling,
+  adjustSpeed,
+  adjustBounce,
   createSpringValue,
   decay,
   sequence,
@@ -50,6 +58,7 @@ import {
   spiralStagger,
   gridStagger,
   randomStagger,
+  variantPresets,
 } from '@oxog/springkit'
 
 // ============================================================================
@@ -2442,6 +2451,242 @@ function StaggerPatternsDemo() {
   )
 }
 
+// Physics Presets Demo - Semantic Spring Configurations
+function PhysicsPresetsDemo() {
+  const [selectedPreset, setSelectedPreset] = useState<string>('button')
+  const [selectedFeeling, setSelectedFeeling] = useState<string>('snappy')
+  const ballRef = useRef<HTMLDivElement>(null)
+  const springRef = useRef<ReturnType<typeof createSpringValue> | null>(null)
+
+  const presetCategories = {
+    'UI': ['button', 'toggle', 'checkbox', 'hover', 'focus'],
+    'Layout': ['pageTransition', 'modalEnter', 'sidebar', 'dropdown', 'toast'],
+    'Gestures': ['dragRelease', 'swipe', 'snap', 'rubberBand'],
+    'Natural': ['pendulum', 'jelly', 'elastic', 'heavy', 'light'],
+  }
+
+  const feelings = ['snappy', 'smooth', 'bouncy', 'heavy', 'light', 'elastic'] as const
+
+  const handlePresetClick = (preset: string) => {
+    setSelectedPreset(preset)
+    animateBall(getPhysicsPreset(preset as keyof typeof physicsPresets))
+  }
+
+  const handleFeelingClick = (feeling: typeof feelings[number]) => {
+    setSelectedFeeling(feeling)
+    animateBall(createFeeling(feeling))
+  }
+
+  const animateBall = (config: { stiffness: number; damping: number; mass: number }) => {
+    if (!ballRef.current) return
+
+    // Stop previous animation
+    if (springRef.current) {
+      springRef.current.stop()
+    }
+
+    // Create new spring with the preset config
+    springRef.current = createSpringValue(0, config)
+
+    // Subscribe to updates
+    springRef.current.subscribe((value) => {
+      if (ballRef.current) {
+        ballRef.current.style.transform = `translateX(${value * 100}px) scale(${1 + value * 0.2})`
+      }
+    })
+
+    // Animate to 1 then back to 0
+    springRef.current.set(1)
+    setTimeout(() => {
+      springRef.current?.set(0)
+    }, 500)
+  }
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center">
+          <Gauge className="w-5 h-5 text-amber-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-white">Physics Presets</h3>
+          <p className="text-xs text-white/40">40+ semantic configurations</p>
+        </div>
+      </div>
+
+      {/* Animation Preview */}
+      <div className="bg-black/20 rounded-xl p-4 mb-4 h-20 flex items-center">
+        <div
+          ref={ballRef}
+          className="w-12 h-12 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 shadow-lg shadow-amber-500/30"
+        />
+      </div>
+
+      {/* Preset Categories */}
+      <div className="space-y-2 mb-4">
+        {Object.entries(presetCategories).map(([category, presets]) => (
+          <div key={category}>
+            <p className="text-xs text-white/40 mb-1">{category}</p>
+            <div className="flex gap-1 flex-wrap">
+              {presets.map((preset) => (
+                <button
+                  key={preset}
+                  onClick={() => handlePresetClick(preset)}
+                  className={`px-2 py-0.5 text-xs rounded transition-colors ${
+                    selectedPreset === preset
+                      ? 'bg-amber-500/30 text-amber-300'
+                      : 'bg-white/5 hover:bg-white/10 text-white/60'
+                  }`}
+                >
+                  {preset}
+                </button>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Feelings */}
+      <p className="text-xs text-white/40 mb-1">Or use feelings:</p>
+      <div className="flex gap-1 flex-wrap">
+        {feelings.map((feeling) => (
+          <button
+            key={feeling}
+            onClick={() => handleFeelingClick(feeling)}
+            className={`px-2 py-0.5 text-xs rounded transition-colors capitalize ${
+              selectedFeeling === feeling
+                ? 'bg-orange-500/30 text-orange-300'
+                : 'bg-white/5 hover:bg-white/10 text-white/60'
+            }`}
+          >
+            {feeling}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// Variants System Demo - Declarative Animation States
+function VariantsDemo() {
+  const [variant, setVariant] = useState<'initial' | 'visible' | 'exit'>('initial')
+  const [presetName, setPresetName] = useState<keyof typeof variantPresets>('fadeInUp')
+
+  // Get current preset
+  const preset = variantPresets[presetName]
+
+  // List item component using useVariants
+  function ListItem({ index }: { index: number }) {
+    const { getDelay } = useStaggerChildren({ count: 4, staggerChildren: 100 })
+    const { values } = useVariants({
+      variants: {
+        initial: { opacity: 0, y: 20, scale: 0.9 },
+        visible: {
+          opacity: 1,
+          y: 0,
+          scale: 1,
+          transition: {
+            spring: { stiffness: 300, damping: 20 },
+            delay: getDelay(index)
+          }
+        },
+        exit: { opacity: 0, y: -10, scale: 0.95 }
+      },
+      animate: variant,
+      initial: 'initial'
+    })
+
+    return (
+      <div
+        className="px-4 py-3 bg-gradient-to-r from-violet-500/20 to-fuchsia-500/20 rounded-lg border border-violet-500/30"
+        style={{
+          opacity: values.opacity,
+          transform: `translateY(${values.y}px) scale(${values.scale})`
+        }}
+      >
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 rounded-full bg-violet-500/30 flex items-center justify-center">
+            <Sparkles className="w-4 h-4 text-violet-400" />
+          </div>
+          <span className="text-white/80 text-sm">Animated Item {index + 1}</span>
+        </div>
+      </div>
+    )
+  }
+
+  const presetOptions = ['fadeIn', 'fadeInUp', 'fadeInDown', 'scaleIn', 'popIn', 'slideUp'] as const
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500/20 to-fuchsia-500/20 flex items-center justify-center">
+          <Layers className="w-5 h-5 text-violet-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-white">Variants System</h3>
+          <p className="text-xs text-white/40">Declarative animation states</p>
+        </div>
+      </div>
+
+      {/* Preview Box */}
+      <div className="bg-black/20 rounded-xl p-4 mb-4 min-h-[120px] flex items-center justify-center">
+        <VariantProvider variant={variant}>
+          <div className="space-y-2 w-full">
+            {[0, 1, 2, 3].map(i => (
+              <ListItem key={i} index={i} />
+            ))}
+          </div>
+        </VariantProvider>
+      </div>
+
+      {/* Preset Selector */}
+      <div className="flex gap-1 mb-3 flex-wrap">
+        {presetOptions.map((p) => (
+          <button
+            key={p}
+            onClick={() => setPresetName(p)}
+            className={`px-2 py-1 text-xs rounded-lg transition-colors ${
+              presetName === p
+                ? 'bg-violet-500/30 text-violet-300'
+                : 'bg-white/5 hover:bg-white/10 text-white/60'
+            }`}
+          >
+            {p}
+          </button>
+        ))}
+      </div>
+
+      {/* Controls */}
+      <div className="flex gap-2">
+        <button
+          onClick={() => setVariant('initial')}
+          className={`flex-1 py-2 rounded-lg transition-colors text-sm ${
+            variant === 'initial' ? 'bg-violet-500/30 text-violet-300' : 'bg-white/5 text-white/60 hover:bg-white/10'
+          }`}
+        >
+          Initial
+        </button>
+        <button
+          onClick={() => setVariant('visible')}
+          className={`flex-1 py-2 rounded-lg transition-colors text-sm ${
+            variant === 'visible' ? 'bg-violet-500/30 text-violet-300' : 'bg-white/5 text-white/60 hover:bg-white/10'
+          }`}
+        >
+          Visible
+        </button>
+        <button
+          onClick={() => setVariant('exit')}
+          className={`flex-1 py-2 rounded-lg transition-colors text-sm ${
+            variant === 'exit' ? 'bg-violet-500/30 text-violet-300' : 'bg-white/5 text-white/60 hover:bg-white/10'
+          }`}
+        >
+          Exit
+        </button>
+      </div>
+    </div>
+  )
+}
+
 // Elastic Pull-to-Refresh
 function PullToRefreshDemo() {
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -4138,9 +4383,12 @@ export function Examples() {
             <h2 className="text-2xl font-bold text-white">New in v1.3.0</h2>
             <span className="px-2 py-0.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white text-xs font-bold rounded-full animate-pulse">LATEST</span>
           </div>
-          <p className="text-white/40 mb-6">Timeline API, SVG Morphing, Scroll-Linked Animations, Advanced Stagger Patterns</p>
+          <p className="text-white/40 mb-6">Variants System, Timeline API, SVG Morphing, Scroll-Linked, Stagger Patterns, Physics Presets</p>
 
-          <div className="grid lg:grid-cols-4 gap-6">
+          <div className="grid lg:grid-cols-6 gap-6">
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.125 }}>
+              <VariantsDemo />
+            </AnimatedDiv>
             <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.13 }}>
               <TimelineDemo />
             </AnimatedDiv>
@@ -4152,6 +4400,9 @@ export function Examples() {
             </AnimatedDiv>
             <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.145 }}>
               <StaggerPatternsDemo />
+            </AnimatedDiv>
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
+              <PhysicsPresetsDemo />
             </AnimatedDiv>
           </div>
         </AnimatedDiv>

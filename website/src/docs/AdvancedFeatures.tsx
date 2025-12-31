@@ -1,12 +1,13 @@
 import { Routes, Route, Link } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
 import { DocLayout, DocSection, CodeBlock } from '@/components/docs'
-import { Clock, Shapes, MoveVertical, Layers, Grid3X3, Wand2 } from 'lucide-react'
+import { Clock, Shapes, MoveVertical, Layers, Grid3X3, Wand2, Sparkles } from 'lucide-react'
 
 export function AdvancedFeatures() {
   return (
     <Routes>
       <Route path="/" element={<AdvancedIndex />} />
+      <Route path="/variants" element={<VariantsDoc />} />
       <Route path="/timeline" element={<TimelineDoc />} />
       <Route path="/morph" element={<MorphDoc />} />
       <Route path="/scroll-linked" element={<ScrollLinkedDoc />} />
@@ -18,6 +19,12 @@ export function AdvancedFeatures() {
 
 function AdvancedIndex() {
   const topics = [
+    {
+      title: 'Variants System',
+      href: '/docs/advanced/variants',
+      desc: 'Declarative animation states with cascading and orchestration.',
+      icon: Sparkles,
+    },
     {
       title: 'Timeline API',
       href: '/docs/advanced/timeline',
@@ -77,6 +84,212 @@ function AdvancedIndex() {
           </Link>
         ))}
       </div>
+    </DocLayout>
+  )
+}
+
+function VariantsDoc() {
+  return (
+    <DocLayout
+      title="Variants System"
+      description="Declarative animation states with cascading and orchestration"
+      icon={Sparkles}
+    >
+      <DocSection title="Overview">
+        <p className="text-muted-foreground mb-4">
+          The Variants System provides a powerful, declarative way to define animation states
+          and orchestrate animations across component hierarchies. Inspired by Framer Motion's
+          variants but with SpringKit's physics-first approach.
+        </p>
+      </DocSection>
+
+      <DocSection title="Basic Usage">
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { useVariants } from '@oxog/springkit/react'
+
+const variants = {
+  hidden: { opacity: 0, y: 20 },
+  visible: {
+    opacity: 1,
+    y: 0,
+    transition: { spring: { stiffness: 300, damping: 20 } }
+  },
+  exit: { opacity: 0, y: -10 }
+}
+
+function MyComponent() {
+  const { values, setVariant, currentVariant } = useVariants({
+    variants,
+    animate: 'visible',
+    initial: 'hidden',
+  })
+
+  return (
+    <div style={{
+      opacity: values.opacity,
+      transform: \`translateY(\${values.y}px)\`
+    }}>
+      Content
+    </div>
+  )
+}`} />
+          </CardContent>
+        </Card>
+      </DocSection>
+
+      <DocSection title="Variant Provider & Context">
+        <p className="text-muted-foreground mb-4">
+          Use VariantProvider to cascade variants to children:
+        </p>
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { VariantProvider, useVariantContext } from '@oxog/springkit/react'
+
+function Parent() {
+  const [variant, setVariant] = useState('hidden')
+
+  return (
+    <VariantProvider variant={variant}>
+      <button onClick={() => setVariant('visible')}>
+        Animate
+      </button>
+      <ChildComponent />
+      <ChildComponent />
+    </VariantProvider>
+  )
+}
+
+function ChildComponent() {
+  const context = useVariantContext()
+  const { values } = useVariants({
+    variants: {
+      hidden: { opacity: 0, scale: 0.9 },
+      visible: { opacity: 1, scale: 1 },
+    },
+    inherit: true, // Inherits variant from parent
+  })
+
+  return <div style={{ opacity: values.opacity }} />
+}`} />
+          </CardContent>
+        </Card>
+      </DocSection>
+
+      <DocSection title="Stagger Children">
+        <p className="text-muted-foreground mb-4">
+          Create staggered animations for lists:
+        </p>
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { useStaggerChildren, useVariants } from '@oxog/springkit/react'
+
+function List({ items }) {
+  const { getDelay, delays } = useStaggerChildren({
+    count: items.length,
+    staggerChildren: 100, // 100ms between each
+    delayChildren: 50,    // Initial delay
+    staggerDirection: 1,  // 1 or -1 for reverse
+  })
+
+  return (
+    <div>
+      {items.map((item, i) => (
+        <ListItem key={item.id} delay={getDelay(i)} />
+      ))}
+    </div>
+  )
+}
+
+function ListItem({ delay }) {
+  const { values } = useVariants({
+    variants: {
+      hidden: { opacity: 0, x: -20 },
+      visible: {
+        opacity: 1,
+        x: 0,
+        transition: { delay }
+      },
+    },
+    animate: 'visible',
+    initial: 'hidden',
+  })
+
+  // ...
+}`} />
+          </CardContent>
+        </Card>
+      </DocSection>
+
+      <DocSection title="Variant Presets">
+        <p className="text-muted-foreground mb-4">
+          SpringKit includes common animation presets:
+        </p>
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { variantPresets } from '@oxog/springkit'
+
+// Available presets:
+// fadeIn, fadeInUp, fadeInDown, fadeInLeft, fadeInRight
+// scaleIn, popIn
+// slideUp, slideDown, slideLeft, slideRight
+// staggerContainer, staggerItem
+
+const { values } = useVariants({
+  variants: variantPresets.fadeInUp,
+  animate: 'animate',
+  initial: 'initial',
+})`} />
+          </CardContent>
+        </Card>
+      </DocSection>
+
+      <DocSection title="Transition Options">
+        <div className="grid gap-3">
+          {[
+            { option: 'spring', desc: 'Spring configuration { stiffness, damping, mass }' },
+            { option: 'delay', desc: 'Delay before animation starts (ms)' },
+            { option: 'staggerChildren', desc: 'Delay between child animations (ms)' },
+            { option: 'delayChildren', desc: 'Initial delay before first child (ms)' },
+            { option: 'when', desc: '"beforeChildren" | "afterChildren" | false' },
+            { option: 'staggerDirection', desc: '1 for normal, -1 for reverse order' },
+          ].map((item) => (
+            <div key={item.option} className="flex items-center gap-4 p-3 rounded-lg bg-white/5 border border-white/10">
+              <code className="text-orange-300 font-mono text-sm">{item.option}</code>
+              <span className="text-muted-foreground text-sm">{item.desc}</span>
+            </div>
+          ))}
+        </div>
+      </DocSection>
+
+      <DocSection title="Dynamic Variants">
+        <p className="text-muted-foreground mb-4">
+          Use custom data to create dynamic variants:
+        </p>
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`const variants = {
+  hidden: { opacity: 0 },
+  visible: (custom) => ({
+    opacity: 1,
+    y: custom.offset,
+    transition: {
+      delay: custom.index * 100,
+    },
+  }),
+}
+
+function Item({ index }) {
+  const { values } = useVariants({
+    variants,
+    animate: 'visible',
+    initial: 'hidden',
+    custom: { index, offset: 20 * index },
+  })
+}`} />
+          </CardContent>
+        </Card>
+      </DocSection>
     </DocLayout>
   )
 }

@@ -177,19 +177,22 @@ describe('animation orchestration', () => {
 
       const items = ['a', 'b']
       const startOrder: string[] = []
-      const finishPromises: Promise<void>[] = []
+      let resolvers: (() => void)[] = []
 
       await stagger(
         items,
         (item) => {
+          let resolver: () => void
           const finishPromise = new Promise<void>((resolve) => {
-            setTimeout(() => resolve(), 10)
+            resolver = resolve
           })
-          finishPromises.push(finishPromise)
+          resolvers.push(resolver!)
 
           return {
             start: () => {
               startOrder.push(item)
+              // Resolve immediately on start so the test can complete
+              resolver()
             },
             finished: finishPromise,
           }

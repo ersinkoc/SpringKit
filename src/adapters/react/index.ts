@@ -135,6 +135,25 @@ export type {
   SharedLayoutProviderProps,
 } from './hooks/useLayoutAnimation.js'
 
+// ============ Variants System Hooks ============
+
+export {
+  useVariants,
+  useVariantContext,
+  useStaggerChildren,
+  VariantProvider,
+  VariantContext,
+  createMotionComponent,
+} from './hooks/useVariants.js'
+export type {
+  UseVariantsOptions,
+  UseVariantsReturn,
+  VariantProviderProps,
+  UseStaggerChildrenOptions,
+  UseStaggerChildrenReturn,
+  CreateMotionComponentOptions,
+} from './hooks/useVariants.js'
+
 // ============ Components ============
 
 export { Spring } from './components/Spring.js'
