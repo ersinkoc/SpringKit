@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { ArrowRight, Zap, Feather, Layers, MousePointer2, Sparkles, Copy, Check, Github, Package, Play, RotateCcw, ChevronDown, Terminal, Code2, Cpu, Timer, Box, Waves } from 'lucide-react'
+import { ArrowRight, Zap, Feather, Layers, MousePointer2, Sparkles, Copy, Check, Github, Package, Play, RotateCcw, ChevronDown, Terminal, Code2, Cpu, Timer, Box, Waves, PenTool, Spline } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Highlight, themes } from 'prism-react-renderer'
@@ -1715,7 +1715,7 @@ const drag = createDragSpring(element, {
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75" />
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500" />
                     </span>
-                    <span className="text-sm text-white/70">v1.0.0 — Production Ready</span>
+                    <span className="text-sm text-white/70">v1.2.0 — AnimatePresence, Gesture Props, Keyframes, SVG Path, FLIP Layout</span>
                   </AnimatedDiv>
 
                   {/* Headline */}
@@ -1868,6 +1868,41 @@ const drag = createDragSpring(element, {
                 description="useSpring, useSpringValue, useTrail, and more. Plus ready-to-use Animated components for React."
                 gradient="bg-gradient-to-br from-indigo-500/20 to-violet-500/20"
                 delay={0.5}
+              />
+              <FeatureCard
+                icon={Sparkles}
+                title="AnimatePresence"
+                description="Exit animations for unmounting components. Mode: sync, wait, popLayout with onExitComplete callback."
+                gradient="bg-gradient-to-br from-amber-500/20 to-yellow-500/20"
+                delay={0.6}
+              />
+              <FeatureCard
+                icon={MousePointer2}
+                title="Gesture Props"
+                description="whileHover, whileTap, whileFocus, whileInView, whileDrag - declarative gesture animations on Animated components."
+                gradient="bg-gradient-to-br from-teal-500/20 to-cyan-500/20"
+                delay={0.7}
+              />
+              <FeatureCard
+                icon={Layers}
+                title="FLIP Layout"
+                description="Smooth layout change animations using the FLIP technique. flip(), flipBatch(), measureElement()."
+                gradient="bg-gradient-to-br from-fuchsia-500/20 to-pink-500/20"
+                delay={0.8}
+              />
+              <FeatureCard
+                icon={Spline}
+                title="Keyframes"
+                description="Multi-step spring animations with keyframes(). Per-keyframe configs, onKeyframe callbacks, and smooth spring transitions."
+                gradient="bg-gradient-to-br from-sky-500/20 to-blue-500/20"
+                delay={0.9}
+              />
+              <FeatureCard
+                icon={PenTool}
+                title="SVG Path Animation"
+                description="Line drawing effects with createPathAnimation(). Animate pathLength, pathOffset with spring physics."
+                gradient="bg-gradient-to-br from-lime-500/20 to-green-500/20"
+                delay={1.0}
               />
             </div>
           </div>

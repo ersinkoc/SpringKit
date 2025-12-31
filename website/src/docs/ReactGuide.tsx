@@ -422,6 +422,40 @@ function InteractiveButton() {
           </CardContent>
         </Card>
       </DocSection>
+
+      <DocSection title="useAnimate">
+        <p className="text-muted-foreground mb-4">
+          Imperative animation API with scoped selectors:
+        </p>
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { useAnimate } from '@oxog/springkit/react'
+
+function AnimatedList() {
+  const [scope, animate] = useAnimate()
+
+  const handleClick = async () => {
+    // Animate all li elements with stagger
+    await animate('li', { opacity: 1, x: 0 }, { stagger: 0.1 })
+
+    // Chain another animation
+    await animate('.highlight', { scale: 1.1 })
+  }
+
+  return (
+    <div ref={scope}>
+      <ul>
+        <li style={{ opacity: 0, transform: 'translateX(-20px)' }}>Item 1</li>
+        <li style={{ opacity: 0, transform: 'translateX(-20px)' }}>Item 2</li>
+        <li style={{ opacity: 0, transform: 'translateX(-20px)' }}>Item 3</li>
+      </ul>
+      <button onClick={handleClick}>Animate</button>
+    </div>
+  )
+}`} />
+          </CardContent>
+        </Card>
+      </DocSection>
     </DocLayout>
   )
 }
@@ -599,6 +633,49 @@ function FadeOut() {
       Custom exit animation
     </div>
   )
+}`} />
+          </CardContent>
+        </Card>
+      </DocSection>
+
+      <DocSection title="MotionConfig">
+        <p className="text-muted-foreground mb-4">
+          Provide default animation configuration to all children:
+        </p>
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`import { MotionConfig, Animated } from '@oxog/springkit/react'
+
+function App() {
+  return (
+    <MotionConfig
+      transition={{ stiffness: 300, damping: 25 }}
+      reducedMotion="user"  // 'user' | 'always' | 'never'
+    >
+      {/* All Animated components inherit these settings */}
+      <Animated.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+      >
+        Uses default spring config
+      </Animated.div>
+
+      {/* Override per-component */}
+      <Animated.div
+        config={{ stiffness: 500, damping: 30 }}
+      >
+        Custom config
+      </Animated.div>
+    </MotionConfig>
+  )
+}
+
+// Access config in custom components
+import { useMotionConfig } from '@oxog/springkit/react'
+
+function CustomComponent() {
+  const config = useMotionConfig()
+  // config.transition, config.reducedMotion
 }`} />
           </CardContent>
         </Card>

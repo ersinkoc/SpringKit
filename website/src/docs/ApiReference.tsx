@@ -66,10 +66,41 @@ function ApiIndex() {
             'stagger()',
             'createTrail()',
             'decay()',
+            'keyframes()',
             'createDragSpring()',
             'createScrollSpring()',
           ].map((fn) => (
             <div key={fn} className="px-4 py-3 rounded-lg bg-white/5 border border-white/10 font-mono text-sm text-orange-300">
+              {fn}
+            </div>
+          ))}
+        </div>
+      </DocSection>
+
+      <DocSection title="SVG Animations">
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {[
+            'createPathAnimation()',
+            'getPathLength()',
+            'preparePathForAnimation()',
+            'getPointAtProgress()',
+          ].map((fn) => (
+            <div key={fn} className="px-4 py-3 rounded-lg bg-white/5 border border-white/10 font-mono text-sm text-cyan-300">
+              {fn}
+            </div>
+          ))}
+        </div>
+      </DocSection>
+
+      <DocSection title="Layout Animations (FLIP)">
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {[
+            'createFlip()',
+            'flip()',
+            'flipBatch()',
+            'measureElement()',
+          ].map((fn) => (
+            <div key={fn} className="px-4 py-3 rounded-lg bg-white/5 border border-white/10 font-mono text-sm text-amber-300">
               {fn}
             </div>
           ))}
