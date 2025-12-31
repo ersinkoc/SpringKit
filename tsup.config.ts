@@ -29,6 +29,7 @@ export default defineConfig([
     dts: true,
     splitting: false,
     sourcemap: true,
+    clean: false,
     minify: true,
     target: 'es2021',
     external: ['react', 'react-dom'],

@@ -52,7 +52,7 @@
     "test:watch": "vitest watch",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts,.tsx",
-    "prepublishOnly": "npm run build && npm run test:coverage"
+    "prepublishOnly": "npm run build && npm run test"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
