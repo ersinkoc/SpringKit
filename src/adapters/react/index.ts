@@ -66,6 +66,75 @@ export {
   useReducedMotionValue,
 } from './hooks/useReducedMotion.js'
 
+// ============ Scroll-Linked Animation Hooks ============
+
+export {
+  useScrollProgress,
+  useParallax,
+  useScrollTrigger,
+  useScrollLinkedValue,
+} from './hooks/useScrollLinked.js'
+export type {
+  UseScrollProgressOptions,
+  UseScrollProgressReturn,
+  UseParallaxOptions,
+  UseParallaxReturn,
+  UseScrollTriggerOptions,
+  UseScrollTriggerReturn,
+  UseScrollLinkedValueOptions,
+} from './hooks/useScrollLinked.js'
+
+// ============ Timeline Hooks ============
+
+export {
+  useTimeline,
+  useTimelineState,
+} from './hooks/useTimeline.js'
+export type {
+  UseTimelineOptions,
+  UseTimelineReturn,
+  UseTimelineStateReturn,
+} from './hooks/useTimeline.js'
+
+// ============ SVG Morphing Hooks ============
+
+export {
+  useMorph,
+  useMorphSequence,
+  useMorphRef,
+} from './hooks/useMorph.js'
+export type {
+  UseMorphOptions,
+  UseMorphReturn,
+  UseMorphSequenceOptions,
+  UseMorphSequenceReturn,
+} from './hooks/useMorph.js'
+
+// ============ Layout Animation Hooks ============
+
+export {
+  useLayoutGroup,
+  useLayoutId,
+  useFlip,
+  useAutoLayout,
+  LayoutGroupProvider,
+  SharedLayoutProvider,
+  LayoutGroupContext,
+  SharedLayoutContextReact,
+} from './hooks/useLayoutAnimation.js'
+export type {
+  UseLayoutGroupOptions,
+  UseLayoutGroupReturn,
+  UseLayoutIdOptions,
+  UseLayoutIdReturn,
+  UseFlipOptions,
+  UseFlipReturn,
+  UseAutoLayoutOptions,
+  UseAutoLayoutReturn,
+  LayoutGroupProviderProps,
+  SharedLayoutProviderProps,
+} from './hooks/useLayoutAnimation.js'
+
 // ============ Components ============
 
 export { Spring } from './components/Spring.js'

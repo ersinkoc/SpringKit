@@ -47,6 +47,16 @@ const navItems: NavItem[] = [
     ],
   },
   {
+    title: 'Advanced Features',
+    children: [
+      { title: 'Timeline API', href: '/docs/advanced/timeline' },
+      { title: 'SVG Morphing', href: '/docs/advanced/morph' },
+      { title: 'Scroll-Linked', href: '/docs/advanced/scroll-linked' },
+      { title: 'FLIP Layout', href: '/docs/advanced/flip' },
+      { title: 'Stagger Patterns', href: '/docs/advanced/stagger-patterns' },
+    ],
+  },
+  {
     title: 'API Reference',
     children: [
       { title: 'spring()', href: '/docs/api/spring' },

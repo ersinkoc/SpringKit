@@ -6,6 +6,7 @@ import { Presets } from './docs/Presets'
 import { Interpolation } from './docs/Interpolation'
 import { Gestures } from './docs/Gestures'
 import { Orchestration } from './docs/Orchestration'
+import { AdvancedFeatures } from './docs/AdvancedFeatures'
 import { ApiReference } from './docs/ApiReference'
 import { ReactGuide } from './docs/ReactGuide'
 import { Examples } from './pages/Examples'
@@ -32,6 +33,7 @@ function App() {
             <Route path="/docs/interpolation" element={<Interpolation />} />
             <Route path="/docs/gestures/*" element={<Gestures />} />
             <Route path="/docs/orchestration/*" element={<Orchestration />} />
+            <Route path="/docs/advanced/*" element={<AdvancedFeatures />} />
             <Route path="/docs/api/*" element={<ApiReference />} />
             <Route path="/docs/react/*" element={<ReactGuide />} />
             <Route path="/examples" element={<Examples />} />

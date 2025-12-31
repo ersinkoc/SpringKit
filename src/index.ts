@@ -28,6 +28,117 @@ export { interpolateColor } from './interpolation/color.js'
 export { createDragSpring } from './gesture/drag.js'
 export { createScrollSpring } from './gesture/scroll.js'
 
+// ============ Advanced Gestures ============
+
+export {
+  createPinchGesture,
+  createRotateGesture,
+  createSwipeGesture,
+  createLongPressGesture,
+  createGestures,
+} from './gesture/advanced.js'
+export type {
+  PinchState,
+  PinchConfig,
+  RotateState,
+  RotateConfig,
+  SwipeState,
+  SwipeConfig,
+  LongPressState,
+  LongPressConfig,
+  GestureState,
+  GestureConfig,
+  GestureController,
+} from './gesture/advanced.js'
+
+// ============ Scroll-Linked Animations ============
+
+export {
+  createScrollProgress,
+  createParallax,
+  createScrollTrigger,
+  createScrollLinkedValue,
+  scrollEasings,
+} from './scroll/scroll-linked.js'
+export type {
+  ScrollInfo,
+  ScrollTriggerConfig,
+  ParallaxConfig,
+  ScrollLinkedConfig,
+  ScrollProgress,
+  Parallax,
+  ScrollTrigger,
+  ScrollLinkedValue,
+} from './scroll/scroll-linked.js'
+
+// ============ Timeline API ============
+
+export {
+  createTimeline,
+  tween,
+  allTo,
+} from './animation/timeline.js'
+export type {
+  TimelineTarget,
+  TimelineValues,
+  TimelineOptions,
+  TimelineProps,
+  TimelinePosition,
+  TimelineConfig,
+  Timeline,
+} from './animation/timeline.js'
+
+// ============ SVG Morphing ============
+
+export {
+  createMorph,
+  createMorphSequence,
+  shapes,
+} from './svg/morph.js'
+export type {
+  MorphConfig,
+  MorphController,
+} from './svg/morph.js'
+
+// ============ Shared Layout Animations ============
+
+export {
+  createLayoutGroup,
+  createSharedLayoutContext,
+  createAutoLayout,
+} from './layout/shared.js'
+export type {
+  LayoutMeasurement,
+  LayoutAnimationConfig,
+  LayoutGroup,
+  SharedLayoutContext,
+  AutoLayoutConfig,
+} from './layout/shared.js'
+
+// ============ Enhanced Stagger Patterns ============
+
+export {
+  linearStagger,
+  reverseStagger,
+  centerStagger,
+  edgeStagger,
+  gridStagger,
+  waveStagger,
+  spiralStagger,
+  randomStagger,
+  customStagger,
+  applyStagger,
+  staggerPresets,
+} from './animation/stagger-patterns.js'
+export type {
+  StaggerPatternConfig,
+  GridStaggerConfig,
+  WaveStaggerConfig,
+  SpiralStaggerConfig,
+  RandomStaggerConfig,
+  CustomStaggerFn,
+} from './animation/stagger-patterns.js'
+
 // ============ Utilities ============
 
 export { clamp, lerp, mapRange, degToRad, radToDeg } from './utils/math.js'
@@ -90,6 +201,11 @@ export {
   createFlip,
   flip,
   flipBatch,
+} from './layout/flip.js'
+export type {
+  MeasuredBox,
+  FlipOptions,
+  FlipAnimation,
 } from './layout/flip.js'
 
 // ============ Types ============

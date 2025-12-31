@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, forwardRef } from 'react'
 import {
   Play, RotateCcw, GripVertical, ChevronRight, Sparkles, Layers, Zap,
   MousePointer2, ArrowRight, Activity, Target, Gauge, Box,
@@ -6,7 +6,7 @@ import {
   Rocket, Globe, Cpu, Eye, Shuffle, X, Check, Bell, Mail, Settings,
   User, ShoppingCart, CreditCard, Volume2,
   Wifi, RefreshCw,
-  Menu, Plus
+  Menu, Plus, Clock, MoveVertical, Shapes, Grid3X3, Timer
 } from 'lucide-react'
 import {
   useSpring,
@@ -41,13 +41,22 @@ import {
   keyframes,
   createPathAnimation,
   flip,
+  createTimeline,
+  createMorph,
+  shapes,
+  linearStagger,
+  centerStagger,
+  waveStagger,
+  spiralStagger,
+  gridStagger,
+  randomStagger,
 } from '@oxog/springkit'
 
 // ============================================================================
 // ANIMATED DIV COMPONENT - Using SpringKit instead of framer-motion
 // ============================================================================
 
-interface AnimatedDivProps extends Omit<React.HTMLAttributes<HTMLDivElement>, 'ref'> {
+interface AnimatedDivProps extends React.HTMLAttributes<HTMLDivElement> {
   initial?: { opacity?: number; y?: number; x?: number; scale?: number }
   animate?: { opacity?: number; y?: number; x?: number; scale?: number }
   whileInView?: { opacity?: number; y?: number; x?: number; scale?: number }
@@ -55,24 +64,25 @@ interface AnimatedDivProps extends Omit<React.HTMLAttributes<HTMLDivElement>, 'r
   viewport?: { once?: boolean; margin?: string }
   transition?: { duration?: number; delay?: number; stiffness?: number; damping?: number }
   children?: React.ReactNode
-  ref?: React.RefObject<HTMLDivElement | null>
 }
 
-function AnimatedDiv({
-  initial,
-  animate,
-  whileInView,
-  whileHover,
-  viewport,
-  transition,
-  children,
-  className,
-  style,
-  ref: externalRef,
-  ...rest
-}: AnimatedDivProps) {
+const AnimatedDiv = forwardRef<HTMLDivElement, AnimatedDivProps>(function AnimatedDiv(
+  {
+    initial,
+    animate,
+    whileInView,
+    whileHover,
+    viewport,
+    transition,
+    children,
+    className,
+    style,
+    ...rest
+  },
+  forwardedRef
+) {
   const internalRef = useRef<HTMLDivElement>(null)
-  const ref = externalRef || internalRef
+  const ref = (forwardedRef as React.RefObject<HTMLDivElement>) || internalRef
   const [isInView, setIsInView] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
   const hasAnimated = useRef(false)
@@ -105,7 +115,8 @@ function AnimatedDiv({
 
   // Intersection Observer for whileInView
   useEffect(() => {
-    if (!whileInView || !ref.current) return
+    const currentRef = typeof ref === 'function' ? null : ref?.current
+    if (!whileInView || !currentRef) return
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -125,9 +136,9 @@ function AnimatedDiv({
       }
     )
 
-    observer.observe(ref.current)
+    observer.observe(currentRef)
     return () => observer.disconnect()
-  }, [whileInView, viewport?.once, viewport?.margin])
+  }, [whileInView, viewport?.once, viewport?.margin, ref])
 
   // Auto-animate on mount if no whileInView
   useEffect(() => {
@@ -136,9 +147,14 @@ function AnimatedDiv({
       const timer = setTimeout(() => setIsInView(true), delay)
       return () => clearTimeout(timer)
     }
-  }, [])
+  }, [whileInView, animate, transition?.delay])
 
-  const transform = `translate(${springValues.x}px, ${springValues.y}px) scale(${springValues.scale})`
+  // Ensure scale is a valid number
+  const scaleValue = typeof springValues.scale === 'number' && !isNaN(springValues.scale)
+    ? springValues.scale
+    : 1
+
+  const transform = `translate(${springValues.x}px, ${springValues.y}px) scale(${scaleValue})`
 
   return (
     <div
@@ -156,7 +172,7 @@ function AnimatedDiv({
       {children}
     </div>
   )
-}
+})
 
 // ============================================================================
 // SPECTACULAR HERO - 3D Rotating Cube with Spring Physics
@@ -2038,6 +2054,394 @@ function GesturePropsDemo() {
   )
 }
 
+// ============================================================================
+// NEW v1.3.0 FEATURES - Timeline, SVG Morph, Scroll-Linked, Stagger Patterns
+// ============================================================================
+
+// Timeline Animation Demo
+function TimelineDemo() {
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const box1Ref = useRef<HTMLDivElement>(null)
+  const box2Ref = useRef<HTMLDivElement>(null)
+  const box3Ref = useRef<HTMLDivElement>(null)
+  const timelineRef = useRef<ReturnType<typeof createTimeline> | null>(null)
+
+  useEffect(() => {
+    return () => timelineRef.current?.kill()
+  }, [])
+
+  const handlePlay = () => {
+    if (isPlaying) return
+    setIsPlaying(true)
+    setProgress(0)
+
+    // Reset boxes
+    if (box1Ref.current) box1Ref.current.style.transform = 'translateX(0) scale(1)'
+    if (box2Ref.current) box2Ref.current.style.transform = 'translateX(0) scale(1)'
+    if (box3Ref.current) box3Ref.current.style.transform = 'translateX(0) scale(1)'
+    if (box1Ref.current) box1Ref.current.style.opacity = '0.5'
+    if (box2Ref.current) box2Ref.current.style.opacity = '0.5'
+    if (box3Ref.current) box3Ref.current.style.opacity = '0.5'
+
+    const tl = createTimeline({
+      onUpdate: (p) => setProgress(p),
+      onComplete: () => setIsPlaying(false),
+    })
+
+    tl.to(box1Ref.current!, { x: 120, opacity: 1 })
+      .to(box2Ref.current!, { x: 120, opacity: 1 }, '-=300')
+      .to(box3Ref.current!, { x: 120, opacity: 1 }, '-=300')
+      .to(box1Ref.current!, { scale: 1.2 })
+      .to(box2Ref.current!, { scale: 1.2 }, '-=200')
+      .to(box3Ref.current!, { scale: 1.2 }, '-=200')
+
+    timelineRef.current = tl
+    tl.play()
+  }
+
+  const handleReverse = () => {
+    if (!timelineRef.current) return
+    setIsPlaying(true)
+    timelineRef.current.reverse()
+  }
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-500/20 flex items-center justify-center">
+          <Clock className="w-5 h-5 text-indigo-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-white">Timeline API</h3>
+          <p className="text-xs text-white/40">GSAP-style sequencing</p>
+        </div>
+      </div>
+
+      <div className="h-32 bg-black/20 rounded-xl relative overflow-hidden mb-4 p-4 flex flex-col justify-center gap-2">
+        <div
+          ref={box1Ref}
+          className="w-8 h-8 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-500 shadow-lg shadow-indigo-500/30"
+          style={{ opacity: 0.5 }}
+        />
+        <div
+          ref={box2Ref}
+          className="w-8 h-8 rounded-lg bg-gradient-to-r from-violet-500 to-purple-500 shadow-lg shadow-violet-500/30"
+          style={{ opacity: 0.5 }}
+        />
+        <div
+          ref={box3Ref}
+          className="w-8 h-8 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 shadow-lg shadow-purple-500/30"
+          style={{ opacity: 0.5 }}
+        />
+        <div className="absolute bottom-2 right-2 text-xs text-white/40">
+          {(progress * 100).toFixed(0)}%
+        </div>
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          onClick={handlePlay}
+          disabled={isPlaying}
+          className="flex-1 py-2 bg-indigo-500/20 hover:bg-indigo-500/30 disabled:opacity-50 text-indigo-400 rounded-lg transition-colors flex items-center justify-center gap-2"
+        >
+          <Play className="w-4 h-4" />
+          Play
+        </button>
+        <button
+          onClick={handleReverse}
+          disabled={!timelineRef.current}
+          className="flex-1 py-2 bg-violet-500/20 hover:bg-violet-500/30 disabled:opacity-50 text-violet-400 rounded-lg transition-colors flex items-center justify-center gap-2"
+        >
+          <RotateCcw className="w-4 h-4" />
+          Reverse
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// SVG Morphing Demo
+function SVGMorphDemo() {
+  const [currentShape, setCurrentShape] = useState(0)
+  const [isAnimating, setIsAnimating] = useState(false)
+  const [currentPath, setCurrentPath] = useState('')
+  const pathRef = useRef<SVGPathElement>(null)
+  const morphRef = useRef<ReturnType<typeof createMorph> | null>(null)
+
+  // Pre-compute shape paths (they use newlines so we clean them)
+  const shapeList = useRef([
+    { name: 'Circle', path: shapes.circle(50, 50, 40).replace(/\s+/g, ' ').trim() },
+    { name: 'Square', path: shapes.rect(10, 10, 80, 80, 8).replace(/\s+/g, ' ').trim() },
+    { name: 'Star', path: shapes.star(50, 50, 45, 20, 5).replace(/\s+/g, ' ').trim() },
+    { name: 'Heart', path: shapes.heart(50, 50, 40).replace(/\s+/g, ' ').trim() },
+  ]).current
+
+  useEffect(() => {
+    // Initialize with the first shape path
+    const initialPath = shapeList[0].path
+    setCurrentPath(initialPath)
+
+    morphRef.current = createMorph(initialPath, {
+      spring: { stiffness: 150, damping: 15 },
+    })
+
+    // Subscribe to path updates
+    const unsubscribe = morphRef.current.subscribe((path) => {
+      setCurrentPath(path)
+      if (pathRef.current) {
+        pathRef.current.setAttribute('d', path)
+      }
+    })
+
+    return () => {
+      unsubscribe()
+      morphRef.current?.destroy()
+    }
+  }, [shapeList])
+
+  const handleMorph = (index: number) => {
+    if (!morphRef.current || isAnimating || index === currentShape) return
+    setIsAnimating(true)
+    morphRef.current.morphTo(shapeList[index].path)
+    setCurrentShape(index)
+    // Animation completes via spring physics
+    setTimeout(() => setIsAnimating(false), 800)
+  }
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500/20 to-pink-500/20 flex items-center justify-center">
+          <Shapes className="w-5 h-5 text-rose-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-white">SVG Morphing</h3>
+          <p className="text-xs text-white/40">Shape-to-shape transitions</p>
+        </div>
+      </div>
+
+      <div className="h-32 bg-black/20 rounded-xl relative overflow-hidden mb-4 flex items-center justify-center">
+        <svg viewBox="0 0 100 100" className="w-24 h-24">
+          <path
+            ref={pathRef}
+            d={currentPath || shapeList[0].path}
+            fill="url(#morphGradient2)"
+          />
+          <defs>
+            <linearGradient id="morphGradient2" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#f43f5e" />
+              <stop offset="100%" stopColor="#ec4899" />
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+
+      <div className="grid grid-cols-4 gap-2">
+        {shapeList.map((shape, i) => (
+          <button
+            key={shape.name}
+            onClick={() => handleMorph(i)}
+            disabled={isAnimating}
+            className={`py-2 text-xs rounded-lg transition-colors ${
+              currentShape === i
+                ? 'bg-rose-500/30 text-rose-300'
+                : 'bg-white/5 hover:bg-white/10 text-white/60 disabled:opacity-50'
+            }`}
+          >
+            {shape.name}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// Scroll-Linked Progress Demo
+function ScrollLinkedDemo() {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [progress, setProgress] = useState(0)
+
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
+
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container
+      const maxScroll = scrollHeight - clientHeight
+      const scrollProgress = maxScroll > 0 ? scrollTop / maxScroll : 0
+      setProgress(scrollProgress)
+    }
+
+    container.addEventListener('scroll', handleScroll)
+    return () => container.removeEventListener('scroll', handleScroll)
+  }, [])
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500/20 to-cyan-500/20 flex items-center justify-center">
+          <MoveVertical className="w-5 h-5 text-sky-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-white">Scroll Progress</h3>
+          <p className="text-xs text-white/40">Scroll-linked animations</p>
+        </div>
+      </div>
+
+      {/* Progress bar */}
+      <div className="h-2 bg-black/30 rounded-full mb-4 overflow-hidden">
+        <div
+          className="h-full bg-gradient-to-r from-sky-500 to-cyan-500 transition-all duration-75"
+          style={{ width: `${progress * 100}%` }}
+        />
+      </div>
+
+      <div
+        ref={containerRef}
+        className="h-32 bg-black/20 rounded-xl overflow-y-auto"
+      >
+        <div className="p-4 space-y-4" style={{ height: 400 }}>
+          {[1, 2, 3, 4, 5].map((i) => (
+            <div
+              key={i}
+              className="p-3 bg-white/5 rounded-lg text-white/60 text-sm"
+              style={{
+                opacity: 0.3 + (progress * 0.7),
+                transform: `translateX(${(1 - progress) * 20}px)`,
+              }}
+            >
+              Scroll item {i}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <p className="text-center text-xs text-white/40 mt-3">
+        Progress: {(progress * 100).toFixed(0)}%
+      </p>
+    </div>
+  )
+}
+
+// Enhanced Stagger Patterns Demo
+function StaggerPatternsDemo() {
+  const [pattern, setPattern] = useState<'linear' | 'center' | 'wave' | 'spiral' | 'grid' | 'random'>('linear')
+  const [isAnimating, setIsAnimating] = useState(false)
+  const gridRef = useRef<HTMLDivElement>(null)
+
+  const patterns = ['linear', 'center', 'wave', 'spiral', 'grid', 'random'] as const
+
+  const handleAnimate = async () => {
+    if (!gridRef.current || isAnimating) return
+    setIsAnimating(true)
+
+    const items = Array.from(gridRef.current.children) as HTMLElement[]
+
+    // Reset
+    items.forEach(item => {
+      item.style.opacity = '0'
+      item.style.transform = 'scale(0.5)'
+    })
+
+    // Get stagger delays based on pattern
+    let delays: number[] = []
+    const baseDelay = 50
+
+    switch (pattern) {
+      case 'linear':
+        delays = linearStagger(items.length, baseDelay)
+        break
+      case 'center':
+        delays = centerStagger(items.length, baseDelay)
+        break
+      case 'wave':
+        delays = waveStagger(items.length, { delay: baseDelay, frequency: 2 })
+        break
+      case 'spiral':
+        delays = spiralStagger(items.length, { delay: baseDelay, columns: 4 })
+        break
+      case 'grid':
+        delays = gridStagger(items.length, { delay: baseDelay, columns: 4 })
+        break
+      case 'random':
+        delays = randomStagger(items.length, { minDelay: 0, maxDelay: baseDelay * 8 })
+        break
+    }
+
+    // Animate with delays
+    await Promise.all(
+      items.map((item, i) =>
+        new Promise<void>(resolve => {
+          setTimeout(() => {
+            spring(0, 1, {
+              onUpdate: (v) => {
+                item.style.opacity = String(v)
+                item.style.transform = `scale(${0.5 + v * 0.5})`
+              },
+              onComplete: resolve,
+            }).start()
+          }, delays[i])
+        })
+      )
+    )
+
+    setIsAnimating(false)
+  }
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-500/20 to-emerald-500/20 flex items-center justify-center">
+          <Grid3X3 className="w-5 h-5 text-teal-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-white">Stagger Patterns</h3>
+          <p className="text-xs text-white/40">Advanced timing patterns</p>
+        </div>
+      </div>
+
+      <div
+        ref={gridRef}
+        className="grid grid-cols-4 gap-2 mb-4 bg-black/20 rounded-xl p-3"
+      >
+        {Array.from({ length: 16 }).map((_, i) => (
+          <div
+            key={i}
+            className="aspect-square bg-gradient-to-br from-teal-500 to-emerald-500 rounded-lg shadow-lg shadow-teal-500/20"
+            style={{ opacity: 1 }}
+          />
+        ))}
+      </div>
+
+      <div className="flex gap-1 mb-3 flex-wrap">
+        {patterns.map((p) => (
+          <button
+            key={p}
+            onClick={() => setPattern(p)}
+            className={`px-3 py-1 text-xs rounded-lg transition-colors capitalize ${
+              pattern === p
+                ? 'bg-teal-500/30 text-teal-300'
+                : 'bg-white/5 hover:bg-white/10 text-white/60'
+            }`}
+          >
+            {p}
+          </button>
+        ))}
+      </div>
+
+      <button
+        onClick={handleAnimate}
+        disabled={isAnimating}
+        className="w-full py-2 bg-teal-500/20 hover:bg-teal-500/30 disabled:opacity-50 text-teal-400 rounded-lg transition-colors flex items-center justify-center gap-2"
+      >
+        <Timer className="w-4 h-4" />
+        {isAnimating ? 'Animating...' : 'Animate Grid'}
+      </button>
+    </div>
+  )
+}
+
 // Elastic Pull-to-Refresh
 function PullToRefreshDemo() {
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -3719,6 +4123,35 @@ export function Examples() {
             </AnimatedDiv>
             <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.19 }}>
               <GesturePropsDemo />
+            </AnimatedDiv>
+          </div>
+        </AnimatedDiv>
+
+        {/* NEW v1.3.0 Features Section */}
+        <AnimatedDiv
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.12 }}
+          className="mb-12"
+        >
+          <div className="flex items-center gap-3 mb-2">
+            <h2 className="text-2xl font-bold text-white">New in v1.3.0</h2>
+            <span className="px-2 py-0.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white text-xs font-bold rounded-full animate-pulse">LATEST</span>
+          </div>
+          <p className="text-white/40 mb-6">Timeline API, SVG Morphing, Scroll-Linked Animations, Advanced Stagger Patterns</p>
+
+          <div className="grid lg:grid-cols-4 gap-6">
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.13 }}>
+              <TimelineDemo />
+            </AnimatedDiv>
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.135 }}>
+              <SVGMorphDemo />
+            </AnimatedDiv>
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14 }}>
+              <ScrollLinkedDemo />
+            </AnimatedDiv>
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.145 }}>
+              <StaggerPatternsDemo />
             </AnimatedDiv>
           </div>
         </AnimatedDiv>
