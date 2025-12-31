@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "copy:springkit": "node scripts/copy-springkit.js",
+    "copy:springkit": "node scripts/copy-springkit.cjs",
     "dev": "npm run copy:springkit && vite",
     "build": "npm run copy:springkit && vite build",
     "preview": "vite preview",
