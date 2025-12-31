@@ -133,6 +133,36 @@ describe('FLIP Layout Animations', () => {
       expect(anim.isAnimating()).toBe(false)
     })
 
+    it('should cancel during animation and resolve', async () => {
+      const first = { x: 0, y: 0, width: 100, height: 100 }
+      const last = { x: 200, y: 200, width: 100, height: 100 }
+
+      const anim = createFlip(element, first, last, {
+        config: { stiffness: 50, damping: 5 }, // Slow animation
+      })
+
+      const playPromise = anim.play()
+
+      // Cancel during animation
+      await new Promise((r) => setTimeout(r, 20))
+      anim.cancel()
+
+      // Promise should resolve
+      await playPromise
+      expect(anim.isAnimating()).toBe(false)
+    })
+
+    it('should not play if already cancelled', async () => {
+      const first = { x: 0, y: 0, width: 100, height: 100 }
+      const last = { x: 100, y: 100, width: 100, height: 100 }
+
+      const anim = createFlip(element, first, last)
+      anim.cancel()
+      await anim.play()
+
+      expect(anim.isAnimating()).toBe(false)
+    })
+
     it('should respect position option', async () => {
       const first = { x: 0, y: 0, width: 100, height: 100 }
       const last = { x: 100, y: 100, width: 100, height: 100 }

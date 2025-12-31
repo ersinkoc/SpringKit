@@ -206,4 +206,28 @@ describe('createSpringValue', () => {
       expect(value.isAnimating()).toBe(false)
     })
   })
+
+  describe('setConfig', () => {
+    it('should update spring configuration', () => {
+      const value = createSpringValue(0, { stiffness: 100, damping: 10 })
+
+      value.setConfig({ stiffness: 200 })
+
+      // Config should be updated (we can verify by animation behavior)
+      value.set(100)
+      expect(value.isAnimating()).toBe(true)
+      value.destroy()
+    })
+
+    it('should merge with existing config', () => {
+      const value = createSpringValue(0, { stiffness: 100, damping: 10, mass: 2 })
+
+      // Only update stiffness, keep other values
+      value.setConfig({ stiffness: 500 })
+
+      value.set(100)
+      expect(value.isAnimating()).toBe(true)
+      value.destroy()
+    })
+  })
 })

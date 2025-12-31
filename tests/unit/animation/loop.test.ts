@@ -320,4 +320,23 @@ describe('AnimationLoop', () => {
       expect(globalLoop.getAliveCount()).toBe(initialCount)
     })
   })
+
+  describe('onCleanup callback', () => {
+    it('should allow registering cleanup callbacks', () => {
+      const cleanupCallback = vi.fn()
+      const unsubscribe = globalLoop.onCleanup(cleanupCallback)
+
+      expect(typeof unsubscribe).toBe('function')
+      unsubscribe()
+    })
+
+    it('should unsubscribe from cleanup callbacks', () => {
+      const cleanupCallback = vi.fn()
+      const unsubscribe = globalLoop.onCleanup(cleanupCallback)
+
+      unsubscribe()
+      // Callback should not be called after unsubscribe
+      expect(cleanupCallback).not.toHaveBeenCalled()
+    })
+  })
 })

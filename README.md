@@ -27,6 +27,7 @@
 - **Spring Groups** - Animate multiple values together with `createSpringGroup()`
 - **Interruptible** - Pause, resume, reverse with velocity preservation
 - **Presets** - bounce, gentle, stiff, wobbly, slow, molasses...
+- **Keyframes** - Multi-value animations with per-keyframe spring configs
 
 ### Orchestration
 - **Sequence** - Run animations one after another
@@ -43,6 +44,15 @@
 ### Gestures
 - **Drag Spring** - Rubber band physics with bounds and release momentum
 - **Scroll Spring** - Momentum scrolling with bounce and snap points
+- **Gesture Props** - `whileHover`, `whileTap`, `whileFocus`, `whileInView`, `whileDrag`
+
+### SVG Animations
+- **Path Animation** - `createPathAnimation()` for line drawing effects
+- **Path Utilities** - `getPathLength()`, `preparePathForAnimation()`, `getPointAtProgress()`
+
+### Layout Animations (FLIP)
+- **FLIP Technique** - Smooth layout change animations
+- **Helper Functions** - `flip()`, `flipBatch()`, `measureElement()`
 
 ### Physics Utilities
 - **Simulation** - `simulateSpring()` to preview animation over time
@@ -59,7 +69,10 @@
 
 ### React Integration
 - **Hooks** - `useSpring`, `useSpringValue`, `useSprings`, `useTrail`, `useDrag`, `useGesture`
-- **Components** - `<Spring>`, `<Animated>`, `<Trail>`
+- **Motion Hooks** - `useMotionValue`, `useTransform`, `useInView`, `useScroll`, `useAnimate`
+- **Accessibility** - `useReducedMotion` for motion-sensitive users
+- **Components** - `<Spring>`, `<Animated>`, `<Trail>`, `<AnimatePresence>`, `<MotionConfig>`
+- **Exit Animations** - `<AnimatePresence>` for unmounting component animations
 
 ### Technical
 - **Memory Safe** - WeakRef-based tracking, automatic garbage collection
@@ -67,6 +80,7 @@
 - **Zero Dependencies** - No runtime dependencies
 - **TypeScript** - Full type definitions included
 - **~7KB gzipped** - Tiny bundle size
+- **95%+ Test Coverage** - Comprehensive test suite
 
 ## Installation
 
@@ -91,6 +105,8 @@ anim.start()
 
 ## React
 
+### Basic Spring Animation
+
 ```tsx
 import { useSpring, Animated } from '@oxog/springkit/react'
 
@@ -108,6 +124,91 @@ function Box() {
     />
   )
 }
+```
+
+### Gesture Props
+
+```tsx
+import { Animated } from '@oxog/springkit/react'
+
+function InteractiveButton() {
+  return (
+    <Animated.button
+      whileHover={{ scale: 1.05, backgroundColor: '#3b82f6' }}
+      whileTap={{ scale: 0.95 }}
+      whileFocus={{ boxShadow: '0 0 0 3px rgba(59, 130, 246, 0.5)' }}
+    >
+      Click Me
+    </Animated.button>
+  )
+}
+```
+
+### Exit Animations
+
+```tsx
+import { AnimatePresence, Animated } from '@oxog/springkit/react'
+
+function Modal({ isOpen, onClose }) {
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <Animated.div
+          initial={{ opacity: 0, scale: 0.9 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 0.9 }}
+          onClick={onClose}
+        >
+          Modal Content
+        </Animated.div>
+      )}
+    </AnimatePresence>
+  )
+}
+```
+
+### SVG Path Animation
+
+```tsx
+import { createPathAnimation } from '@oxog/springkit'
+
+const pathAnim = createPathAnimation(pathElement, {
+  config: { stiffness: 100, damping: 15 },
+})
+
+// Draw the path
+await pathAnim.play()
+
+// Reverse (erase)
+await pathAnim.reverse()
+```
+
+### Keyframes Animation
+
+```typescript
+import { keyframes } from '@oxog/springkit'
+
+const anim = keyframes([0, 100, 50, 100], {
+  config: { stiffness: 200, damping: 20 },
+  onUpdate: (value) => {
+    element.style.opacity = String(value / 100)
+  },
+})
+
+await anim.play()
+```
+
+### FLIP Layout Animation
+
+```typescript
+import { flip } from '@oxog/springkit'
+
+// Animate layout change
+await flip(element, () => {
+  element.classList.toggle('expanded')
+}, {
+  config: { stiffness: 300, damping: 25 }
+})
 ```
 
 ## Documentation

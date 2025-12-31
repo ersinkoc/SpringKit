@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2025-12-31
+
+### Added
+- **AnimatePresence**: Exit animations support for unmounting components with `<AnimatePresence>` component
+- **Gesture Props**: `whileHover`, `whileTap`, `whileFocus`, `whileInView`, `whileDrag` on Animated components
+- **Keyframes Animation**: `keyframes()` function for multi-value spring animations with per-keyframe configs
+- **SVG Path Animations**: `createPathAnimation()`, `getPathLength()`, `preparePathForAnimation()`, `getPointAtProgress()` for line drawing effects
+- **FLIP Layout Animations**: `createFlip()`, `flip()`, `flipBatch()`, `measureElement()` for smooth layout transitions
+- **useAnimate Hook**: Imperative animation control with scoped selectors and timeline support
+- **MotionConfig Component**: Context-based config inheritance with `reducedMotion` support
+- **usePresence Hook**: Manual exit animation control for custom implementations
+- **MotionValue Class**: Performant animated values without React re-renders
+- **useMotionValue Hook**: React hook for MotionValue with lifecycle management
+- **useTransform Hook**: Range-based and function-based value transformations
+- **useInView Hook**: IntersectionObserver-based viewport visibility detection
+- **useScroll Hook**: Scroll progress tracking with element and container targeting
+- **useReducedMotion Hook**: Accessibility support for users preferring reduced motion
+
+### Changed
+- Enhanced `Animated` components with gesture prop support
+- Improved TypeScript types for all new features
+- Better tree-shaking with modular exports
+
+### Performance
+- ~7KB gzipped core bundle
+- ~6KB gzipped React adapter
+- Zero runtime dependencies maintained
+- 95%+ test coverage on all metrics
+
 ## [1.1.0] - 2025-12-30
 
 ### Added

@@ -58,6 +58,40 @@ describe('keyframes', () => {
       anim.destroy()
     }, 5000)
 
+    it('should use per-keyframe config when provided', async () => {
+      const onKeyframe = vi.fn()
+      const anim = keyframes([
+        { value: 0 },
+        { value: 100, config: { stiffness: 2000, damping: 100 } },
+        { value: 50, config: { stiffness: 500, damping: 50 } },
+      ], {
+        config: { stiffness: 300, damping: 30 },
+        onKeyframe,
+      })
+
+      await anim.play()
+
+      expect(onKeyframe).toHaveBeenCalledWith(0)
+      expect(onKeyframe).toHaveBeenCalledWith(1)
+      expect(onKeyframe).toHaveBeenCalledWith(2)
+      anim.destroy()
+    }, 10000)
+
+    it('should reset index when playing from end', async () => {
+      const anim = keyframes([0, 100], {
+        config: { stiffness: 1000, damping: 100 },
+      })
+
+      // First play to end
+      await anim.play()
+      expect(anim.getCurrentKeyframe()).toBe(1)
+
+      // Play again should reset and play from beginning
+      await anim.play()
+      expect(anim.getCurrentKeyframe()).toBe(1)
+      anim.destroy()
+    }, 10000)
+
     it('should call onKeyframe callback', async () => {
       const onKeyframe = vi.fn()
 
@@ -124,6 +158,39 @@ describe('keyframes', () => {
       await new Promise((r) => setTimeout(r, 500))
       anim.destroy()
     })
+
+    it('should not resume if not paused', () => {
+      const anim = keyframes([0, 100])
+      anim.resume() // Not paused, should do nothing
+      expect(anim.isPlaying()).toBe(false)
+      anim.destroy()
+    })
+
+    it('should not resume if destroyed', () => {
+      const anim = keyframes([0, 100])
+      anim.play()
+      anim.pause()
+      anim.destroy()
+      anim.resume() // Destroyed, should do nothing
+      expect(anim.isPlaying()).toBe(false)
+    })
+
+    it('should complete after resume', async () => {
+      const onComplete = vi.fn()
+      const anim = keyframes([0, 100], {
+        config: { stiffness: 1000, damping: 100 },
+        onComplete,
+      })
+
+      anim.play()
+      await new Promise((r) => setTimeout(r, 50))
+      anim.pause()
+      anim.resume()
+
+      await new Promise((r) => setTimeout(r, 1500))
+      expect(onComplete).toHaveBeenCalled()
+      anim.destroy()
+    }, 5000)
   })
 
   describe('stop()', () => {
@@ -134,6 +201,17 @@ describe('keyframes', () => {
 
       expect(anim.isPlaying()).toBe(false)
       expect(anim.getCurrentKeyframe()).toBe(0)
+      anim.destroy()
+    })
+
+    it('should stop with spring active and jump to initial', () => {
+      const anim = keyframes([0, 100], {
+        config: { stiffness: 100, damping: 10 },
+      })
+      anim.play()
+      // Let spring start
+      anim.stop()
+      expect(anim.get()).toBe(0)
       anim.destroy()
     })
   })
@@ -158,6 +236,19 @@ describe('keyframes', () => {
 
       anim.jumpTo(100)
       expect(anim.getCurrentKeyframe()).toBe(0)
+      anim.destroy()
+    })
+
+    it('should jump with spring active', () => {
+      const onUpdate = vi.fn()
+      const anim = keyframes([0, 100, 50], {
+        config: { stiffness: 100, damping: 10 },
+        onUpdate,
+      })
+      anim.play()
+      anim.jumpTo(1)
+      expect(anim.getCurrentKeyframe()).toBe(1)
+      expect(onUpdate).toHaveBeenCalledWith(100)
       anim.destroy()
     })
   })

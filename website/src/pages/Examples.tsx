@@ -38,6 +38,9 @@ import {
   calculateDampingRatio,
   isUnderdamped,
   isOverdamped,
+  keyframes,
+  createPathAnimation,
+  flip,
 } from '@oxog/springkit'
 
 // ============================================================================
@@ -1789,6 +1792,252 @@ function OdometerDigit({ value }: { value: number }) {
   )
 }
 
+// ============================================================================
+// NEW v1.2.0 FEATURE DEMOS
+// ============================================================================
+
+// Keyframes Animation Demo
+function KeyframesDemo() {
+  const [isPlaying, setIsPlaying] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const boxRef = useRef<HTMLDivElement>(null)
+
+  const handlePlay = async () => {
+    if (isPlaying) return
+    setIsPlaying(true)
+    setProgress(0)
+
+    const anim = keyframes([0, 100, 30, 80, 50], {
+      config: { stiffness: 200, damping: 20 },
+      onUpdate: (value) => {
+        setProgress(value)
+        if (boxRef.current) {
+          boxRef.current.style.transform = `translateX(${value}px) scale(${1 + value / 200})`
+          boxRef.current.style.opacity = String(0.5 + value / 200)
+        }
+      },
+      onComplete: () => setIsPlaying(false),
+      onKeyframe: (index) => console.log(`Keyframe ${index} reached`),
+    })
+
+    await anim.play()
+  }
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 flex items-center justify-center">
+          <Activity className="w-5 h-5 text-purple-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-white">Keyframes</h3>
+          <p className="text-xs text-white/40">Multi-value spring sequences</p>
+        </div>
+      </div>
+
+      <div className="h-32 bg-black/20 rounded-xl relative overflow-hidden mb-4">
+        <div
+          ref={boxRef}
+          className="absolute left-4 top-1/2 -translate-y-1/2 w-12 h-12 rounded-xl bg-gradient-to-r from-purple-500 to-pink-500 shadow-lg shadow-purple-500/30"
+        />
+        <div className="absolute bottom-2 right-2 text-xs text-white/40">
+          Progress: {progress.toFixed(0)}
+        </div>
+      </div>
+
+      <button
+        onClick={handlePlay}
+        disabled={isPlaying}
+        className="w-full py-2 bg-purple-500/20 hover:bg-purple-500/30 disabled:opacity-50 text-purple-400 rounded-lg transition-colors flex items-center justify-center gap-2"
+      >
+        <Play className="w-4 h-4" />
+        {isPlaying ? 'Animating...' : 'Play Keyframes'}
+      </button>
+    </div>
+  )
+}
+
+// SVG Path Drawing Demo
+function SVGPathDemo() {
+  const [isDrawing, setIsDrawing] = useState(false)
+  const [progress, setProgress] = useState(0)
+  const pathRef = useRef<SVGPathElement>(null)
+  const animRef = useRef<ReturnType<typeof createPathAnimation> | null>(null)
+
+  useEffect(() => {
+    if (pathRef.current) {
+      animRef.current = createPathAnimation(pathRef.current, {
+        config: { stiffness: 80, damping: 12 },
+        onUpdate: (value) => setProgress(value),
+      })
+    }
+    return () => animRef.current?.destroy()
+  }, [])
+
+  const handleDraw = async () => {
+    if (!animRef.current || isDrawing) return
+    setIsDrawing(true)
+    await animRef.current.play()
+    setIsDrawing(false)
+  }
+
+  const handleErase = async () => {
+    if (!animRef.current || isDrawing) return
+    setIsDrawing(true)
+    await animRef.current.reverse()
+    setIsDrawing(false)
+  }
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 flex items-center justify-center">
+          <Atom className="w-5 h-5 text-cyan-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-white">SVG Path</h3>
+          <p className="text-xs text-white/40">Line drawing animation</p>
+        </div>
+      </div>
+
+      <div className="h-32 bg-black/20 rounded-xl relative overflow-hidden mb-4 flex items-center justify-center">
+        <svg viewBox="0 0 200 80" className="w-48 h-20">
+          <path
+            ref={pathRef}
+            d="M10 40 Q30 10 50 40 T90 40 T130 40 T170 40 Q190 40 190 60"
+            fill="none"
+            stroke="url(#pathGradient)"
+            strokeWidth="3"
+            strokeLinecap="round"
+          />
+          <defs>
+            <linearGradient id="pathGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor="#06b6d4" />
+              <stop offset="100%" stopColor="#3b82f6" />
+            </linearGradient>
+          </defs>
+        </svg>
+        <div className="absolute bottom-2 right-2 text-xs text-white/40">
+          {(progress * 100).toFixed(0)}%
+        </div>
+      </div>
+
+      <div className="flex gap-2">
+        <button
+          onClick={handleDraw}
+          disabled={isDrawing}
+          className="flex-1 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 disabled:opacity-50 text-cyan-400 rounded-lg transition-colors"
+        >
+          Draw
+        </button>
+        <button
+          onClick={handleErase}
+          disabled={isDrawing}
+          className="flex-1 py-2 bg-blue-500/20 hover:bg-blue-500/30 disabled:opacity-50 text-blue-400 rounded-lg transition-colors"
+        >
+          Erase
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// FLIP Layout Animation Demo
+function FLIPLayoutDemo() {
+  const [isExpanded, setIsExpanded] = useState(false)
+  const [isAnimating, setIsAnimating] = useState(false)
+  const cardRef = useRef<HTMLDivElement>(null)
+
+  const handleToggle = async () => {
+    if (!cardRef.current || isAnimating) return
+
+    setIsAnimating(true)
+
+    await flip(
+      cardRef.current,
+      () => setIsExpanded(!isExpanded),
+      { config: { stiffness: 300, damping: 25 } }
+    )
+
+    setIsAnimating(false)
+  }
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center">
+          <Layers className="w-5 h-5 text-amber-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-white">FLIP Layout</h3>
+          <p className="text-xs text-white/40">Smooth layout transitions</p>
+        </div>
+      </div>
+
+      <div className="h-40 bg-black/20 rounded-xl relative overflow-hidden mb-4 p-4">
+        <div
+          ref={cardRef}
+          onClick={handleToggle}
+          className={`cursor-pointer transition-none bg-gradient-to-r from-amber-500 to-orange-500 rounded-xl shadow-lg shadow-amber-500/30 flex items-center justify-center text-white font-semibold ${
+            isExpanded
+              ? 'absolute inset-4'
+              : 'absolute left-4 top-4 w-20 h-20'
+          }`}
+        >
+          {isExpanded ? 'Collapse' : 'Expand'}
+        </div>
+      </div>
+
+      <p className="text-center text-xs text-white/40">
+        Click the card to see FLIP animation
+      </p>
+    </div>
+  )
+}
+
+// Gesture Props Demo
+function GesturePropsDemo() {
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500/20 to-emerald-500/20 flex items-center justify-center">
+          <MousePointer2 className="w-5 h-5 text-green-400" />
+        </div>
+        <div>
+          <h3 className="text-lg font-semibold text-white">Gesture Props</h3>
+          <p className="text-xs text-white/40">whileHover, whileTap, whileFocus</p>
+        </div>
+      </div>
+
+      <div className="space-y-4">
+        <Animated.button
+          className="w-full py-3 bg-green-500/20 text-green-400 rounded-xl font-medium transition-colors"
+          whileHover={{ scale: 1.05, backgroundColor: 'rgba(34, 197, 94, 0.3)' }}
+          whileTap={{ scale: 0.95 }}
+        >
+          Hover & Tap Me
+        </Animated.button>
+
+        <Animated.div
+          className="w-full py-3 bg-emerald-500/20 text-emerald-400 rounded-xl font-medium text-center cursor-pointer"
+          whileHover={{ y: -4, boxShadow: '0 10px 30px rgba(16, 185, 129, 0.3)' }}
+          whileTap={{ y: 0 }}
+        >
+          Lift on Hover
+        </Animated.div>
+
+        <div className="relative">
+          <input
+            type="text"
+            placeholder="Focus me (uses CSS focus)..."
+            className="w-full py-3 px-4 bg-white/5 border border-white/10 text-white rounded-xl outline-none focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/20 transition-all"
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // Elastic Pull-to-Refresh
 function PullToRefreshDemo() {
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -3445,7 +3694,36 @@ export function Examples() {
         {/* Spectacular Hero */}
         <SpectacularHero />
 
-        {/* New Interactive Demos Section */}
+        {/* NEW v1.2.0 Features Section */}
+        <AnimatedDiv
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+          className="mb-12"
+        >
+          <div className="flex items-center gap-3 mb-2">
+            <h2 className="text-2xl font-bold text-white">New in v1.2.0</h2>
+            <span className="px-2 py-0.5 bg-gradient-to-r from-orange-500 to-amber-500 text-white text-xs font-bold rounded-full">NEW</span>
+          </div>
+          <p className="text-white/40 mb-6">Latest features: Keyframes, SVG Path, FLIP Layout, Gesture Props</p>
+
+          <div className="grid lg:grid-cols-4 gap-6">
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16 }}>
+              <KeyframesDemo />
+            </AnimatedDiv>
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.17 }}>
+              <SVGPathDemo />
+            </AnimatedDiv>
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18 }}>
+              <FLIPLayoutDemo />
+            </AnimatedDiv>
+            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.19 }}>
+              <GesturePropsDemo />
+            </AnimatedDiv>
+          </div>
+        </AnimatedDiv>
+
+        {/* Visual Effects Section */}
         <AnimatedDiv
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}

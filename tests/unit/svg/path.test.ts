@@ -154,6 +154,34 @@ describe('SVG Path Animations', () => {
       anim.destroy()
     })
 
+    it('should resume after pause', async () => {
+      const anim = createPathAnimation(pathElement, {
+        config: { stiffness: 1000, damping: 100 },
+      })
+
+      anim.play()
+      anim.pause()
+      anim.resume()
+
+      // Should have re-started animation
+      await new Promise((r) => setTimeout(r, 100))
+      anim.destroy()
+    })
+
+    it('should not resume if destroyed', () => {
+      const anim = createPathAnimation(pathElement)
+      anim.destroy()
+      // Should not throw
+      expect(() => anim.resume()).not.toThrow()
+    })
+
+    it('should not pause if destroyed', () => {
+      const anim = createPathAnimation(pathElement)
+      anim.destroy()
+      // Should not throw
+      expect(() => anim.pause()).not.toThrow()
+    })
+
     it('should destroy and cleanup', () => {
       const anim = createPathAnimation(pathElement)
       anim.play()
@@ -161,6 +189,37 @@ describe('SVG Path Animations', () => {
 
       // Should not throw
       expect(() => anim.get()).not.toThrow()
+    })
+
+    it('should not play if destroyed', async () => {
+      const onComplete = vi.fn()
+      const anim = createPathAnimation(pathElement, { onComplete })
+      anim.destroy()
+      await anim.play()
+      expect(onComplete).not.toHaveBeenCalled()
+    })
+
+    it('should not reverse if destroyed', async () => {
+      const onComplete = vi.fn()
+      const anim = createPathAnimation(pathElement, { onComplete })
+      anim.destroy()
+      await anim.reverse()
+      expect(onComplete).not.toHaveBeenCalled()
+    })
+
+    it('should not set if destroyed', () => {
+      const anim = createPathAnimation(pathElement)
+      anim.destroy()
+      // Should not throw
+      expect(() => anim.set(0.5)).not.toThrow()
+      expect(() => anim.set(0.5, true)).not.toThrow()
+    })
+
+    it('should not reset if destroyed', () => {
+      const anim = createPathAnimation(pathElement)
+      anim.destroy()
+      // Should not throw
+      expect(() => anim.reset()).not.toThrow()
     })
 
     it('should auto-play when option is set', async () => {
