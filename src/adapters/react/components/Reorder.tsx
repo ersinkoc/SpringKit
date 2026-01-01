@@ -332,6 +332,7 @@ function ReorderItemComponent<T>(
     if (!dragEnabled) return
 
     e.preventDefault()
+    e.stopPropagation()
     setIsDragging(true)
     onDragStart?.()
     context.onDragStart(value)
@@ -343,8 +344,10 @@ function ReorderItemComponent<T>(
     }
     dragOffset.current = 0
 
-    // Set pointer capture for reliable drag tracking
-    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
+    // Set pointer capture on the actual element ref for reliable drag tracking
+    if (elementRef.current) {
+      elementRef.current.setPointerCapture(e.pointerId)
+    }
   }, [dragEnabled, context, value, onDragStart])
 
   // Handle pointer move
@@ -370,7 +373,10 @@ function ReorderItemComponent<T>(
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
     if (!isDragging) return
 
-    ;(e.target as HTMLElement).releasePointerCapture(e.pointerId)
+    // Release pointer capture on the element ref
+    if (elementRef.current) {
+      elementRef.current.releasePointerCapture(e.pointerId)
+    }
 
     setIsDragging(false)
     onDragEnd?.()

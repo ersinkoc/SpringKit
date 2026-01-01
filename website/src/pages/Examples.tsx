@@ -4067,26 +4067,24 @@ function TimelineAPIDemo() {
 // SVG Morphing Demo - Using spring physics for smooth morphing
 function SVGMorphDemo() {
   const [currentShape, setCurrentShape] = useState<'circle' | 'star' | 'heart'>('circle')
-  const pathRef = useRef<SVGPathElement>(null)
 
   const shapePaths = {
-    circle: 'M50,10 a40,40 0 1,0 0,80 a40,40 0 1,0 0,-80',
+    circle: 'M50,10 C72,10 90,28 90,50 C90,72 72,90 50,90 C28,90 10,72 10,50 C10,28 28,10 50,10 Z',
     star: 'M50,5 L61,40 L98,40 L68,62 L79,97 L50,75 L21,97 L32,62 L2,40 L39,40 Z',
     heart: 'M50,88 C20,60 5,40 5,25 C5,10 20,5 35,15 C42,20 48,28 50,35 C52,28 58,20 65,15 C80,5 95,10 95,25 C95,40 80,60 50,88 Z',
   }
 
-  // Spring physics configurations for each shape
-  const springConfigs = {
-    circle: { stiffness: 120, damping: 14 },
-    star: { stiffness: 200, damping: 18 },
-    heart: { stiffness: 150, damping: 12 },
-  }
+  // Use morph hook - pass initial path and get morphTo function
+  const { path: morphedPath, morphTo } = useMorph(shapePaths.circle, {
+    stiffness: 150,
+    damping: 15,
+  })
 
-  // Use morph hook for smooth SVG path transitions
-  const { path: morphedPath } = useMorph(
-    shapePaths[currentShape],
-    springConfigs[currentShape]
-  )
+  // When shape changes, call morphTo
+  const handleShapeChange = (shape: 'circle' | 'star' | 'heart') => {
+    setCurrentShape(shape)
+    morphTo(shapePaths[shape])
+  }
 
   return (
     <div className="glass rounded-2xl p-6 border border-white/10">
@@ -4102,7 +4100,6 @@ function SVGMorphDemo() {
       <div className="h-32 bg-black/20 rounded-xl flex items-center justify-center mb-4">
         <svg viewBox="0 0 100 100" className="w-24 h-24">
           <path
-            ref={pathRef}
             d={morphedPath}
             fill="url(#morphGradient)"
           />
@@ -4118,7 +4115,7 @@ function SVGMorphDemo() {
         {(['circle', 'star', 'heart'] as const).map((shape) => (
           <button
             key={shape}
-            onClick={() => setCurrentShape(shape)}
+            onClick={() => handleShapeChange(shape)}
             className={`flex-1 py-2 rounded-lg text-sm capitalize transition-colors ${
               currentShape === shape
                 ? 'bg-pink-500/30 text-pink-300'
@@ -4133,26 +4130,21 @@ function SVGMorphDemo() {
   )
 }
 
-// Variants System Demo
+// Variants System Demo - Using useSpring directly for reliable animation
 function VariantsSystemDemo() {
   const [variant, setVariant] = useState<'hidden' | 'visible' | 'hover'>('visible')
 
-  const variants = {
+  const variantValues = {
     hidden: { opacity: 0, scale: 0.8, y: 20 },
     visible: { opacity: 1, scale: 1, y: 0 },
     hover: { opacity: 1, scale: 1.1, y: -5 },
   }
 
-  const { values, setVariant: animateToVariant } = useVariants({
-    variants,
-    initial: 'hidden',
-    animate: variant,
+  // Use useSpring directly for more reliable animation
+  const { opacity, scale, y } = useSpring(variantValues[variant], {
+    stiffness: 200,
+    damping: 20,
   })
-
-  const handleVariant = (v: 'hidden' | 'visible' | 'hover') => {
-    setVariant(v)
-    animateToVariant(v)
-  }
 
   return (
     <div className="glass rounded-2xl p-6 border border-white/10">
@@ -4169,8 +4161,8 @@ function VariantsSystemDemo() {
         <div
           className="w-16 h-16 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-500 shadow-lg"
           style={{
-            opacity: values.opacity ?? 1,
-            transform: `scale(${values.scale ?? 1}) translateY(${values.y ?? 0}px)`,
+            opacity: opacity,
+            transform: `scale(${scale}) translateY(${y}px)`,
           }}
         />
       </div>
@@ -4178,7 +4170,7 @@ function VariantsSystemDemo() {
         {(['hidden', 'visible', 'hover'] as const).map((v) => (
           <button
             key={v}
-            onClick={() => handleVariant(v)}
+            onClick={() => setVariant(v)}
             className={`flex-1 py-2 rounded-lg text-sm capitalize transition-colors ${
               variant === v
                 ? 'bg-emerald-500/30 text-emerald-300'
@@ -4535,16 +4527,17 @@ function MagneticButtonDemo() {
 
 // useAnimate Hook Demo
 function UseAnimateDemo() {
-  const [scope, animate] = useAnimate()
+  const [boxRef, animate] = useAnimate()
   const [isAnimating, setIsAnimating] = useState(false)
 
   const runAnimation = async () => {
     if (isAnimating) return
     setIsAnimating(true)
 
-    await animate('.box', { scale: 1.2, rotate: 180 }, { duration: 0.3 })
-    await animate('.box', { scale: 1, rotate: 360 }, { duration: 0.3 })
-    await animate('.box', { rotate: 0 }, { duration: 0.2 })
+    // useAnimate works on the element attached to the ref
+    await animate({ scale: 1.2, rotate: 180 }, { config: { stiffness: 300, damping: 15 } })
+    await animate({ scale: 1, rotate: 360 }, { config: { stiffness: 300, damping: 15 } })
+    await animate({ rotate: 0 }, { config: { stiffness: 300, damping: 15 } })
 
     setIsAnimating(false)
   }
@@ -4560,8 +4553,11 @@ function UseAnimateDemo() {
           <p className="text-xs text-white/40">Imperative animation control</p>
         </div>
       </div>
-      <div ref={scope} className="h-24 bg-black/20 rounded-xl flex items-center justify-center mb-4">
-        <div className="box w-14 h-14 rounded-xl bg-gradient-to-r from-lime-400 to-green-500 shadow-lg" />
+      <div className="h-24 bg-black/20 rounded-xl flex items-center justify-center mb-4">
+        <div
+          ref={boxRef as React.RefObject<HTMLDivElement>}
+          className="w-14 h-14 rounded-xl bg-gradient-to-r from-lime-400 to-green-500 shadow-lg"
+        />
       </div>
       <button
         onClick={runAnimation}

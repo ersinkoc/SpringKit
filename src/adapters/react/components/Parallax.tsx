@@ -527,7 +527,6 @@ export const TiltCard = memo(forwardRef<HTMLDivElement, TiltCardProps>(
         className={className}
         style={{
           perspective: `${perspective}px`,
-          transformStyle: 'preserve-3d',
           ...style,
         }}
         onMouseMove={handleMouseMove}
@@ -539,7 +538,6 @@ export const TiltCard = memo(forwardRef<HTMLDivElement, TiltCardProps>(
             transformStyle: 'preserve-3d',
             width: '100%',
             height: '100%',
-            position: 'relative',
           }}
         >
           {children}
