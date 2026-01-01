@@ -1,51 +1,50 @@
-import { useState, useRef, useEffect } from 'react'
-import { Play, RotateCcw, Shapes, Shuffle } from 'lucide-react'
-import { createMorph, shapes } from '@oxog/springkit'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { Shapes, Shuffle, Play, Pause } from 'lucide-react'
+import { createMorph } from '@oxog/springkit'
 import { DemoPageLayout } from './DemoPageLayout'
 
 const CODE = `import { useRef, useEffect, useState } from 'react'
 import { createMorph, shapes } from '@oxog/springkit'
 
-// Built-in shapes from SpringKit
-const availableShapes = {
-  circle: shapes.circle(50),           // Circle with radius 50
-  square: shapes.square(80),           // Square with side 80
-  triangle: shapes.polygon(3, 50),     // Triangle (3-sided polygon)
-  pentagon: shapes.polygon(5, 50),     // Pentagon
-  hexagon: shapes.polygon(6, 50),      // Hexagon
-  star: shapes.star(5, 50, 25),        // 5-pointed star
-  heart: shapes.heart(50),             // Heart shape
+// Built-in shapes from SpringKit (cx, cy, radius/size parameters)
+const shapePaths = {
+  circle: shapes.circle(0, 0, 45),           // Circle at origin with radius 45
+  square: shapes.rect(-40, -40, 80, 80),     // Square centered at origin
+  triangle: shapes.polygon(0, 0, 45, 3),     // Triangle (3-sided polygon)
+  pentagon: shapes.polygon(0, 0, 45, 5),     // Pentagon
+  hexagon: shapes.polygon(0, 0, 45, 6),      // Hexagon
+  star: shapes.star(0, 0, 50, 25, 5),        // 5-pointed star
+  heart: shapes.heart(0, 0, 40),             // Heart shape
 }
 
 function MorphDemo() {
   const pathRef = useRef<SVGPathElement>(null)
+  const morphRef = useRef<ReturnType<typeof createMorph> | null>(null)
   const [currentShape, setCurrentShape] = useState('circle')
 
   useEffect(() => {
-    if (!pathRef.current) return
-
-    // Create morph controller
-    const morph = createMorph(pathRef.current, {
-      stiffness: 200,
-      damping: 20,
+    // Create morph controller with spring physics
+    morphRef.current = createMorph(shapePaths.circle, {
+      spring: { stiffness: 200, damping: 20 },
     })
 
-    // Initialize with first shape
-    morph.set(availableShapes.circle)
+    // Subscribe to path updates
+    const unsubscribe = morphRef.current.subscribe((path) => {
+      if (pathRef.current) {
+        pathRef.current.setAttribute('d', path)
+      }
+    })
 
-    return () => morph.destroy()
+    return () => {
+      unsubscribe()
+      morphRef.current?.destroy()
+    }
   }, [])
 
-  const morphTo = (shape: keyof typeof availableShapes) => {
-    if (!pathRef.current) return
+  const morphTo = (shape: keyof typeof shapePaths) => {
+    if (!morphRef.current) return
     setCurrentShape(shape)
-
-    const morph = createMorph(pathRef.current, {
-      stiffness: 200,
-      damping: 20,
-    })
-
-    morph.to(availableShapes[shape])
+    morphRef.current.morphTo(shapePaths[shape])
   }
 
   return (
@@ -66,10 +65,10 @@ function MorphDemo() {
       </svg>
 
       <div className="grid grid-cols-4 gap-2">
-        {Object.keys(availableShapes).map((shape) => (
+        {Object.keys(shapePaths).map((shape) => (
           <button
             key={shape}
-            onClick={() => morphTo(shape)}
+            onClick={() => morphTo(shape as keyof typeof shapePaths)}
             className={\`py-2 rounded-lg text-sm capitalize \${
               currentShape === shape ? 'bg-pink-500/30 text-pink-300' : 'bg-white/5'
             }\`}
@@ -105,41 +104,115 @@ const shapeColors: Record<string, { from: string; to: string }> = {
   diamond: { from: '#06b6d4', to: '#0891b2' },
 }
 
+const SPEED_OPTIONS = [
+  { label: 'Slow', value: 2500 },
+  { label: 'Normal', value: 1500 },
+  { label: 'Fast', value: 800 },
+]
+
 function SVGMorphDemo() {
   const pathRef = useRef<SVGPathElement>(null)
   const morphRef = useRef<ReturnType<typeof createMorph> | null>(null)
   const [currentShape, setCurrentShape] = useState<keyof typeof shapePaths>('circle')
   const [isAnimating, setIsAnimating] = useState(false)
+  const [isAutoCycling, setIsAutoCycling] = useState(false)
+  const [cycleSpeed, setCycleSpeed] = useState(1500)
+  const [morphCount, setMorphCount] = useState(0)
+  const autoCycleRef = useRef<NodeJS.Timeout | null>(null)
 
   useEffect(() => {
-    if (!pathRef.current) return
+    // Create morph controller with spring physics
+    morphRef.current = createMorph(shapePaths.circle, {
+      spring: { stiffness: 180, damping: 18 },
+      onProgress: (progress) => {
+        setIsAnimating(progress < 0.99)
+      },
+      onComplete: () => {
+        setIsAnimating(false)
+      },
+    })
 
-    // Set initial path
-    pathRef.current.setAttribute('d', shapePaths.circle)
+    // Subscribe to path updates
+    const unsubscribe = morphRef.current.subscribe((path) => {
+      if (pathRef.current) {
+        pathRef.current.setAttribute('d', path)
+      }
+    })
+
+    return () => {
+      unsubscribe()
+      morphRef.current?.destroy()
+    }
   }, [])
 
   const morphTo = (shape: keyof typeof shapePaths) => {
-    if (!pathRef.current || isAnimating) return
+    if (!morphRef.current || isAnimating) return
     setIsAnimating(true)
     setCurrentShape(shape)
-
-    const targetPath = shapePaths[shape]
-
-    // Use CSS transition for smooth morph
-    if (pathRef.current) {
-      pathRef.current.style.transition = 'd 0.5s cubic-bezier(0.34, 1.56, 0.64, 1)'
-      pathRef.current.setAttribute('d', targetPath)
-    }
-
-    setTimeout(() => setIsAnimating(false), 500)
+    setMorphCount(c => c + 1)
+    morphRef.current.morphTo(shapePaths[shape])
   }
 
-  const randomMorph = () => {
+  const randomMorph = useCallback(() => {
     const shapes = Object.keys(shapePaths) as Array<keyof typeof shapePaths>
     const otherShapes = shapes.filter((s) => s !== currentShape)
     const randomShape = otherShapes[Math.floor(Math.random() * otherShapes.length)]
     morphTo(randomShape)
+  }, [currentShape])
+
+  const cycleToNext = useCallback(() => {
+    const shapes = Object.keys(shapePaths) as Array<keyof typeof shapePaths>
+    const currentIndex = shapes.indexOf(currentShape)
+    const nextShape = shapes[(currentIndex + 1) % shapes.length]
+    morphTo(nextShape)
+  }, [currentShape])
+
+  const toggleAutoCycle = () => {
+    if (isAutoCycling) {
+      if (autoCycleRef.current) {
+        clearInterval(autoCycleRef.current)
+        autoCycleRef.current = null
+      }
+      setIsAutoCycling(false)
+    } else {
+      setIsAutoCycling(true)
+      cycleToNext()
+      autoCycleRef.current = setInterval(cycleToNext, cycleSpeed)
+    }
   }
+
+  // Update interval when speed changes
+  useEffect(() => {
+    if (isAutoCycling && autoCycleRef.current) {
+      clearInterval(autoCycleRef.current)
+      autoCycleRef.current = setInterval(cycleToNext, cycleSpeed)
+    }
+  }, [cycleSpeed, isAutoCycling, cycleToNext])
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === ' ' || e.code === 'Space') {
+        e.preventDefault()
+        toggleAutoCycle()
+      } else if (e.key === 'ArrowRight') {
+        if (!isAutoCycling) cycleToNext()
+      } else if (e.key === 'r' || e.key === 'R') {
+        if (!isAutoCycling) randomMorph()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isAutoCycling, cycleToNext, randomMorph])
+
+  // Cleanup auto-cycle on unmount
+  useEffect(() => {
+    return () => {
+      if (autoCycleRef.current) {
+        clearInterval(autoCycleRef.current)
+      }
+    }
+  }, [])
 
   const colors = shapeColors[currentShape]
 
@@ -199,10 +272,21 @@ function SVGMorphDemo() {
         </svg>
       </div>
 
-      {/* Current shape info */}
-      <div className="flex items-center justify-center gap-2 text-white/60">
-        <Shapes className="w-4 h-4" />
-        <span className="text-sm capitalize">{currentShape}</span>
+      {/* Current shape info and stats */}
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2 text-white/60">
+          <Shapes className="w-4 h-4" />
+          <span className="text-sm capitalize">{currentShape}</span>
+        </div>
+        <div className="flex items-center gap-4 text-xs text-white/40">
+          <span>Morphs: <span className="text-white/60 font-medium">{morphCount}</span></span>
+          {isAutoCycling && (
+            <span className="flex items-center gap-1">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              Auto
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Shape selector grid */}
@@ -237,15 +321,55 @@ function SVGMorphDemo() {
         </div>
       </div>
 
-      {/* Random button */}
-      <button
-        onClick={randomMorph}
-        disabled={isAnimating}
-        className="w-full py-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-xl font-medium flex items-center justify-center gap-2 disabled:opacity-50 hover:shadow-lg hover:shadow-rose-500/30 transition-all"
-      >
-        <Shuffle className="w-4 h-4" />
-        Random Morph
-      </button>
+      {/* Speed control */}
+      <div>
+        <p className="text-xs text-white/40 uppercase tracking-wider mb-2">Cycle Speed</p>
+        <div className="flex gap-2">
+          {SPEED_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              onClick={() => setCycleSpeed(option.value)}
+              className={`flex-1 py-2 rounded-lg text-xs font-medium transition-all ${
+                cycleSpeed === option.value
+                  ? 'bg-pink-500/30 text-pink-300 ring-1 ring-pink-500/50'
+                  : 'bg-white/5 hover:bg-white/10 text-white/60'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Control buttons */}
+      <div className="flex gap-3">
+        <button
+          onClick={toggleAutoCycle}
+          className={`flex-1 py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-all ${
+            isAutoCycling
+              ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white hover:shadow-lg hover:shadow-emerald-500/30'
+              : 'bg-white/5 hover:bg-white/10 text-white/60'
+          }`}
+        >
+          {isAutoCycling ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+          {isAutoCycling ? 'Stop' : 'Auto Cycle'}
+        </button>
+        <button
+          onClick={randomMorph}
+          disabled={isAnimating || isAutoCycling}
+          className="flex-1 py-3 bg-gradient-to-r from-pink-500 to-rose-500 text-white rounded-xl font-medium flex items-center justify-center gap-2 disabled:opacity-50 hover:shadow-lg hover:shadow-rose-500/30 transition-all"
+        >
+          <Shuffle className="w-4 h-4" />
+          Random
+        </button>
+      </div>
+
+      {/* Keyboard shortcuts hint */}
+      <div className="flex justify-center gap-4 text-xs text-white/30">
+        <span><kbd className="px-1.5 py-0.5 bg-white/10 rounded text-white/50">Space</kbd> Play/Pause</span>
+        <span><kbd className="px-1.5 py-0.5 bg-white/10 rounded text-white/50">→</kbd> Next</span>
+        <span><kbd className="px-1.5 py-0.5 bg-white/10 rounded text-white/50">R</kbd> Random</span>
+      </div>
     </div>
   )
 }

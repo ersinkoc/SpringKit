@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react'
 import { Play, RotateCcw, Gauge, Info } from 'lucide-react'
-import { spring, physicsPresets } from '@oxog/springkit'
+import { spring } from '@oxog/springkit'
 import { DemoPageLayout } from './DemoPageLayout'
 
 const CODE = `import { useState, useRef } from 'react'

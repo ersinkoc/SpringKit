@@ -161,31 +161,107 @@ function toAbsolute(commands: PathCommand[]): PathCommand[] {
 }
 
 /**
- * Sample points along a path at regular intervals
+ * Check if SVG path methods are available (real browser, not JSDOM)
  */
-function samplePath(commands: PathCommand[], samples: number): NormalizedPoint[] {
+function hasSvgPathSupport(): boolean {
+  if (typeof document === 'undefined') return false
+  try {
+    const svgNS = 'http://www.w3.org/2000/svg'
+    const svg = document.createElementNS(svgNS, 'svg')
+    const path = document.createElementNS(svgNS, 'path')
+    path.setAttribute('d', 'M0,0 L10,10')
+    svg.appendChild(path)
+    document.body.appendChild(svg)
+    const hasSupport = typeof path.getTotalLength === 'function'
+    let works = false
+    if (hasSupport) {
+      try {
+        path.getTotalLength()
+        works = true
+      } catch {
+        works = false
+      }
+    }
+    document.body.removeChild(svg)
+    return works
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Simple linear sampling fallback for non-browser environments
+ */
+function samplePathFallback(commands: PathCommand[], samples: number): NormalizedPoint[] {
   const points: NormalizedPoint[] = []
 
-  // Check if we're in browser
-  if (typeof document === 'undefined') {
-    // Server-side fallback - simple linear sampling
-    for (const cmd of commands) {
-      if (cmd.type === 'M' || cmd.type === 'L') {
-        points.push({ x: cmd.values[0] ?? 0, y: cmd.values[1] ?? 0 })
-      } else if (cmd.type === 'C') {
-        points.push({
-          x: cmd.values[4] ?? 0,
-          y: cmd.values[5] ?? 0,
-          cp1x: cmd.values[0] ?? 0,
-          cp1y: cmd.values[1] ?? 0,
-          cp2x: cmd.values[2] ?? 0,
-          cp2y: cmd.values[3] ?? 0,
+  for (const cmd of commands) {
+    if (cmd.type === 'M' || cmd.type === 'L') {
+      points.push({ x: cmd.values[0] ?? 0, y: cmd.values[1] ?? 0 })
+    } else if (cmd.type === 'C') {
+      points.push({
+        x: cmd.values[4] ?? 0,
+        y: cmd.values[5] ?? 0,
+        cp1x: cmd.values[0] ?? 0,
+        cp1y: cmd.values[1] ?? 0,
+        cp2x: cmd.values[2] ?? 0,
+        cp2y: cmd.values[3] ?? 0,
+      })
+    } else if (cmd.type === 'Q') {
+      points.push({
+        x: cmd.values[2] ?? 0,
+        y: cmd.values[3] ?? 0,
+        cp1x: cmd.values[0] ?? 0,
+        cp1y: cmd.values[1] ?? 0,
+      })
+    } else if (cmd.type === 'A') {
+      points.push({ x: cmd.values[5] ?? 0, y: cmd.values[6] ?? 0 })
+    } else if (cmd.type === 'H') {
+      const lastPoint = points[points.length - 1]
+      points.push({ x: cmd.values[0] ?? 0, y: lastPoint?.y ?? 0 })
+    } else if (cmd.type === 'V') {
+      const lastPoint = points[points.length - 1]
+      points.push({ x: lastPoint?.x ?? 0, y: cmd.values[0] ?? 0 })
+    }
+  }
+
+  // Interpolate to reach desired sample count
+  if (points.length > 0 && points.length < samples) {
+    const interpolated: NormalizedPoint[] = []
+    const step = (points.length - 1) / (samples - 1)
+
+    for (let i = 0; i < samples; i++) {
+      const t = i * step
+      const index = Math.floor(t)
+      const frac = t - index
+
+      if (index >= points.length - 1) {
+        interpolated.push(points[points.length - 1]!)
+      } else {
+        const p1 = points[index]!
+        const p2 = points[index + 1]!
+        interpolated.push({
+          x: lerp(p1.x, p2.x, frac),
+          y: lerp(p1.y, p2.y, frac),
         })
       }
     }
-    return points
+    return interpolated
   }
 
+  return points
+}
+
+/**
+ * Sample points along a path at regular intervals
+ */
+function samplePath(commands: PathCommand[], samples: number): NormalizedPoint[] {
+  // Use fallback for non-browser or JSDOM environments
+  if (!hasSvgPathSupport()) {
+    return samplePathFallback(commands, samples)
+  }
+
+  const points: NormalizedPoint[] = []
   const svgNS = 'http://www.w3.org/2000/svg'
   const svg = document.createElementNS(svgNS, 'svg')
   const path = document.createElementNS(svgNS, 'path')
@@ -297,7 +373,13 @@ export function createMorph(
     )
 
     currentPath = pointsToPath(currentPoints)
-    subscribers.forEach(cb => cb(currentPath))
+    subscribers.forEach(cb => {
+      try {
+        cb(currentPath)
+      } catch (e) {
+        console.error('[SpringKit] Morph subscriber error:', e)
+      }
+    })
 
     if (progress >= 0.999) {
       onComplete?.()
@@ -338,12 +420,22 @@ export function createMorph(
       )
 
       currentPath = pointsToPath(currentPoints)
-      subscribers.forEach(cb => cb(currentPath))
+      subscribers.forEach(cb => {
+        try {
+          cb(currentPath)
+        } catch (e) {
+          console.error('[SpringKit] Morph subscriber error:', e)
+        }
+      })
     },
 
     subscribe(callback) {
       subscribers.add(callback)
-      callback(currentPath)
+      try {
+        callback(currentPath)
+      } catch (e) {
+        console.error('[SpringKit] Morph subscriber error:', e)
+      }
       return () => subscribers.delete(callback)
     },
 

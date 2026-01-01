@@ -56,24 +56,34 @@ export function useMorph(
   const [path, setPath] = useState(initialPath)
   const [progress, setProgressState] = useState(0)
   const morphRef = useRef<MorphController | null>(null)
+  const isMountedRef = useRef(false)
+
+  // Use ref to capture latest options without causing effect re-runs
+  const optionsRef = useRef(options)
+  optionsRef.current = options
 
   useIsomorphicLayoutEffect(() => {
+    isMountedRef.current = true
+    const currentOptions = optionsRef.current
     const morph = createMorph(initialPath, {
-      ...options,
+      ...currentOptions,
       onProgress: (p) => {
+        if (!isMountedRef.current) return
         setProgressState(p)
-        options.onProgress?.(p)
+        currentOptions.onProgress?.(p)
       },
     })
 
     // Store unsubscribe function to prevent memory leak
     const unsubscribe = morph.subscribe((newPath) => {
+      if (!isMountedRef.current) return
       setPath(newPath)
     })
 
     morphRef.current = morph
 
     return () => {
+      isMountedRef.current = false
       unsubscribe()
       morph.destroy()
     }
@@ -141,16 +151,26 @@ export function useMorphSequence(
 ): UseMorphSequenceReturn {
   const [path, setPath] = useState(paths[0] ?? '')
   const [currentIndex, setCurrentIndex] = useState(0)
+  const isMountedRef = useRef(false)
 
   const sequenceRef = useRef<ReturnType<typeof createMorphSequence> | null>(null)
 
+  // Use ref to capture latest options without causing effect re-runs
+  const optionsRef = useRef(options)
+  optionsRef.current = options
+
+  // Memoize paths to detect content changes, not just length
+  const pathsKey = paths.join('|')
+
   useIsomorphicLayoutEffect(() => {
     if (paths.length === 0) return
+    isMountedRef.current = true
 
-    const sequence = createMorphSequence(paths, options)
+    const sequence = createMorphSequence(paths, optionsRef.current)
 
     // Store unsubscribe function to prevent memory leak
     const unsubscribe = sequence.subscribe((newPath) => {
+      if (!isMountedRef.current) return
       setPath(newPath)
       setCurrentIndex(sequence.getCurrentIndex())
     })
@@ -158,10 +178,11 @@ export function useMorphSequence(
     sequenceRef.current = sequence
 
     return () => {
+      isMountedRef.current = false
       unsubscribe()
       sequence.destroy()
     }
-  }, [paths.length])
+  }, [pathsKey])
 
   const morphToIndex = useCallback((index: number) => {
     sequenceRef.current?.morphToIndex(index)

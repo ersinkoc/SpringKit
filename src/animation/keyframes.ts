@@ -124,6 +124,9 @@ export function keyframes(
   let spring: ReturnType<typeof createSpringValue> | null = null
   let currentValue = normalizedKeyframes[0]?.value ?? 0
   let destroyed = false
+  // Track pending RAF and timeout IDs for cleanup
+  let pendingRafId: number | null = null
+  let pendingTimeoutId: ReturnType<typeof setTimeout> | null = null
 
   const createSpring = () => {
     if (spring) {
@@ -161,6 +164,8 @@ export function keyframes(
       // Wait for spring to settle
       await new Promise<void>((resolve) => {
         const checkComplete = () => {
+          pendingRafId = null
+
           if (destroyed || isPaused) {
             resolve()
             return
@@ -169,11 +174,18 @@ export function keyframes(
           if (spring && !spring.isAnimating()) {
             resolve()
           } else {
-            requestAnimationFrame(checkComplete)
+            pendingRafId = requestAnimationFrame(checkComplete)
           }
         }
         // Give spring time to start
-        setTimeout(checkComplete, 16)
+        pendingTimeoutId = setTimeout(() => {
+          pendingTimeoutId = null
+          if (!destroyed) {
+            checkComplete()
+          } else {
+            resolve()
+          }
+        }, 16)
       })
     }
 
@@ -272,6 +284,16 @@ export function keyframes(
       destroyed = true
       isPlaying = false
       isPaused = false
+
+      // Cancel pending RAF and timeout to prevent memory leaks
+      if (pendingRafId !== null) {
+        cancelAnimationFrame(pendingRafId)
+        pendingRafId = null
+      }
+      if (pendingTimeoutId !== null) {
+        clearTimeout(pendingTimeoutId)
+        pendingTimeoutId = null
+      }
 
       if (spring) {
         spring.destroy()

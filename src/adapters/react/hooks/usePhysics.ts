@@ -199,8 +199,13 @@ export function useMomentum(options: UseMomentumOptions = {}) {
   }, [friction, minVelocity, bounds, applyBounds, onRest])
 
   const push = useCallback((velocity: number) => {
+    // Validate velocity
+    if (!Number.isFinite(velocity)) return
+
     velocityRef.current?.jump(velocity)
     isActiveRef.current = true
+    // Cancel any existing frame before starting new one
+    if (frameRef.current) cancelAnimationFrame(frameRef.current)
     frameRef.current = requestAnimationFrame(tick)
   }, [tick])
 
@@ -213,6 +218,8 @@ export function useMomentum(options: UseMomentumOptions = {}) {
   }, [])
 
   const set = useCallback((value: number) => {
+    // Validate value
+    if (!Number.isFinite(value)) return
     valueRef.current?.jump(applyBounds(value))
   }, [applyBounds])
 
@@ -273,20 +280,21 @@ export function useElastic(options: UseElasticOptions = {}) {
     spring = { stiffness: 300, damping: 30 },
   } = options
 
-  const valueRef = useRef<MotionValue<number> | null>(null)
+  // Use useRef for motion values to avoid hook order issues
+  const motionValueRef = useRef<MotionValue<number> | null>(null)
   const springRef = useRef<ReturnType<typeof createSpringValue> | null>(null)
-  const rawValueRef = useRef(0)
 
-  if (valueRef.current === null) {
-    valueRef.current = createMotionValue(0)
+  // Initialize refs only once
+  if (motionValueRef.current === null) {
+    motionValueRef.current = createMotionValue(0)
   }
-
   if (springRef.current === null) {
     springRef.current = createSpringValue(0, {
       ...spring,
-      onUpdate: (v) => valueRef.current?.jump(v),
+      onUpdate: (v) => motionValueRef.current?.jump(v),
     })
   }
+  const rawValueRef = useRef(0)
 
   // Rubber band formula: x * (1 - x / (maxStretch * 2))
   const applyElasticity = useCallback((input: number) => {
@@ -297,9 +305,12 @@ export function useElastic(options: UseElasticOptions = {}) {
   }, [elasticity, maxStretch])
 
   const stretch = useCallback((amount: number) => {
+    // Validate amount
+    if (!Number.isFinite(amount)) return
+
     rawValueRef.current = amount
     const elasticValue = applyElasticity(amount)
-    valueRef.current?.jump(elasticValue)
+    motionValueRef.current?.jump(elasticValue)
   }, [applyElasticity])
 
   const release = useCallback(() => {
@@ -308,19 +319,22 @@ export function useElastic(options: UseElasticOptions = {}) {
   }, [])
 
   const set = useCallback((value: number) => {
+    // Validate value
+    if (!Number.isFinite(value)) return
+
     rawValueRef.current = value
     springRef.current?.set(value)
   }, [])
 
   useEffect(() => {
     return () => {
-      valueRef.current?.destroy()
+      motionValueRef.current?.destroy()
       springRef.current?.destroy()
     }
   }, [])
 
   return {
-    value: valueRef.current,
+    value: motionValueRef.current,
     stretch,
     release,
     set,
@@ -375,19 +389,20 @@ export function useBounce(options: UseBounceOptions = {}) {
     restitution = 0.7,
   } = options
 
-  const valueRef = useRef<MotionValue<number> | null>(null)
+  // Use useRef for motion value to avoid hook order issues
+  const motionValueRef = useRef<MotionValue<number> | null>(null)
+  if (motionValueRef.current === null) {
+    motionValueRef.current = createMotionValue(ceiling)
+  }
+  const motionValue = motionValueRef.current
   const velocityRef = useRef(0)
   const frameRef = useRef<number | null>(null)
   const isActiveRef = useRef(false)
 
-  if (valueRef.current === null) {
-    valueRef.current = createMotionValue(ceiling)
-  }
-
   const tick = useCallback(() => {
     if (!isActiveRef.current) return
 
-    const currentValue = valueRef.current?.get() ?? 0
+    const currentValue = motionValue.get()
 
     // Apply gravity
     velocityRef.current += gravity
@@ -407,7 +422,7 @@ export function useBounce(options: UseBounceOptions = {}) {
       if (Math.abs(velocityRef.current) < 0.5) {
         isActiveRef.current = false
         velocityRef.current = 0
-        valueRef.current?.jump(floor)
+        motionValue.jump(floor)
         return
       }
     }
@@ -418,20 +433,31 @@ export function useBounce(options: UseBounceOptions = {}) {
       velocityRef.current = -velocityRef.current * restitution
     }
 
-    valueRef.current?.jump(newValue)
+    motionValue.jump(newValue)
     frameRef.current = requestAnimationFrame(tick)
-  }, [gravity, dampening, floor, ceiling, restitution])
+  }, [motionValue, gravity, dampening, floor, ceiling, restitution])
 
   const drop = useCallback((fromY: number = ceiling, initialVelocity: number = 0) => {
-    valueRef.current?.jump(fromY)
-    velocityRef.current = initialVelocity
+    // Validate inputs
+    const safeFromY = Number.isFinite(fromY) ? fromY : ceiling
+    const safeVelocity = Number.isFinite(initialVelocity) ? initialVelocity : 0
+
+    motionValue.jump(safeFromY)
+    velocityRef.current = safeVelocity
     isActiveRef.current = true
+    // Cancel any existing frame before starting new one
+    if (frameRef.current) cancelAnimationFrame(frameRef.current)
     frameRef.current = requestAnimationFrame(tick)
-  }, [ceiling, tick])
+  }, [motionValue, ceiling, tick])
 
   const bounce = useCallback((velocity: number) => {
+    // Validate velocity
+    if (!Number.isFinite(velocity)) return
+
     velocityRef.current = velocity
     isActiveRef.current = true
+    // Cancel any existing frame before starting new one
+    if (frameRef.current) cancelAnimationFrame(frameRef.current)
     frameRef.current = requestAnimationFrame(tick)
   }, [tick])
 
@@ -444,12 +470,12 @@ export function useBounce(options: UseBounceOptions = {}) {
   useEffect(() => {
     return () => {
       if (frameRef.current) cancelAnimationFrame(frameRef.current)
-      valueRef.current?.destroy()
+      motionValue.destroy()
     }
-  }, [])
+  }, [motionValue])
 
   return {
-    value: valueRef.current,
+    value: motionValue,
     drop,
     bounce,
     stop,
@@ -512,20 +538,26 @@ export function useGravity(options: UseGravityOptions = {}) {
     bounciness = 0.7,
   } = options
 
+  // Use useRef for motion values to avoid hook order issues
   const xRef = useRef<MotionValue<number> | null>(null)
   const yRef = useRef<MotionValue<number> | null>(null)
+  if (xRef.current === null) {
+    xRef.current = createMotionValue(0)
+  }
+  if (yRef.current === null) {
+    yRef.current = createMotionValue(0)
+  }
+  const xMotion = xRef.current
+  const yMotion = yRef.current
   const velocityRef = useRef({ x: 0, y: 0 })
   const frameRef = useRef<number | null>(null)
   const isActiveRef = useRef(false)
 
-  if (xRef.current === null) xRef.current = createMotionValue(0)
-  if (yRef.current === null) yRef.current = createMotionValue(0)
-
   const tick = useCallback(() => {
     if (!isActiveRef.current) return
 
-    const currentX = xRef.current?.get() ?? 0
-    const currentY = yRef.current?.get() ?? 0
+    const currentX = xMotion.get()
+    const currentY = yMotion.get()
 
     // Apply gravity (F = m * g, but we simplify to just g since mass affects velocity change)
     velocityRef.current.x += gravity.x
@@ -564,8 +596,8 @@ export function useGravity(options: UseGravityOptions = {}) {
       }
     }
 
-    xRef.current?.jump(newX)
-    yRef.current?.jump(newY)
+    xMotion.jump(newX)
+    yMotion.jump(newY)
 
     // Continue if there's still movement
     const totalVelocity = Math.abs(velocityRef.current.x) + Math.abs(velocityRef.current.y)
@@ -574,28 +606,41 @@ export function useGravity(options: UseGravityOptions = {}) {
     } else {
       isActiveRef.current = false
     }
-  }, [gravity, drag, bounds, bounciness])
+  }, [xMotion, yMotion, gravity, drag, bounds, bounciness])
 
   const launch = useCallback((velocity: { x: number; y: number }) => {
-    velocityRef.current = { ...velocity }
+    // Validate velocities
+    const safeX = Number.isFinite(velocity.x) ? velocity.x : 0
+    const safeY = Number.isFinite(velocity.y) ? velocity.y : 0
+
+    velocityRef.current = { x: safeX, y: safeY }
     isActiveRef.current = true
+    // Cancel any existing frame before starting new one
+    if (frameRef.current) cancelAnimationFrame(frameRef.current)
     frameRef.current = requestAnimationFrame(tick)
   }, [tick])
 
   const setPosition = useCallback((pos: { x: number; y: number }) => {
-    xRef.current?.jump(pos.x)
-    yRef.current?.jump(pos.y)
-  }, [])
+    // Validate positions
+    const safeX = Number.isFinite(pos.x) ? pos.x : xMotion.get()
+    const safeY = Number.isFinite(pos.y) ? pos.y : yMotion.get()
+
+    xMotion.jump(safeX)
+    yMotion.jump(safeY)
+  }, [xMotion, yMotion])
 
   const stop = useCallback(() => {
     isActiveRef.current = false
     if (frameRef.current) cancelAnimationFrame(frameRef.current)
+    frameRef.current = null
     velocityRef.current = { x: 0, y: 0 }
   }, [])
 
   const start = useCallback(() => {
     if (!isActiveRef.current) {
       isActiveRef.current = true
+      // Cancel any existing frame before starting new one
+      if (frameRef.current) cancelAnimationFrame(frameRef.current)
       frameRef.current = requestAnimationFrame(tick)
     }
   }, [tick])
@@ -603,14 +648,14 @@ export function useGravity(options: UseGravityOptions = {}) {
   useEffect(() => {
     return () => {
       if (frameRef.current) cancelAnimationFrame(frameRef.current)
-      xRef.current?.destroy()
-      yRef.current?.destroy()
+      xMotion.destroy()
+      yMotion.destroy()
     }
-  }, [])
+  }, [xMotion, yMotion])
 
   return {
-    x: xRef.current,
-    y: yRef.current,
+    x: xMotion,
+    y: yMotion,
     launch,
     setPosition,
     stop,

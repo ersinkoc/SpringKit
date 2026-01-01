@@ -90,6 +90,8 @@ class ScrollSpringImpl implements ScrollSpring {
   private target = { x: 0, y: 0 }
   private isScrolling = false
   private isEnabled = true
+  private pendingRafId: number | null = null
+  private destroyed = false
 
   private springX: SpringValue
   private springY: SpringValue
@@ -192,6 +194,10 @@ class ScrollSpringImpl implements ScrollSpring {
 
     // Check for scroll end
     const checkEnd = () => {
+      this.pendingRafId = null
+
+      if (this.destroyed) return
+
       const settled =
         Math.abs(this.scroll.x - this.target.x) < 0.1 &&
         Math.abs(this.scroll.y - this.target.y) < 0.1 &&
@@ -202,7 +208,7 @@ class ScrollSpringImpl implements ScrollSpring {
         this.isScrolling = false
         this.config.onScrollEnd?.()
       } else if (this.isScrolling) {
-        requestAnimationFrame(checkEnd)
+        this.pendingRafId = requestAnimationFrame(checkEnd)
       }
     }
 
@@ -238,6 +244,14 @@ class ScrollSpringImpl implements ScrollSpring {
   }
 
   destroy(): void {
+    this.destroyed = true
+
+    // Cancel any pending RAF to prevent memory leak
+    if (this.pendingRafId !== null) {
+      cancelAnimationFrame(this.pendingRafId)
+      this.pendingRafId = null
+    }
+
     this.container.removeEventListener('wheel', this.onWheel)
     this.springX.destroy()
     this.springY.destroy()

@@ -131,6 +131,7 @@ export async function stagger<T>(
   // Start animations with delay
   const getDelay = typeof delay === 'function' ? delay : (_i: number) => delay
   const animations: SpringAnimation[] = []
+  const timeoutIds: ReturnType<typeof setTimeout>[] = []
 
   for (let i = 0; i < indices.length; i++) {
     const index = indices[i]!
@@ -140,13 +141,19 @@ export async function stagger<T>(
     const delayMs = getDelay(i)
 
     if (delayMs > 0) {
-      setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         anim.start()
       }, delayMs)
+      timeoutIds.push(timeoutId)
     } else {
       anim.start()
     }
   }
 
-  await Promise.all(animations.map((a) => a.finished))
+  try {
+    await Promise.all(animations.map((a) => a.finished))
+  } finally {
+    // Clear any remaining timeouts on completion or error
+    timeoutIds.forEach(clearTimeout)
+  }
 }

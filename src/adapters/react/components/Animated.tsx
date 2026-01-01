@@ -95,6 +95,19 @@ function extractNumericValues(style: AnimatedStyle): Record<string, number> {
 }
 
 /**
+ * Extract non-numeric (string) values from a style object
+ */
+function extractStringValues(style: AnimatedStyle): Record<string, string> {
+  const result: Record<string, string> = {}
+  for (const key in style) {
+    if (typeof style[key] === 'string') {
+      result[key] = style[key] as string
+    }
+  }
+  return result
+}
+
+/**
  * Create an animated component for a given tag
  */
 function createAnimatedComponent<T extends React.ElementType>(
@@ -445,6 +458,26 @@ function createAnimatedComponent<T extends React.ElementType>(
         Object.entries(style).filter(([_, v]) => typeof v !== 'number')
       )
 
+      // Get string values from active gesture states (applied immediately, not animated)
+      const gestureStringStyles: React.CSSProperties = {}
+
+      // Layer gesture string styles in order (later ones override)
+      if (whileInView && isInViewport) {
+        Object.assign(gestureStringStyles, extractStringValues(whileInView))
+      }
+      if (whileFocus && isFocused) {
+        Object.assign(gestureStringStyles, extractStringValues(whileFocus))
+      }
+      if (whileHover && isHovered) {
+        Object.assign(gestureStringStyles, extractStringValues(whileHover))
+      }
+      if (whileDrag && isDragging) {
+        Object.assign(gestureStringStyles, extractStringValues(whileDrag))
+      }
+      if (whileTap && isPressed) {
+        Object.assign(gestureStringStyles, extractStringValues(whileTap))
+      }
+
       // Build event handlers
       const eventHandlers: Record<string, React.EventHandler<React.SyntheticEvent>> = {}
 
@@ -470,7 +503,7 @@ function createAnimatedComponent<T extends React.ElementType>(
           ...props,
           ...eventHandlers,
           ref: setRef,
-          style: { ...staticStyle, ...animatedStyle },
+          style: { ...staticStyle, ...animatedStyle, ...gestureStringStyles },
         },
         children
       )

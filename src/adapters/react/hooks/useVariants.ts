@@ -1,7 +1,7 @@
 /**
  * React hooks for Variants System
  */
-import { useRef, useCallback, useMemo, createContext, useContext, type ReactNode } from 'react'
+import { useRef, useCallback, useMemo, useState, createContext, useContext, type ReactNode } from 'react'
 import React from 'react'
 import {
   getVariant,
@@ -185,17 +185,31 @@ export function useVariants(options: UseVariantsOptions): UseVariantsReturn {
     return isNaN(parsed) ? fallback : parsed
   }
 
+  // Helper to compute spring values from variant values
+  const computeSpringValues = useCallback((values: AnimationValues, fallbackValues?: AnimationValues) => ({
+    x: toNumber(values.x ?? fallbackValues?.x, 0),
+    y: toNumber(values.y ?? fallbackValues?.y, 0),
+    scale: values.scale ?? fallbackValues?.scale ?? 1,
+    scaleX: values.scaleX ?? fallbackValues?.scaleX ?? 1,
+    scaleY: values.scaleY ?? fallbackValues?.scaleY ?? 1,
+    rotate: values.rotate ?? fallbackValues?.rotate ?? 0,
+    opacity: values.opacity ?? fallbackValues?.opacity ?? 1,
+  }), [])
+
+  // Track if initial animation has been triggered
+  const hasAnimatedRef = useRef(false)
+  // Track the last variant we animated to, to detect actual changes
+  const lastAnimatedVariantRef = useRef<string | undefined>(undefined)
+
+  // Store target values that should be animated to after initial render
+  // Initialize with initial values so spring starts there
+  const [animatedTargetValues, setAnimatedTargetValues] = useState(() =>
+    computeSpringValues(initialValues)
+  )
+
   // Spring values for animation
   const springValues = useSpring(
-    {
-      x: toNumber(targetValues.x ?? initialValues.x, 0),
-      y: toNumber(targetValues.y ?? initialValues.y, 0),
-      scale: targetValues.scale ?? initialValues.scale ?? 1,
-      scaleX: targetValues.scaleX ?? initialValues.scaleX ?? 1,
-      scaleY: targetValues.scaleY ?? initialValues.scaleY ?? 1,
-      rotate: targetValues.rotate ?? initialValues.rotate ?? 0,
-      opacity: targetValues.opacity ?? initialValues.opacity ?? 1,
-    },
+    animatedTargetValues,
     {
       stiffness: springConfig?.stiffness ?? transition.spring?.stiffness ?? 100,
       damping: springConfig?.damping ?? transition.spring?.damping ?? 15,
@@ -203,31 +217,54 @@ export function useVariants(options: UseVariantsOptions): UseVariantsReturn {
     }
   )
 
-  // Track variant changes
+  // Trigger initial animation and handle subsequent variant changes
+  // Only depend on targetVariant (string) to avoid object reference issues
+  useIsomorphicLayoutEffect(() => {
+    // On mount, animate from initial to target
+    if (!hasAnimatedRef.current) {
+      hasAnimatedRef.current = true
+      lastAnimatedVariantRef.current = targetVariant
+      // Use setTimeout to ensure this runs after the spring is initialized
+      const timeoutId = setTimeout(() => {
+        setAnimatedTargetValues(computeSpringValues(targetValues, initialValues))
+      }, 0)
+      return () => clearTimeout(timeoutId)
+    }
+
+    // On subsequent renders, only update if the variant actually changed
+    if (targetVariant !== lastAnimatedVariantRef.current) {
+      lastAnimatedVariantRef.current = targetVariant
+      setAnimatedTargetValues(computeSpringValues(targetValues, initialValues))
+    }
+  }, [targetVariant, computeSpringValues, targetValues, initialValues])
+
+  // Track variant changes and detect animation completion
   useIsomorphicLayoutEffect(() => {
     if (targetVariant && targetVariant !== currentVariantRef.current) {
       currentVariantRef.current = targetVariant
       isAnimatingRef.current = true
 
-      // Delay animation if needed
-      if (staggerDelay > 0) {
-        const timer = setTimeout(() => {
-          isAnimatingRef.current = false
-          onAnimationComplete?.(targetVariant)
-        }, staggerDelay + 500) // Approximate spring duration
+      // Use ref to capture onAnimationComplete for cleanup safety
+      const capturedVariant = targetVariant
+      const capturedCallback = onAnimationComplete
 
-        return () => clearTimeout(timer)
-      }
+      // Calculate a reasonable timeout based on spring physics
+      // Time constant for a damped spring system: 2 * mass / damping
+      // For settling to ~2% of initial amplitude, use ~4 time constants
+      const damping = springConfig?.damping ?? 15
+      const mass = springConfig?.mass ?? 1
+      // Estimated settle time: ~4 time constants = 4 * (2 * mass / damping)
+      const estimatedDuration = Math.max(200, Math.min(2000, (8 * mass / damping) * 1000))
+      const totalDelay = staggerDelay + estimatedDuration
 
-      // Approximate completion
       const timer = setTimeout(() => {
         isAnimatingRef.current = false
-        onAnimationComplete?.(targetVariant)
-      }, 500)
+        capturedCallback?.(capturedVariant)
+      }, totalDelay)
 
       return () => clearTimeout(timer)
     }
-  }, [targetVariant, staggerDelay, onAnimationComplete])
+  }, [targetVariant, staggerDelay, onAnimationComplete, springConfig?.stiffness, springConfig?.damping, springConfig?.mass])
 
   const setVariant = useCallback((name: string) => {
     currentVariantRef.current = name

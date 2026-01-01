@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { Play, Layers, Sparkles } from 'lucide-react'
+import { useState, useEffect, useRef, useCallback } from 'react'
+import { Play, Pause, Layers, Sparkles } from 'lucide-react'
 import { useVariants } from '@oxog/springkit/react'
 import { DemoPageLayout } from './DemoPageLayout'
 
@@ -7,98 +7,53 @@ const CODE = `import { useState } from 'react'
 import { useVariants } from '@oxog/springkit/react'
 
 // Define animation variants
-const buttonVariants = {
-  idle: {
-    scale: 1,
-    y: 0,
-    opacity: 1,
-  },
-  hover: {
-    scale: 1.05,
-    y: -2,
-    opacity: 1,
-  },
-  pressed: {
-    scale: 0.95,
-    y: 2,
-    opacity: 0.9,
-  },
-  disabled: {
-    scale: 1,
-    y: 0,
-    opacity: 0.5,
-  },
-}
-
-function AnimatedButton() {
-  const [variant, setVariant] = useState<keyof typeof buttonVariants>('idle')
-
-  const { values, setVariant: animateTo } = useVariants({
-    variants: buttonVariants,
-    initial: 'idle',
-    animate: variant,
-    config: { stiffness: 400, damping: 25 },
-  })
-
-  return (
-    <button
-      onMouseEnter={() => {
-        setVariant('hover')
-        animateTo('hover')
-      }}
-      onMouseLeave={() => {
-        setVariant('idle')
-        animateTo('idle')
-      }}
-      onMouseDown={() => {
-        setVariant('pressed')
-        animateTo('pressed')
-      }}
-      onMouseUp={() => {
-        setVariant('hover')
-        animateTo('hover')
-      }}
-      style={{
-        transform: \`scale(\${values.scale}) translateY(\${values.y}px)\`,
-        opacity: values.opacity,
-      }}
-    >
-      Interactive Button
-    </button>
-  )
-}
-
-// Card with multiple states
 const cardVariants = {
-  hidden: { opacity: 0, scale: 0.8, y: 50 },
-  visible: { opacity: 1, scale: 1, y: 0 },
-  selected: { opacity: 1, scale: 1.05, y: -10 },
-  exit: { opacity: 0, scale: 0.9, y: -20 },
+  hidden: { opacity: 0, scale: 0.8, y: 50, rotate: -5 },
+  visible: { opacity: 1, scale: 1, y: 0, rotate: 0 },
+  hover: { opacity: 1, scale: 1.05, y: -8, rotate: 0 },
+  selected: { opacity: 1, scale: 1.1, y: -15, rotate: 2 },
+  exit: { opacity: 0, scale: 0.9, y: -30, rotate: 5 },
 }
 
 function AnimatedCard() {
-  const [state, setState] = useState<keyof typeof cardVariants>('hidden')
+  const [variant, setVariant] = useState('visible')
 
-  const { values, setVariant } = useVariants({
+  // useVariants automatically animates when 'animate' prop changes
+  const { values } = useVariants({
     variants: cardVariants,
-    initial: 'hidden',
-    animate: state,
+    initial: 'hidden',   // Start from hidden state
+    animate: variant,     // Animate to current variant
+    spring: { stiffness: 300, damping: 22 },
   })
 
-  const cycleState = () => {
-    const states: Array<keyof typeof cardVariants> = ['hidden', 'visible', 'selected', 'exit']
-    const currentIndex = states.indexOf(state)
-    const nextState = states[(currentIndex + 1) % states.length]
-    setState(nextState)
-    setVariant(nextState)
-  }
-
   return (
-    <div onClick={cycleState} style={{
-      opacity: values.opacity,
-      transform: \`scale(\${values.scale}) translateY(\${values.y}px)\`,
-    }}>
-      Click to cycle: {state}
+    <div>
+      {/* Animated element */}
+      <div
+        style={{
+          opacity: values.opacity,
+          transform: \`
+            scale(\${values.scale})
+            translateY(\${values.y}px)
+            rotate(\${values.rotate}deg)
+          \`,
+        }}
+      >
+        Current: {variant}
+      </div>
+
+      {/* Variant selector buttons */}
+      <div className="flex gap-2 mt-4">
+        {Object.keys(cardVariants).map((v) => (
+          <button
+            key={v}
+            onClick={() => setVariant(v)}
+            className={variant === v ? 'active' : ''}
+          >
+            {v}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }`
@@ -130,20 +85,94 @@ const variantColors: Record<VariantName, { from: string; to: string }> = {
   exit: { from: '#f59e0b', to: '#d97706' },
 }
 
+const SPEED_OPTIONS = [
+  { label: 'Slow', value: 2000 },
+  { label: 'Normal', value: 1200 },
+  { label: 'Fast', value: 600 },
+]
+
 function VariantsDemo() {
   const [variant, setVariant] = useState<VariantName>('visible')
+  const [isAutoCycling, setIsAutoCycling] = useState(false)
+  const [cycleSpeed, setCycleSpeed] = useState(1200)
+  const [transitionCount, setTransitionCount] = useState(0)
+  const autoCycleRef = useRef<NodeJS.Timeout | null>(null)
 
-  const { values, setVariant: animateToVariant } = useVariants({
+  // useVariants animates automatically when 'animate' prop changes
+  const { values } = useVariants({
     variants: cardVariants,
     initial: 'hidden',
     animate: variant,
-    config: { stiffness: 300, damping: 22 },
+    spring: { stiffness: 300, damping: 22 },
   })
 
-  const handleVariantChange = (v: VariantName) => {
+  // Just update the state - useVariants will animate automatically
+  const handleVariantChange = useCallback((v: VariantName) => {
     setVariant(v)
-    animateToVariant(v)
+  }, [])
+
+  const cycleToNext = useCallback(() => {
+    const variants = Object.keys(cardVariants) as VariantName[]
+    setVariant(current => {
+      const currentIndex = variants.indexOf(current)
+      return variants[(currentIndex + 1) % variants.length]
+    })
+    setTransitionCount(c => c + 1)
+  }, [])
+
+  const toggleAutoCycle = () => {
+    if (isAutoCycling) {
+      if (autoCycleRef.current) {
+        clearInterval(autoCycleRef.current)
+        autoCycleRef.current = null
+      }
+      setIsAutoCycling(false)
+    } else {
+      setIsAutoCycling(true)
+      cycleToNext()
+      autoCycleRef.current = setInterval(cycleToNext, cycleSpeed)
+    }
   }
+
+  // Update interval when speed changes
+  useEffect(() => {
+    if (isAutoCycling && autoCycleRef.current) {
+      clearInterval(autoCycleRef.current)
+      autoCycleRef.current = setInterval(cycleToNext, cycleSpeed)
+    }
+  }, [cycleSpeed, isAutoCycling, cycleToNext])
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === ' ' || e.code === 'Space') {
+        e.preventDefault()
+        toggleAutoCycle()
+      } else if (e.key === 'ArrowRight') {
+        if (!isAutoCycling) cycleToNext()
+      } else if (e.key === 'ArrowLeft') {
+        if (!isAutoCycling) {
+          const variants = Object.keys(cardVariants) as VariantName[]
+          setVariant(current => {
+            const currentIndex = variants.indexOf(current)
+            return variants[(currentIndex - 1 + variants.length) % variants.length]
+          })
+          setTransitionCount(c => c + 1)
+        }
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isAutoCycling, cycleToNext])
+
+  // Cleanup auto-cycle on unmount
+  useEffect(() => {
+    return () => {
+      if (autoCycleRef.current) {
+        clearInterval(autoCycleRef.current)
+      }
+    }
+  }, [])
 
   const colors = variantColors[variant]
 
@@ -193,8 +222,19 @@ function VariantsDemo() {
         }}
       >
         <Layers className="w-5 h-5 shrink-0 mt-0.5" style={{ color: colors.from }} />
-        <div>
-          <p className="font-medium capitalize" style={{ color: colors.from }}>{variant}</p>
+        <div className="flex-1">
+          <div className="flex items-center justify-between">
+            <p className="font-medium capitalize" style={{ color: colors.from }}>{variant}</p>
+            <div className="flex items-center gap-3 text-xs text-white/40">
+              <span>Transitions: <span className="text-white/60 font-medium">{transitionCount}</span></span>
+              {isAutoCycling && (
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" />
+                  Auto
+                </span>
+              )}
+            </div>
+          </div>
           <p className="text-white/60 text-sm">{variantDescriptions[variant]}</p>
         </div>
       </div>
@@ -230,19 +270,55 @@ function VariantsDemo() {
         </div>
       </div>
 
-      {/* Quick cycle button */}
-      <button
-        onClick={() => {
-          const variants = Object.keys(cardVariants) as VariantName[]
-          const currentIndex = variants.indexOf(variant)
-          const nextVariant = variants[(currentIndex + 1) % variants.length]
-          handleVariantChange(nextVariant)
-        }}
-        className="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl font-medium flex items-center justify-center gap-2 hover:shadow-lg hover:shadow-emerald-500/30 transition-all"
-      >
-        <Play className="w-4 h-4" />
-        Cycle to Next Variant
-      </button>
+      {/* Speed control */}
+      <div>
+        <p className="text-xs text-white/40 uppercase tracking-wider mb-2">Cycle Speed</p>
+        <div className="flex gap-2">
+          {SPEED_OPTIONS.map((option) => (
+            <button
+              key={option.value}
+              onClick={() => setCycleSpeed(option.value)}
+              className={`flex-1 py-2 rounded-lg text-xs font-medium transition-all ${
+                cycleSpeed === option.value
+                  ? 'bg-emerald-500/30 text-emerald-300 ring-1 ring-emerald-500/50'
+                  : 'bg-white/5 hover:bg-white/10 text-white/60'
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Control buttons */}
+      <div className="flex gap-3">
+        <button
+          onClick={toggleAutoCycle}
+          className={`flex-1 py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-all ${
+            isAutoCycling
+              ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white hover:shadow-lg hover:shadow-rose-500/30'
+              : 'bg-white/5 hover:bg-white/10 text-white/60'
+          }`}
+        >
+          {isAutoCycling ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+          {isAutoCycling ? 'Stop' : 'Auto Cycle'}
+        </button>
+        <button
+          onClick={cycleToNext}
+          disabled={isAutoCycling}
+          className="flex-1 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl font-medium flex items-center justify-center gap-2 disabled:opacity-50 hover:shadow-lg hover:shadow-emerald-500/30 transition-all"
+        >
+          <Play className="w-4 h-4" />
+          Next Variant
+        </button>
+      </div>
+
+      {/* Keyboard shortcuts hint */}
+      <div className="flex justify-center gap-4 text-xs text-white/30">
+        <span><kbd className="px-1.5 py-0.5 bg-white/10 rounded text-white/50">Space</kbd> Play/Pause</span>
+        <span><kbd className="px-1.5 py-0.5 bg-white/10 rounded text-white/50">←</kbd> Prev</span>
+        <span><kbd className="px-1.5 py-0.5 bg-white/10 rounded text-white/50">→</kbd> Next</span>
+      </div>
     </div>
   )
 }

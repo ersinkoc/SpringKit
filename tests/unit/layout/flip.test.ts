@@ -175,6 +175,54 @@ describe('FLIP Layout Animations', () => {
       await anim.play()
       // Animation should complete without errors
     }, 5000)
+
+    it('should handle zero-sized elements (division by zero guard)', () => {
+      const first = { x: 0, y: 0, width: 100, height: 100 }
+      const last = { x: 0, y: 0, width: 0, height: 0 } // Zero-sized element
+
+      // Should not throw
+      const anim = createFlip(element, first, last, { size: true })
+      expect(anim).toBeDefined()
+      anim.cancel()
+    })
+
+    it('should handle onUpdate callback errors gracefully', async () => {
+      const first = { x: 0, y: 0, width: 100, height: 100 }
+      const last = { x: 50, y: 0, width: 100, height: 100 }
+
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      const anim = createFlip(element, first, last, {
+        config: { stiffness: 1000, damping: 100 },
+        onUpdate: () => {
+          throw new Error('Test error')
+        },
+      })
+
+      // Should not throw even with callback error
+      await anim.play()
+
+      consoleSpy.mockRestore()
+    }, 5000)
+
+    it('should handle onComplete callback errors gracefully', async () => {
+      const first = { x: 0, y: 0, width: 100, height: 100 }
+      const last = { x: 50, y: 0, width: 100, height: 100 }
+
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      const anim = createFlip(element, first, last, {
+        config: { stiffness: 1000, damping: 100 },
+        onComplete: () => {
+          throw new Error('Test error')
+        },
+      })
+
+      // Should not throw even with callback error
+      await anim.play()
+
+      consoleSpy.mockRestore()
+    }, 5000)
   })
 
   describe('flip helper', () => {

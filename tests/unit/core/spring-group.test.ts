@@ -187,4 +187,75 @@ describe('createSpringGroup', () => {
       expect(group.getValue('z' as any)).toBe(0)
     })
   })
+
+  describe('use after destroy protection', () => {
+    it('should not animate after destroy', () => {
+      const group = createSpringGroup({ x: 0, y: 0 })
+      group.destroy()
+      group.set({ x: 100 })
+
+      // Values should remain unchanged since set() is guarded
+      expect(group.get()).toEqual({ x: 0, y: 0 })
+    })
+
+    it('should not jump after destroy', () => {
+      const group = createSpringGroup({ x: 0, y: 0 })
+      group.destroy()
+      group.jump({ x: 100 })
+
+      // Values should remain unchanged since jump() is guarded
+      expect(group.get()).toEqual({ x: 0, y: 0 })
+    })
+  })
+
+  describe('type validation', () => {
+    it('should ignore non-number values in set()', () => {
+      const group = createSpringGroup({ x: 0, y: 0 })
+      // @ts-expect-error - testing runtime behavior with invalid input
+      group.set({ x: 'invalid', y: 100 })
+
+      // x should remain 0, y should animate
+      expect(group.getValue('x')).toBe(0)
+      expect(group.isAnimating()).toBe(true)
+      group.destroy()
+    })
+
+    it('should ignore non-number values in jump()', () => {
+      const group = createSpringGroup({ x: 0, y: 0 })
+      // @ts-expect-error - testing runtime behavior with invalid input
+      group.jump({ x: 'invalid', y: 100 })
+
+      // x should remain 0, y should be set
+      expect(group.getValue('x')).toBe(0)
+      expect(group.getValue('y')).toBe(100)
+    })
+  })
+
+  describe('subscriber error isolation', () => {
+    it('should continue notifying other subscribers if one throws', async () => {
+      const group = createSpringGroup({ x: 0, y: 0 })
+      const errorCallback = vi.fn(() => {
+        throw new Error('Subscriber error')
+      })
+      const normalCallback = vi.fn()
+
+      // Suppress console.error for this test
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      group.subscribe(errorCallback)
+      group.subscribe(normalCallback)
+
+      group.jump({ x: 100 })
+
+      // Wait for RAF-debounced notification
+      await new Promise(resolve => requestAnimationFrame(resolve))
+
+      // Both should have been called
+      expect(errorCallback).toHaveBeenCalled()
+      expect(normalCallback).toHaveBeenCalled()
+
+      consoleSpy.mockRestore()
+      group.destroy()
+    })
+  })
 })

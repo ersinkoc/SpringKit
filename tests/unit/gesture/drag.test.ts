@@ -298,6 +298,77 @@ describe('createDragSpring', () => {
 
       expect(drag).toBeDefined()
     })
+
+    it('should not setPosition after destroy', () => {
+      const drag = createDragSpring(element)
+      drag.setPosition(100, 50)
+      drag.destroy()
+      drag.setPosition(200, 100)
+
+      // Position should remain at last value before destroy
+      expect(drag.getPosition()).toEqual({ x: 100, y: 50 })
+    })
+
+    it('should not jumpTo after destroy', () => {
+      const drag = createDragSpring(element)
+      drag.jumpTo(100, 50)
+      drag.destroy()
+      drag.jumpTo(200, 100)
+
+      // Position should remain at last value before destroy
+      expect(drag.getPosition()).toEqual({ x: 100, y: 50 })
+    })
+
+    it('should not animateTo after destroy', () => {
+      const drag = createDragSpring(element)
+      drag.setPosition(100, 50)
+      drag.destroy()
+      drag.animateTo(200, 100)
+
+      // Position should remain at last value before destroy
+      expect(drag.getPosition()).toEqual({ x: 100, y: 50 })
+    })
+  })
+
+  describe('NaN/Infinity validation', () => {
+    it('should handle NaN in setPosition', () => {
+      const drag = createDragSpring(element)
+      drag.setPosition(100, 50)
+      drag.setPosition(NaN, 100)
+
+      // x should remain 100 (previous value) since NaN is invalid
+      expect(drag.getPosition().x).toBe(100)
+      expect(drag.getPosition().y).toBe(100)
+    })
+
+    it('should handle Infinity in setPosition', () => {
+      const drag = createDragSpring(element)
+      drag.setPosition(100, 50)
+      drag.setPosition(Infinity, 100)
+
+      // x should remain 100 (previous value) since Infinity is invalid
+      expect(drag.getPosition().x).toBe(100)
+      expect(drag.getPosition().y).toBe(100)
+    })
+
+    it('should handle NaN in jumpTo', () => {
+      const drag = createDragSpring(element)
+      drag.jumpTo(100, 50)
+      drag.jumpTo(NaN, 100)
+
+      // x should remain 100 (previous value) since NaN is invalid
+      expect(drag.getPosition().x).toBe(100)
+      expect(drag.getPosition().y).toBe(100)
+    })
+
+    it('should handle Infinity in animateTo', () => {
+      const drag = createDragSpring(element)
+      drag.setPosition(100, 50)
+      drag.animateTo(Infinity, 100)
+
+      // x should remain 100 (previous value) since Infinity is invalid
+      expect(drag.getPosition().x).toBe(100)
+    })
   })
 
   describe('pointer events', () => {

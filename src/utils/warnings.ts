@@ -137,6 +137,56 @@ export function validateDecayConfig(config: {
 }
 
 /**
+ * Validate a numeric value, checking for NaN and Infinity
+ * Returns a safe default value if invalid
+ */
+export function validateNumber(
+  value: number,
+  name: string,
+  defaultValue: number = 0
+): number {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    if (isDev) {
+      warnOnce(`${name} received NaN, using ${defaultValue} instead.`)
+    }
+    return defaultValue
+  }
+
+  if (!Number.isFinite(value)) {
+    if (isDev) {
+      warnOnce(`${name} received Infinity, using ${defaultValue} instead.`)
+    }
+    return defaultValue
+  }
+
+  return value
+}
+
+/**
+ * Validate animation target value
+ * Throws in development, returns safe value in production
+ */
+export function validateAnimationValue(value: number, context: string): number {
+  if (typeof value !== 'number' || Number.isNaN(value)) {
+    const message = `Invalid animation value in ${context}: expected number, got ${value}`
+    if (isDev) {
+      console.error(`[SpringKit] ${message}`)
+    }
+    return 0
+  }
+
+  if (!Number.isFinite(value)) {
+    const message = `Invalid animation value in ${context}: Infinity is not supported`
+    if (isDev) {
+      console.error(`[SpringKit] ${message}`)
+    }
+    return 0
+  }
+
+  return value
+}
+
+/**
  * Clear warned messages (useful for testing)
  */
 export function clearWarnings(): void {

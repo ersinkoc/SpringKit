@@ -3,7 +3,7 @@ import { defaultConfig } from './config.js'
 import { simulateSpring } from './physics.js'
 import { globalLoop, type Animatable, AnimationState } from '../animation/loop.js'
 import { clamp } from '../utils/math.js'
-import { validateSpringConfig } from '../utils/warnings.js'
+import { validateSpringConfig, validateAnimationValue } from '../utils/warnings.js'
 
 /**
  * Spring animation control interface
@@ -64,13 +64,14 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
     // Validate config in development mode
     validateSpringConfig(config)
 
-    this.from = from
-    this.to = to
-    this.clampedFrom = from
-    this.clampedTo = to
-    this.position = from
+    // Validate input values
+    this.from = validateAnimationValue(from, 'spring.from')
+    this.to = validateAnimationValue(to, 'spring.to')
+    this.clampedFrom = this.from
+    this.clampedTo = this.to
+    this.position = this.from
     this.velocity = config.velocity ?? 0
-    this.target = to
+    this.target = this.to
     this.config = {
       ...defaultConfig,
       ...config,
@@ -115,31 +116,42 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
   }
 
   reverse(): void {
+    // Swap from and to
     const temp = this.from
     this.from = this.to
     this.to = temp
     this.clampedFrom = this.from
     this.clampedTo = this.to
     this.target = this.to
+
+    // Negate velocity for proper direction reversal during animation
+    if (this.state === AnimationState.Running) {
+      this.velocity = -this.velocity
+    }
+    // Position stays at current value - the animation will move toward the new target
+    // This allows smooth reversal mid-animation and correct behavior when not running
   }
 
   set(to: number): void {
-    this.to = to
-    this.clampedTo = to
-    this.target = to
+    const validTo = validateAnimationValue(to, 'spring.set')
+    this.to = validTo
+    this.clampedTo = validTo
+    this.target = validTo
   }
 
   setWithVelocity(to: number, velocity?: number): void {
+    const validTo = validateAnimationValue(to, 'spring.setWithVelocity')
+
     // Update from to current position for smooth continuation
     this.from = this.position
     this.clampedFrom = this.position
-    this.to = to
-    this.clampedTo = to
-    this.target = to
+    this.to = validTo
+    this.clampedTo = validTo
+    this.target = validTo
 
     // Use provided velocity or preserve current velocity
     if (velocity !== undefined) {
-      this.velocity = velocity
+      this.velocity = validateAnimationValue(velocity, 'spring.setWithVelocity.velocity')
     }
     // If not running, start the animation
     if (this.state !== AnimationState.Running) {
@@ -204,6 +216,9 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
 
   destroy(): void {
     this.stop()
+    // Resolve the promise to prevent memory leaks from pending .finished handlers
+    this.resolveComplete?.()
+    this.resolveComplete = null
     this.config.onUpdate = undefined
     this.config.onStart = undefined
     this.config.onComplete = undefined

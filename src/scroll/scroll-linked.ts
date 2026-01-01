@@ -290,6 +290,8 @@ export function createParallax(
   let offset = 0
   let isInView = false
   let observer: IntersectionObserver | null = null
+  let pendingRafId: number | null = null
+  let destroyed = false
 
   const update = () => {
     if (!isInView) return
@@ -329,8 +331,13 @@ export function createParallax(
   observer.observe(element)
 
   const onScroll = () => {
-    if (isInView) {
-      requestAnimationFrame(update)
+    if (destroyed) return
+
+    if (isInView && pendingRafId === null) {
+      pendingRafId = requestAnimationFrame(() => {
+        pendingRafId = null
+        if (!destroyed) update()
+      })
     }
   }
 
@@ -340,6 +347,14 @@ export function createParallax(
     getOffset: () => offset,
     update,
     destroy: () => {
+      destroyed = true
+
+      // Cancel pending RAF to prevent memory leak
+      if (pendingRafId !== null) {
+        cancelAnimationFrame(pendingRafId)
+        pendingRafId = null
+      }
+
       observer?.disconnect()
       window.removeEventListener('scroll', onScroll)
       element.style.transform = ''

@@ -722,7 +722,12 @@ export function createSwipeGesture(
       onSwipeEnd?.(createState(e, false, true, null))
     }
 
-    element.releasePointerCapture(e.pointerId)
+    // Safety check: element might be removed from DOM
+    try {
+      element.releasePointerCapture(e.pointerId)
+    } catch {
+      // Ignore errors if pointer capture was already released
+    }
   }
 
   element.addEventListener('pointerdown', handlePointerDown)
@@ -840,7 +845,13 @@ export function createLongPressGesture(
     }
 
     onPressEnd?.(createState(e, false, true))
-    element.releasePointerCapture(e.pointerId)
+
+    // Safety check: element might be removed from DOM
+    try {
+      element.releasePointerCapture(e.pointerId)
+    } catch {
+      // Ignore errors if pointer capture was already released
+    }
   }
 
   element.addEventListener('pointerdown', handlePointerDown)

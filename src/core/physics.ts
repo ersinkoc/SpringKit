@@ -85,10 +85,12 @@ export function simulateSpring(
 
   // Check if spring is at rest
   // Spring is at rest when:
-  // 1. Close to target position (displacement < restDelta)
-  // 2. Moving slowly (velocity < restSpeed)
+  // 1. Close to target position (new displacement < restDelta)
+  // 2. Moving slowly (new velocity < restSpeed)
+  // Use NEW position to calculate displacement for accurate rest detection
+  const newDisplacement = Math.abs(target - newPosition)
   const isRest =
-    absDisplacement <= restDelta &&
+    newDisplacement <= restDelta &&
     Math.abs(newVelocity) <= restSpeed
 
   return {

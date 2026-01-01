@@ -214,8 +214,9 @@ export function animate(
   let isRunning = true
   let isPaused = false
   let resolveFinished: () => void
-  // Track all RAF IDs for proper cleanup
+  // Track RAF IDs and timeout IDs separately for proper cleanup
   const rafIds = new Set<number>()
+  const timeoutIds = new Set<ReturnType<typeof setTimeout>>()
   let delayTimeoutId: ReturnType<typeof setTimeout> | null = null
 
   const finished = new Promise<void>((resolve, _reject) => {
@@ -289,9 +290,11 @@ export function animate(
                 rafIds.add(rafId)
               } else {
                 // If paused, schedule check later instead of RAF loop
-                const timeoutId = setTimeout(checkDone, 100)
-                // Store timeout for cleanup (reusing rafIds set for simplicity)
-                rafIds.add(timeoutId as unknown as number)
+                const timeoutId = setTimeout(() => {
+                  timeoutIds.delete(timeoutId)
+                  checkDone()
+                }, 100)
+                timeoutIds.add(timeoutId)
               }
             }
             // Initial check after one frame
@@ -327,9 +330,12 @@ export function animate(
   const cleanup = () => {
     rafIds.forEach((id) => {
       cancelAnimationFrame(id)
-      clearTimeout(id)
     })
     rafIds.clear()
+    timeoutIds.forEach((id) => {
+      clearTimeout(id)
+    })
+    timeoutIds.clear()
     if (delayTimeoutId !== null) {
       clearTimeout(delayTimeoutId)
       delayTimeoutId = null

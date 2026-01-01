@@ -14,6 +14,8 @@ export interface SpringGroup<T extends Record<string, number>> {
   set(values: Partial<T>, config?: Partial<SpringConfig>): void
   /** Set values immediately without animation */
   jump(values: Partial<T>): void
+  /** Stop all animations at current position */
+  stop(): void
   /** Subscribe to value changes */
   subscribe(callback: (values: T) => void): () => void
   /** Check if any spring is animating */
@@ -72,6 +74,9 @@ class SpringGroupImpl<T extends Record<string, number>> implements SpringGroup<T
   }
 
   set(values: Partial<T>, config: Partial<SpringConfig> = {}): void {
+    // Guard against use after destroy
+    if (this.destroyed) return
+
     // Reset promise for new batch of animations
     this.resetPromise()
 
@@ -79,7 +84,7 @@ class SpringGroupImpl<T extends Record<string, number>> implements SpringGroup<T
 
     for (const [key, value] of Object.entries(values)) {
       const springValue = this.values.get(key as keyof T)
-      if (springValue) {
+      if (springValue && typeof value === 'number') {
         springValue.set(value, config)
         promises.push(springValue.finished)
       }
@@ -87,25 +92,41 @@ class SpringGroupImpl<T extends Record<string, number>> implements SpringGroup<T
 
     // Resolve when all animations complete
     Promise.all(promises).then(() => {
-      if (this.resolveComplete) {
+      if (this.resolveComplete && !this.destroyed) {
         this.resolveComplete()
       }
     })
   }
 
   jump(values: Partial<T>): void {
+    // Guard against use after destroy
+    if (this.destroyed) return
+
     for (const [key, value] of Object.entries(values)) {
       const springValue = this.values.get(key as keyof T)
-      if (springValue) {
+      if (springValue && typeof value === 'number') {
         springValue.jump(value)
       }
     }
     // Note: notify() is already called by the spring subscriptions, so we don't call it again
   }
 
+  stop(): void {
+    for (const springValue of this.values.values()) {
+      springValue.stop()
+    }
+    // Resolve the promise since animations are stopped
+    this.resolveComplete?.()
+  }
+
   subscribe(callback: (values: T) => void): () => void {
     this.subscribers.add(callback)
-    callback(this.get())
+    // Immediately call with current values (with error isolation)
+    try {
+      callback(this.get())
+    } catch (e) {
+      console.error('[SpringKit] SpringGroup subscriber error:', e)
+    }
     return () => this.subscribers.delete(callback)
   }
 
@@ -141,7 +162,11 @@ class SpringGroupImpl<T extends Record<string, number>> implements SpringGroup<T
   private notify(): void {
     const values = this.get()
     for (const subscriber of this.subscribers) {
-      subscriber(values)
+      try {
+        subscriber(values)
+      } catch (e) {
+        console.error('[SpringKit] SpringGroup subscriber error:', e)
+      }
     }
   }
 
@@ -157,6 +182,11 @@ class SpringGroupImpl<T extends Record<string, number>> implements SpringGroup<T
     for (const springValue of this.values.values()) {
       springValue.destroy()
     }
+
+    // Resolve pending promise to prevent memory leaks
+    this.resolveComplete?.()
+    this.resolveComplete = null
+
     this.subscribers.clear()
   }
 }

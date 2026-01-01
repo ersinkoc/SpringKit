@@ -31,7 +31,7 @@ function TimelineDemo() {
       .to(box2Ref.current, { y: -50 }, '0.5')
 
     timelineRef.current = timeline
-    return () => timeline.destroy()
+    return () => timeline.kill()
   }, [])
 
   const play = () => timelineRef.current?.play()
@@ -111,7 +111,7 @@ function TimelineDemo() {
     setDuration(timeline.duration || 2)
 
     return () => {
-      timeline.destroy()
+      timeline.kill()
     }
   }, [])
 

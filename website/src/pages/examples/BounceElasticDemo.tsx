@@ -1,6 +1,6 @@
-import { useState, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { Play, RotateCcw, Zap, Activity, Waves } from 'lucide-react'
-import { useBounce, useElastic, useGravity, useMotionValueState } from '@oxog/springkit/react'
+import { useBounce, useElastic, useGravity } from '@oxog/springkit/react'
 import { DemoPageLayout } from './DemoPageLayout'
 
 const CODE = `import { useState } from 'react'
@@ -75,8 +75,9 @@ function GravityDemo() {
 
 function BounceSection() {
   const [isBouncing, setIsBouncing] = useState(false)
+  const [yPos, setYPos] = useState(0)
 
-  const { value, drop, bounce, stop } = useBounce({
+  const { value, drop, stop } = useBounce({
     dampening: 0.02,
     gravity: 0.5,
     floor: 140,
@@ -84,7 +85,14 @@ function BounceSection() {
     restitution: 0.7,
   })
 
-  const y = useMotionValueState(value) ?? 0
+  // Subscribe to MotionValue changes directly
+  useEffect(() => {
+    if (!value) return
+    const unsubscribe = value.subscribe((v) => {
+      setYPos(v)
+    })
+    return unsubscribe
+  }, [value])
 
   const handleBounce = () => {
     if (isBouncing) return
@@ -96,6 +104,7 @@ function BounceSection() {
   const reset = () => {
     stop()
     value?.jump(0)
+    setYPos(0)
     setIsBouncing(false)
   }
 
@@ -118,7 +127,7 @@ function BounceSection() {
         {/* Ball */}
         <div
           className="absolute left-1/2 -translate-x-1/2 w-12 h-12 rounded-full bg-gradient-to-br from-orange-400 to-amber-500 shadow-lg shadow-orange-500/40"
-          style={{ top: 20, transform: `translateX(-50%) translateY(${y}px)` }}
+          style={{ top: 20, transform: `translateX(-50%) translateY(${yPos}px)` }}
         />
       </div>
 
@@ -144,15 +153,24 @@ function BounceSection() {
 
 function ElasticSection() {
   const [isPressed, setIsPressed] = useState(false)
+  const [elasticValue, setElasticValue] = useState(0)
 
   const { value, stretch, release } = useElastic({
     elasticity: 0.5,
     maxStretch: 100,
   })
 
+  // Subscribe to MotionValue changes directly
+  useEffect(() => {
+    if (!value) return
+    const unsubscribe = value.subscribe((v) => {
+      setElasticValue(v)
+    })
+    return unsubscribe
+  }, [value])
+
   // For elastic, value starts at 0, so we convert to scale
-  const rawValue = useMotionValueState(value) ?? 0
-  const scale = 1 + rawValue / 100 // Convert stretch amount to scale
+  const scale = 1 + elasticValue / 100 // Convert stretch amount to scale
 
   return (
     <div className="space-y-4">
@@ -198,14 +216,22 @@ function ElasticSection() {
 
 function GravitySection() {
   const [isDropping, setIsDropping] = useState(false)
+  const [yPos, setYPos] = useState(0)
 
-  const { x, y, launch, setPosition, stop } = useGravity({
+  const { y, launch, setPosition, stop } = useGravity({
     gravity: { x: 0, y: 0.5 },
     bounds: { left: 0, right: 0, top: 0, bottom: 140 },
     bounciness: 0.65,
   })
 
-  const yVal = useMotionValueState(y) ?? 0
+  // Subscribe to MotionValue changes directly
+  useEffect(() => {
+    if (!y) return
+    const unsubscribe = y.subscribe((v) => {
+      setYPos(v)
+    })
+    return unsubscribe
+  }, [y])
 
   const handleDrop = () => {
     setIsDropping(true)
@@ -224,6 +250,7 @@ function GravitySection() {
   const reset = () => {
     stop()
     setPosition({ x: 0, y: 0 })
+    setYPos(0)
     setIsDropping(false)
   }
 
@@ -248,7 +275,7 @@ function GravitySection() {
           className="absolute left-1/2 w-10 h-10 rounded-full bg-gradient-to-br from-cyan-400 to-blue-500 shadow-lg shadow-cyan-500/40"
           style={{
             top: 16,
-            transform: `translateX(-50%) translateY(${yVal}px)`,
+            transform: `translateX(-50%) translateY(${yPos}px)`,
           }}
         />
       </div>

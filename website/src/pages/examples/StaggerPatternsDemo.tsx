@@ -1,5 +1,5 @@
-import { useState, useRef } from 'react'
-import { Play, RotateCcw, Grid3X3, Sparkles } from 'lucide-react'
+import { useState, useRef, useEffect, useCallback } from 'react'
+import { Play, RotateCcw, Grid3X3, Sparkles, Pause } from 'lucide-react'
 import {
   animate,
   linearStagger,
@@ -36,10 +36,10 @@ const patterns = {
 
 // For grid layout
 const gridPattern = (cols: number, rows: number) =>
-  gridStagger({ cols, rows, delay: 0.06, from: 'topLeft' })
+  gridStagger({ count, columns: cols, origin: 'top-left', delay: 0.06 })
 
 const spiralPattern = (cols: number, rows: number) =>
-  spiralStagger({ cols, rows, delay: 0.04, clockwise: true })
+  spiralStagger({ count, columns: cols, direction: 'clockwise', delay: 0.04 })
 
 function StaggerDemo() {
   const [pattern, setPattern] = useState('linear')
@@ -120,8 +120,11 @@ const patternDescriptions: Record<PatternType, string> = {
 function StaggerDemo() {
   const [pattern, setPattern] = useState<PatternType>('linear')
   const [isAnimating, setIsAnimating] = useState(false)
+  const [isAutoRunning, setIsAutoRunning] = useState(false)
+  const [runCount, setRunCount] = useState(0)
   const itemRefs = useRef<HTMLDivElement[]>([])
   const gridRefs = useRef<HTMLDivElement[]>([])
+  const autoRunRef = useRef<NodeJS.Timeout | null>(null)
 
   const isGridPattern = pattern === 'grid' || pattern === 'spiral'
   const cols = 5
@@ -142,17 +145,18 @@ function StaggerDemo() {
       case 'random':
         return randomStagger({ count, delay: 0.06, seed: Date.now() })
       case 'grid':
-        return gridStagger({ cols, rows, delay: 0.06, from: 'topLeft' })
+        return gridStagger({ count, columns: cols, origin: 'top-left', delay: 0.06 })
       case 'spiral':
-        return spiralStagger({ cols, rows, delay: 0.04, clockwise: true })
+        return spiralStagger({ count, columns: cols, direction: 'clockwise', delay: 0.04 })
       default:
         return linearStagger({ count, delay: 0.05 })
     }
   }
 
-  const runStagger = () => {
+  const runStagger = useCallback(() => {
     if (isAnimating) return
     setIsAnimating(true)
+    setRunCount(c => c + 1)
 
     const items = isGridPattern
       ? gridRefs.current.filter(Boolean)
@@ -183,7 +187,7 @@ function StaggerDemo() {
 
     // Reset animating state after all animations complete
     setTimeout(() => setIsAnimating(false), maxDelay + 500)
-  }
+  }, [isAnimating, isGridPattern, pattern])
 
   const reset = () => {
     const items = isGridPattern
@@ -196,6 +200,51 @@ function StaggerDemo() {
     })
     setIsAnimating(false)
   }
+
+  const toggleAutoRun = () => {
+    if (isAutoRunning) {
+      if (autoRunRef.current) {
+        clearInterval(autoRunRef.current)
+        autoRunRef.current = null
+      }
+      setIsAutoRunning(false)
+    } else {
+      setIsAutoRunning(true)
+      runStagger()
+      autoRunRef.current = setInterval(() => {
+        // Cycle through patterns automatically
+        setPattern(current => {
+          const patterns = Object.keys(patternDescriptions) as PatternType[]
+          const currentIndex = patterns.indexOf(current)
+          return patterns[(currentIndex + 1) % patterns.length]
+        })
+        setTimeout(runStagger, 100)
+      }, 2000)
+    }
+  }
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (autoRunRef.current) {
+        clearInterval(autoRunRef.current)
+      }
+    }
+  }, [])
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === ' ' || e.code === 'Space') {
+        e.preventDefault()
+        if (!isAnimating) runStagger()
+      } else if (e.key === 'r' || e.key === 'R') {
+        reset()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [isAnimating, runStagger])
 
   return (
     <div className="space-y-6">
@@ -241,8 +290,19 @@ function StaggerDemo() {
       {/* Pattern description */}
       <div className="flex items-start gap-3 p-4 bg-violet-500/10 rounded-xl border border-violet-500/20">
         <Sparkles className="w-5 h-5 text-violet-400 shrink-0 mt-0.5" />
-        <div>
-          <p className="text-violet-300 font-medium capitalize">{pattern} Stagger</p>
+        <div className="flex-1">
+          <div className="flex items-center justify-between">
+            <p className="text-violet-300 font-medium capitalize">{pattern} Stagger</p>
+            <div className="flex items-center gap-3 text-xs text-white/40">
+              <span>Runs: <span className="text-white/60 font-medium">{runCount}</span></span>
+              {isAutoRunning && (
+                <span className="flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-violet-500 animate-pulse" />
+                  Auto
+                </span>
+              )}
+            </div>
+          </div>
           <p className="text-white/60 text-sm">{patternDescriptions[pattern]}</p>
         </div>
       </div>
@@ -270,8 +330,18 @@ function StaggerDemo() {
       {/* Controls */}
       <div className="flex gap-3">
         <button
+          onClick={toggleAutoRun}
+          className={`px-4 py-3 rounded-xl font-medium flex items-center justify-center gap-2 transition-all ${
+            isAutoRunning
+              ? 'bg-gradient-to-r from-rose-500 to-pink-500 text-white hover:shadow-lg hover:shadow-rose-500/30'
+              : 'bg-white/5 hover:bg-white/10 text-white/60'
+          }`}
+        >
+          {isAutoRunning ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+        </button>
+        <button
           onClick={runStagger}
-          disabled={isAnimating}
+          disabled={isAnimating || isAutoRunning}
           className="flex-1 py-3 bg-gradient-to-r from-violet-500 to-purple-500 text-white rounded-xl font-medium flex items-center justify-center gap-2 disabled:opacity-50 hover:shadow-lg hover:shadow-purple-500/30 transition-all"
         >
           <Play className="w-4 h-4" />
@@ -283,6 +353,12 @@ function StaggerDemo() {
         >
           <RotateCcw className="w-4 h-4" />
         </button>
+      </div>
+
+      {/* Keyboard shortcuts hint */}
+      <div className="flex justify-center gap-4 text-xs text-white/30">
+        <span><kbd className="px-1.5 py-0.5 bg-white/10 rounded text-white/50">Space</kbd> Run</span>
+        <span><kbd className="px-1.5 py-0.5 bg-white/10 rounded text-white/50">R</kbd> Reset</span>
       </div>
     </div>
   )

@@ -59,14 +59,19 @@ export function useMotionValue<T = number>(
  * ```tsx
  * function ValueDisplay({ motionValue }) {
  *   const value = useMotionValueState(motionValue)
- *   return <span>{value.toFixed(2)}</span>
+ *   return <span>{value?.toFixed(2) ?? '0'}</span>
  * }
  * ```
  */
-export function useMotionValueState<T>(motionValue: MotionValue<T>): T {
-  const [value, setValue] = useState<T>(motionValue.get())
+export function useMotionValueState<T>(motionValue: MotionValue<T> | null | undefined): T | undefined {
+  const [value, setValue] = useState<T | undefined>(() => motionValue?.get())
 
   useEffect(() => {
+    if (!motionValue) return
+
+    // Sync initial value in case it changed between initial state and effect
+    setValue(motionValue.get())
+
     const unsubscribe = motionValue.subscribe((newValue) => {
       setValue(newValue)
     })

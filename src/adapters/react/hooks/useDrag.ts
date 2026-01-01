@@ -101,10 +101,16 @@ export function useDrag(config: DragSpringConfig = {}): [
     }
   }, [element])
 
-  // API methods
+  // API methods with validation
   const set = (values: { x?: number; y?: number }) => {
-    const x = values.x ?? positionRef.current.x
-    const y = values.y ?? positionRef.current.y
+    // Validate input values - skip NaN/Infinity
+    const rawX = values.x ?? positionRef.current.x
+    const rawY = values.y ?? positionRef.current.y
+
+    // Guard against NaN/Infinity
+    const x = Number.isFinite(rawX) ? rawX : positionRef.current.x
+    const y = Number.isFinite(rawY) ? rawY : positionRef.current.y
+
     dragSpringRef.current?.setPosition(x, y)
   }
 

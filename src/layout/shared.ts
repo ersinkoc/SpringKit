@@ -33,6 +33,7 @@ interface SharedLayoutElement {
   measurement: LayoutMeasurement
   spring: SpringGroup<Record<string, number>> | null
   isAnimating: boolean
+  pendingRafId: number | null
 }
 
 /**
@@ -199,6 +200,7 @@ export function createLayoutGroup(config: LayoutAnimationConfig = {}): LayoutGro
         measurement,
         spring: null,
         isAnimating: false,
+        pendingRafId: null,
       })
 
       // Store measurement for future animations
@@ -218,6 +220,12 @@ export function createLayoutGroup(config: LayoutAnimationConfig = {}): LayoutGro
 
       // Store final measurement before removal
       previousMeasurements.set(id, measureElement(element))
+
+      // Cancel pending RAF to prevent memory leak
+      if (entry.pendingRafId !== null) {
+        cancelAnimationFrame(entry.pendingRafId)
+        entry.pendingRafId = null
+      }
 
       // Cleanup spring
       entry.spring?.destroy()
@@ -282,16 +290,18 @@ export function createLayoutGroup(config: LayoutAnimationConfig = {}): LayoutGro
 
     // Check for animation completion
     const checkComplete = () => {
+      entry.pendingRafId = null
+
       if (entry.spring && !entry.spring.isAnimating()) {
         entry.isAnimating = false
         resetTransform(entry.element)
         onAnimationComplete?.(entry.id)
       } else if (entry.isAnimating) {
-        requestAnimationFrame(checkComplete)
+        entry.pendingRafId = requestAnimationFrame(checkComplete)
       }
     }
 
-    requestAnimationFrame(checkComplete)
+    entry.pendingRafId = requestAnimationFrame(checkComplete)
   }
 
   const update = (): void => {
@@ -333,6 +343,11 @@ export function createLayoutGroup(config: LayoutAnimationConfig = {}): LayoutGro
   const destroy = (): void => {
     for (const group of elements.values()) {
       for (const entry of group) {
+        // Cancel pending RAF to prevent memory leak
+        if (entry.pendingRafId !== null) {
+          cancelAnimationFrame(entry.pendingRafId)
+          entry.pendingRafId = null
+        }
         entry.spring?.destroy()
         resetTransform(entry.element)
       }

@@ -156,9 +156,13 @@ class AnimationLoop {
     const clampedDelta = Math.min(rawDelta, MAX_DELTA_TIME)
     this.lastTime = now
 
-    // Notify frame listeners
+    // Notify frame listeners (with error isolation)
     for (const listener of this.frameListeners) {
-      listener(clampedDelta)
+      try {
+        listener(clampedDelta)
+      } catch (e) {
+        console.error('[SpringKit] Frame listener error:', e)
+      }
     }
 
     // Single pass: update all animations and collect refs to remove

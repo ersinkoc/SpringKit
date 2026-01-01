@@ -43,14 +43,18 @@ export function useTrail<T extends Record<string, number>>(
 ): Array<T> {
   // Store springs for each item and each property
   const springsRef = useRef<Map<string, SpringValue[]> | null>(null)
+  const isMountedRef = useRef(false)
   const [currentValues, setCurrentValues] = useState<T[]>(() =>
     Array.from({ length: count }, () => ({ ...values }))
   )
   const isFirstRender = useRef(true)
   const prevValuesRef = useRef<string>(JSON.stringify(values))
+  // Track timeouts for cleanup to prevent memory leaks
+  const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([])
 
   // Initialize springs
   useEffect(() => {
+    isMountedRef.current = true
     const keys = Object.keys(values)
     const springs = new Map<string, SpringValue[]>()
 
@@ -73,6 +77,7 @@ export function useTrail<T extends Record<string, number>>(
     springs.forEach((propSprings, _key) => {
       propSprings.forEach((spring, index) => {
         const unsub = spring.subscribe(() => {
+          if (!isMountedRef.current) return
           setCurrentValues(prev => {
             const next = [...prev]
             if (!next[index]) {
@@ -92,6 +97,7 @@ export function useTrail<T extends Record<string, number>>(
     })
 
     return () => {
+      isMountedRef.current = false
       unsubscribers.forEach(unsub => unsub())
       springs.forEach(propSprings => {
         propSprings.forEach(spring => spring.destroy())
@@ -117,17 +123,28 @@ export function useTrail<T extends Record<string, number>>(
     const keys = Object.keys(values)
     const staggerDelay = 50 // ms between each item
 
+    // Clear any pending timeouts from previous animation
+    timeoutsRef.current.forEach(clearTimeout)
+    timeoutsRef.current = []
+
     keys.forEach(key => {
       const propSprings = springsRef.current?.get(key)
       if (!propSprings) return
 
       const targetValue = values[key] as number
       propSprings.forEach((spring, index) => {
-        setTimeout(() => {
+        const timeoutId = setTimeout(() => {
           spring.set(targetValue, config)
         }, index * staggerDelay)
+        timeoutsRef.current.push(timeoutId)
       })
     })
+
+    // Cleanup function for this effect
+    return () => {
+      timeoutsRef.current.forEach(clearTimeout)
+      timeoutsRef.current = []
+    }
   }, [JSON.stringify(values), config.stiffness, config.damping]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return currentValues

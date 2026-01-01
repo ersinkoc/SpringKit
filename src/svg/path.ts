@@ -87,6 +87,8 @@ export function createPathAnimation(
 
   let currentValue = 0
   let destroyed = false
+  let pendingRafId: number | null = null
+  let pendingTimeoutId: ReturnType<typeof setTimeout> | null = null
   const spring = createSpringValue(0, config)
 
   // Subscribe to updates
@@ -103,13 +105,18 @@ export function createPathAnimation(
   const waitForRest = (): Promise<void> => {
     return new Promise((resolve) => {
       const check = () => {
+        pendingRafId = null
+
         if (destroyed || !spring.isAnimating()) {
           resolve()
         } else {
-          requestAnimationFrame(check)
+          pendingRafId = requestAnimationFrame(check)
         }
       }
-      setTimeout(check, 16)
+      pendingTimeoutId = setTimeout(() => {
+        pendingTimeoutId = null
+        check()
+      }, 16)
     })
   }
 
@@ -165,6 +172,15 @@ export function createPathAnimation(
 
     destroy: () => {
       destroyed = true
+      // Cancel pending RAF and timeout to prevent memory leaks
+      if (pendingRafId !== null) {
+        cancelAnimationFrame(pendingRafId)
+        pendingRafId = null
+      }
+      if (pendingTimeoutId !== null) {
+        clearTimeout(pendingTimeoutId)
+        pendingTimeoutId = null
+      }
       unsubscribe()
       spring.destroy()
     },

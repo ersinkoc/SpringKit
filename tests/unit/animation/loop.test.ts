@@ -339,4 +339,37 @@ describe('AnimationLoop', () => {
       expect(cleanupCallback).not.toHaveBeenCalled()
     })
   })
+
+  describe('frame listener error isolation', () => {
+    it('should continue calling other listeners if one throws', async () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      const errorCallback = vi.fn(() => {
+        throw new Error('Test error')
+      })
+      const normalCallback = vi.fn()
+
+      const unsubscribeError = globalLoop.onFrame(errorCallback)
+      const unsubscribeNormal = globalLoop.onFrame(normalCallback)
+
+      const animation: Animatable = {
+        update: vi.fn(),
+        isComplete: () => false,
+      }
+
+      globalLoop.add(animation)
+
+      // Wait for some frames
+      await new Promise(resolve => setTimeout(resolve, 50))
+
+      // Both should have been called
+      expect(errorCallback).toHaveBeenCalled()
+      expect(normalCallback).toHaveBeenCalled()
+
+      unsubscribeError()
+      unsubscribeNormal()
+      globalLoop.remove(animation)
+      consoleSpy.mockRestore()
+    })
+  })
 })

@@ -182,6 +182,7 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
   let isPaused = false
   let repeatCount = 0
   let rafId: number | null = null
+  let repeatDelayTimeoutId: ReturnType<typeof setTimeout> | null = null
   let lastFrameTime = 0
   let hasStarted = false
   let insertTime = 0
@@ -371,14 +372,24 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
     // Check for callbacks
     const callbacksAtTime = callbacks.get(Math.floor(currentTime * 1000))
     if (callbacksAtTime) {
-      callbacksAtTime.forEach(cb => cb())
+      callbacksAtTime.forEach(cb => {
+        try {
+          cb()
+        } catch (e) {
+          console.error('[SpringKit] Timeline callback error:', e)
+        }
+      })
     }
 
     // Check for pauses
     const pauseCallback = pauses.get(Math.floor(currentTime * 1000))
     if (pauseCallback !== undefined) {
       isPaused = true
-      pauseCallback?.()
+      try {
+        pauseCallback?.()
+      } catch (e) {
+        console.error('[SpringKit] Timeline pause callback error:', e)
+      }
       return
     }
 
@@ -426,7 +437,8 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
         }
 
         if (repeatDelay > 0) {
-          setTimeout(() => {
+          repeatDelayTimeoutId = setTimeout(() => {
+            repeatDelayTimeoutId = null
             rafId = requestAnimationFrame(tick)
           }, repeatDelay * 1000)
           return
@@ -669,6 +681,11 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
       if (rafId) {
         cancelAnimationFrame(rafId)
         rafId = null
+      }
+      // Clear repeat delay timeout to prevent memory leak
+      if (repeatDelayTimeoutId) {
+        clearTimeout(repeatDelayTimeoutId)
+        repeatDelayTimeoutId = null
       }
       segments.forEach(s => s.spring?.destroy())
       segments.length = 0

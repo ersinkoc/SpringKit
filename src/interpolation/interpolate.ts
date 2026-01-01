@@ -53,6 +53,10 @@ class InterpolationImpl implements Interpolation {
 
   get(): number {
     const value = typeof this.source === 'function' ? this.source() : this.source.get()
+    // Guard against NaN/Infinity from source
+    if (!Number.isFinite(value)) {
+      return this.output[0] ?? 0
+    }
     return this.interpolate(value)
   }
 
@@ -91,7 +95,9 @@ class InterpolationImpl implements Interpolation {
     }
 
     // Linear interpolation within segment
-    const ratio = (value - input[i - 1]!) / (input[i]! - input[i - 1]!)
+    const denominator = input[i]! - input[i - 1]!
+    // Guard against division by zero (same input values)
+    const ratio = denominator === 0 ? 0 : (value - input[i - 1]!) / denominator
     const result = output[i - 1]! + ratio * (output[i]! - output[i - 1]!)
 
     if (clamp) {

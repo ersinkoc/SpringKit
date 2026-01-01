@@ -230,4 +230,110 @@ describe('createSpringValue', () => {
       value.destroy()
     })
   })
+
+  describe('isDestroyed', () => {
+    it('should return false before destroy', () => {
+      const value = createSpringValue(0)
+      expect(value.isDestroyed()).toBe(false)
+    })
+
+    it('should return true after destroy', () => {
+      const value = createSpringValue(0)
+      value.destroy()
+      expect(value.isDestroyed()).toBe(true)
+    })
+  })
+
+  describe('use after destroy protection', () => {
+    it('should not animate after destroy', () => {
+      const value = createSpringValue(0)
+      value.destroy()
+      value.set(100)
+
+      // Value should remain 0 since set() is guarded
+      expect(value.get()).toBe(0)
+    })
+
+    it('should not jump after destroy', () => {
+      const value = createSpringValue(0)
+      value.destroy()
+      value.jump(100)
+
+      // Value should remain 0 since jump() is guarded
+      expect(value.get()).toBe(0)
+    })
+
+    it('should handle multiple destroy calls', () => {
+      const value = createSpringValue(0)
+      value.destroy()
+      expect(() => value.destroy()).not.toThrow()
+    })
+  })
+
+  describe('NaN/Infinity validation', () => {
+    it('should handle NaN in set()', () => {
+      const value = createSpringValue(50)
+      value.set(NaN)
+
+      // Should use fallback value (0) from validateAnimationValue
+      expect(value.get()).toBe(50) // Stays at initial since animation starts from current
+    })
+
+    it('should handle Infinity in set()', () => {
+      const value = createSpringValue(50)
+      value.set(Infinity)
+
+      // Should use fallback value (0) from validateAnimationValue
+      expect(Number.isFinite(value.get())).toBe(true)
+    })
+
+    it('should handle NaN in jump()', () => {
+      const value = createSpringValue(50)
+      value.jump(NaN)
+
+      // Should use fallback value (0) from validateAnimationValue
+      expect(value.get()).toBe(0)
+    })
+
+    it('should handle Infinity in jump()', () => {
+      const value = createSpringValue(50)
+      value.jump(Infinity)
+
+      // Should use fallback value (0) from validateAnimationValue
+      expect(value.get()).toBe(0)
+    })
+
+    it('should handle NaN initial value', () => {
+      const value = createSpringValue(NaN)
+
+      // Should use fallback value (0)
+      expect(value.get()).toBe(0)
+    })
+  })
+
+  describe('subscriber error isolation', () => {
+    it('should continue notifying other subscribers if one throws', async () => {
+      const value = createSpringValue(0)
+      const errorCallback = vi.fn(() => {
+        throw new Error('Subscriber error')
+      })
+      const normalCallback = vi.fn()
+
+      // Suppress console.error for this test
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+      value.subscribe(errorCallback)
+      value.subscribe(normalCallback)
+
+      value.jump(100)
+
+      // Both should have been called (initial + jump)
+      expect(errorCallback).toHaveBeenCalledTimes(2)
+      expect(normalCallback).toHaveBeenCalledTimes(2)
+      expect(normalCallback).toHaveBeenLastCalledWith(100)
+
+      consoleSpy.mockRestore()
+      value.destroy()
+    })
+  })
 })

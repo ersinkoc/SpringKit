@@ -1,6 +1,7 @@
 import type { SpringConfig } from './config.js'
 import { defaultConfig } from './config.js'
 import { spring, type SpringAnimation } from './spring.js'
+import { validateAnimationValue } from '../utils/warnings.js'
 
 /**
  * Spring value interface
@@ -26,6 +27,8 @@ export interface SpringValue {
   finished: Promise<void>
   /** Clean up resources */
   destroy(): void
+  /** Check if destroyed */
+  isDestroyed(): boolean
 }
 
 /**
@@ -38,9 +41,11 @@ class SpringValueImpl implements SpringValue {
   private subscribers = new Set<(value: number) => void>()
   private resolveComplete: (() => void) | null = null
   private finishedPromise: Promise<void>
+  private destroyed: boolean = false
 
   constructor(initial: number, config: SpringConfig = {}) {
-    this.value = initial
+    // Validate initial value
+    this.value = validateAnimationValue(initial, 'createSpringValue.initial')
     this.config = { ...defaultConfig, ...config }
 
     this.finishedPromise = new Promise((resolve) => {
@@ -57,6 +62,12 @@ class SpringValueImpl implements SpringValue {
   }
 
   set(to: number, config: Partial<SpringConfig> = {}): void {
+    // Guard against use after destroy
+    if (this.destroyed) return
+
+    // Validate target value
+    const validTo = validateAnimationValue(to, 'SpringValue.set')
+
     // Cancel existing animation
     if (this.currentAnimation) {
       this.currentAnimation.destroy()
@@ -78,9 +89,10 @@ class SpringValueImpl implements SpringValue {
     const originalOnUpdate = mergedConfig.onUpdate
     const originalOnComplete = mergedConfig.onComplete
 
-    this.currentAnimation = spring(this.value, to, {
+    this.currentAnimation = spring(this.value, validTo, {
       ...mergedConfig,
       onUpdate: (value) => {
+        if (this.destroyed) return
         this.value = value
         this.notify()
         // Also call original onUpdate if provided
@@ -97,11 +109,17 @@ class SpringValueImpl implements SpringValue {
   }
 
   jump(to: number): void {
+    // Guard against use after destroy
+    if (this.destroyed) return
+
+    // Validate target value
+    const validTo = validateAnimationValue(to, 'SpringValue.jump')
+
     if (this.currentAnimation) {
       this.currentAnimation.destroy()
       this.currentAnimation = null
     }
-    this.value = to
+    this.value = validTo
     this.notify()
   }
 
@@ -122,8 +140,12 @@ class SpringValueImpl implements SpringValue {
   subscribe(callback: (value: number) => void): () => void {
     this.subscribers.add(callback)
 
-    // Immediately call with current value
-    callback(this.value)
+    // Immediately call with current value (with error isolation)
+    try {
+      callback(this.value)
+    } catch (e) {
+      console.error('[SpringKit] Subscriber error:', e)
+    }
 
     return () => {
       this.subscribers.delete(callback)
@@ -140,13 +162,27 @@ class SpringValueImpl implements SpringValue {
 
   private notify(): void {
     for (const subscriber of this.subscribers) {
-      subscriber(this.value)
+      try {
+        subscriber(this.value)
+      } catch (e) {
+        console.error('[SpringKit] Subscriber error:', e)
+      }
     }
   }
 
+  isDestroyed(): boolean {
+    return this.destroyed
+  }
+
   destroy(): void {
+    if (this.destroyed) return
+    this.destroyed = true
+
     this.currentAnimation?.destroy()
     this.currentAnimation = null
+    // Resolve pending promise to prevent memory leaks
+    this.resolveComplete?.()
+    this.resolveComplete = null
     this.subscribers.clear()
   }
 }

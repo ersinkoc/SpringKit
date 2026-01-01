@@ -235,5 +235,36 @@ describe('interpolation', () => {
 
       expect(interp.get()).toBe(-0.5)
     })
+
+    it('should handle NaN from source', () => {
+      const interp = interpolate(() => NaN, [0, 100], [0, 1])
+      // Should return first output value as fallback
+      expect(interp.get()).toBe(0)
+    })
+
+    it('should handle Infinity from source', () => {
+      const interp = interpolate(() => Infinity, [0, 100], [0, 1])
+      // Should return first output value as fallback
+      expect(interp.get()).toBe(0)
+    })
+
+    it('should handle -Infinity from source', () => {
+      const interp = interpolate(() => -Infinity, [0, 100], [0, 1])
+      // Should return first output value as fallback
+      expect(interp.get()).toBe(0)
+    })
+
+    it('should handle division by zero (same input values)', () => {
+      // When two adjacent input values are the same, avoid division by zero
+      const interp = interpolate(() => 50, [50, 50, 100], [0, 0.5, 1])
+      // Should return a finite value without crashing
+      expect(Number.isFinite(interp.get())).toBe(true)
+    })
+
+    it('should handle empty output array gracefully', () => {
+      const interp = interpolate(() => NaN, [0, 100], [])
+      // Should return 0 as fallback when output[0] is undefined
+      expect(interp.get()).toBe(0)
+    })
   })
 })

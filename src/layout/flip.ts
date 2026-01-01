@@ -106,12 +106,16 @@ export function createFlip(
   // Calculate the inversion (how much to transform to get back to "first")
   const deltaX = first.x - last.x
   const deltaY = first.y - last.y
-  const deltaWidth = first.width / last.width
-  const deltaHeight = first.height / last.height
+  // Guard against division by zero (zero-sized elements)
+  const deltaWidth = last.width === 0 ? 1 : first.width / last.width
+  const deltaHeight = last.height === 0 ? 1 : first.height / last.height
 
   let progress = 0
   let isPlaying = false
   let cancelled = false
+  let pendingRafId: number | null = null
+  let pendingTimeoutId: ReturnType<typeof setTimeout> | null = null
+  let resolvePlay: (() => void) | null = null
 
   const spring = createSpringValue(0, config)
 
@@ -141,7 +145,11 @@ export function createFlip(
     }
 
     element.style.transform = transforms.length > 0 ? transforms.join(' ') : ''
-    onUpdate?.(t)
+    try {
+      onUpdate?.(t)
+    } catch (e) {
+      console.error('[SpringKit] FLIP onUpdate error:', e)
+    }
   }
 
   // Apply initial inversion
@@ -160,9 +168,12 @@ export function createFlip(
       isPlaying = true
 
       return new Promise<void>((resolve) => {
+        resolvePlay = resolve
+
         const unsubscribe = spring.subscribe((value) => {
           if (cancelled) {
             unsubscribe()
+            resolvePlay = null
             resolve()
             return
           }
@@ -173,9 +184,12 @@ export function createFlip(
 
         // Wait for animation to complete
         const checkComplete = () => {
+          pendingRafId = null
+
           if (cancelled) {
             unsubscribe()
             cleanup()
+            resolvePlay = null
             resolve()
             return
           }
@@ -184,14 +198,22 @@ export function createFlip(
             isPlaying = false
             unsubscribe()
             cleanup()
-            onComplete?.()
+            try {
+              onComplete?.()
+            } catch (e) {
+              console.error('[SpringKit] FLIP onComplete error:', e)
+            }
+            resolvePlay = null
             resolve()
           } else {
-            requestAnimationFrame(checkComplete)
+            pendingRafId = requestAnimationFrame(checkComplete)
           }
         }
 
-        setTimeout(checkComplete, 16)
+        pendingTimeoutId = setTimeout(() => {
+          pendingTimeoutId = null
+          checkComplete()
+        }, 16)
       })
     },
 
@@ -200,8 +222,25 @@ export function createFlip(
     cancel: () => {
       cancelled = true
       isPlaying = false
+
+      // Cancel pending RAF and timeout to prevent memory leak
+      if (pendingRafId !== null) {
+        cancelAnimationFrame(pendingRafId)
+        pendingRafId = null
+      }
+      if (pendingTimeoutId !== null) {
+        clearTimeout(pendingTimeoutId)
+        pendingTimeoutId = null
+      }
+
       spring.stop()
       cleanup()
+
+      // Resolve the play promise if it's pending
+      if (resolvePlay) {
+        resolvePlay()
+        resolvePlay = null
+      }
     },
 
     isAnimating: () => isPlaying,

@@ -530,26 +530,41 @@ class DragSpringImpl implements DragSpring {
   }
 
   setPosition(x: number, y: number): void {
+    // Guard against destroyed state and invalid values
+    if (this.destroyed) return
+    const safeX = Number.isFinite(x) ? x : this.position.x
+    const safeY = Number.isFinite(y) ? y : this.position.y
+
     // Instant position change (same as jumpTo for backwards compatibility)
-    this.position = { x, y }
-    this.springX.jump(x)
-    this.springY.jump(y)
+    this.position = { x: safeX, y: safeY }
+    this.springX.jump(safeX)
+    this.springY.jump(safeY)
   }
 
   jumpTo(x: number, y: number): void {
+    // Guard against destroyed state and invalid values
+    if (this.destroyed) return
+    const safeX = Number.isFinite(x) ? x : this.position.x
+    const safeY = Number.isFinite(y) ? y : this.position.y
+
     // Update position immediately for synchronous access
-    this.position = { x, y }
-    this.springX.jump(x)
-    this.springY.jump(y)
+    this.position = { x: safeX, y: safeY }
+    this.springX.jump(safeX)
+    this.springY.jump(safeY)
     if (this.config.onUpdate) {
-      this.config.onUpdate(x, y)
+      this.config.onUpdate(safeX, safeY)
     }
   }
 
   animateTo(x: number, y: number): void {
+    // Guard against destroyed state and invalid values
+    if (this.destroyed) return
+    const safeX = Number.isFinite(x) ? x : this.position.x
+    const safeY = Number.isFinite(y) ? y : this.position.y
+
     // Animate to the position with spring physics
-    this.springX.set(x)
-    this.springY.set(y)
+    this.springX.set(safeX)
+    this.springY.set(safeY)
   }
 
   release(velocityX: number, velocityY: number): void {

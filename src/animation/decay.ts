@@ -1,6 +1,6 @@
 import { globalLoop, type Animatable, AnimationState } from './loop.js'
 import { clamp } from '../utils/math.js'
-import { validateDecayConfig } from '../utils/warnings.js'
+import { validateDecayConfig, validateAnimationValue } from '../utils/warnings.js'
 
 /**
  * Decay animation configuration interface
@@ -51,8 +51,15 @@ class DecayAnimationImpl implements DecayAnimation, Animatable {
     validateDecayConfig(config)
 
     this.value = 0
-    this.velocity = config.velocity
-    this.deceleration = config.deceleration ?? 0.998
+    // Validate velocity for NaN/Infinity
+    this.velocity = validateAnimationValue(config.velocity, 'decay.velocity')
+    // Validate and clamp deceleration to valid range
+    const rawDecel = config.deceleration ?? 0.998
+    this.deceleration = validateAnimationValue(rawDecel, 'decay.deceleration')
+    // Clamp deceleration to (0, 1) range to prevent infinite loops or instant stops
+    if (this.deceleration <= 0 || this.deceleration >= 1) {
+      this.deceleration = 0.998
+    }
     this.clampRange = config.clamp
     this.state = AnimationState.Idle
     this.config = config
@@ -109,6 +116,9 @@ class DecayAnimationImpl implements DecayAnimation, Animatable {
 
   destroy(): void {
     this.stop()
+    // Resolve promise to prevent memory leaks
+    this.resolveComplete?.()
+    this.resolveComplete = null
     this.config.onUpdate = undefined
     this.config.onComplete = undefined
   }

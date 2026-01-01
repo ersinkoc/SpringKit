@@ -274,23 +274,28 @@ export const SpringNumber = memo(function SpringNumber({
 }: SpringNumberProps) {
   const [displayValue, setDisplayValue] = useState(value)
   const springRef = useRef<ReturnType<typeof createSpringValue> | null>(null)
+  const lastValueRef = useRef(value)
 
+  // Initialize spring once
   useEffect(() => {
-    if (!springRef.current) {
-      springRef.current = createSpringValue(value, {
-        ...config,
-        onUpdate: setDisplayValue,
-      })
-    } else {
-      springRef.current.set(value)
-    }
-  }, [value, config])
-
-  useEffect(() => {
+    springRef.current = createSpringValue(value, {
+      ...config,
+      onUpdate: setDisplayValue,
+    })
     return () => {
       springRef.current?.destroy()
+      springRef.current = null
     }
-  }, [])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []) // Only run on mount
+
+  // Update spring when value changes
+  useEffect(() => {
+    if (springRef.current && value !== lastValueRef.current) {
+      springRef.current.set(value)
+      lastValueRef.current = value
+    }
+  }, [value])
 
   const formattedValue = useMemo(() => {
     if (format) {

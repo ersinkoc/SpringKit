@@ -48,8 +48,9 @@ export function useSpring<T extends Record<string, number>>(
   config: Partial<SpringConfig> = {}
 ): AnimatedValues<T> {
   const springRef = useRef<SpringGroup<T> | null>(null)
-  const [, forceUpdate] = useState({})
+  const [currentValues, setCurrentValues] = useState<T>(values)
   const isFirstRender = useRef(true)
+  const isMounted = useRef(false)
   const prevValuesRef = useRef<T>(values)
   const configRef = useRef(config)
 
@@ -65,8 +66,25 @@ export function useSpring<T extends Record<string, number>>(
   // Initialize spring group with ACTUAL initial values (not 0)
   if (!springRef.current) {
     springRef.current = createSpringGroup(values, config)
-    springRef.current.subscribe(() => forceUpdate({}))
   }
+
+  // Subscribe to spring updates after mount
+  useEffect(() => {
+    isMounted.current = true
+    const spring = springRef.current
+    if (!spring) return
+
+    const unsubscribe = spring.subscribe((newValues) => {
+      if (isMounted.current) {
+        setCurrentValues(newValues)
+      }
+    })
+
+    return () => {
+      isMounted.current = false
+      unsubscribe()
+    }
+  }, [])
 
   // Update when values change (skip first render since we initialized with values)
   useEffect(() => {
@@ -92,5 +110,5 @@ export function useSpring<T extends Record<string, number>>(
     return () => springRef.current?.destroy()
   }, [])
 
-  return springRef.current.get()
+  return currentValues as AnimatedValues<T>
 }

@@ -151,7 +151,7 @@ export class MotionValue<T = number> {
   }
 
   /**
-   * Stop any running animation
+   * Stop any running animation at current position
    */
   stop(): void {
     // Cancel pending RAF callback
@@ -160,9 +160,9 @@ export class MotionValue<T = number> {
       this._checkEndRafId = null
     }
 
-    // SpringValue doesn't have stop(), so we jump to current value
+    // Use stop() which halts at current position and resolves promise
     if (this._springValue) {
-      this._springValue.jump(this._springValue.get())
+      this._springValue.stop()
     }
     this._isAnimating = false
     this._emit('animationEnd')
@@ -199,10 +199,14 @@ export class MotionValue<T = number> {
 
   /**
    * Update spring configuration
+   * Takes effect immediately on ongoing animations
    */
   setConfig(config: Partial<SpringConfig>): void {
     this._springConfig = { ...this._springConfig, ...config }
-    // Note: Config change takes effect on next animation
+    // Update existing spring if present
+    if (this._springValue) {
+      this._springValue.setConfig(config)
+    }
   }
 
   /**

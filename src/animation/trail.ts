@@ -36,6 +36,9 @@ class TrailImpl implements Trail {
   private subscribers = new Set<(values: number[]) => void>()
   private frameCount: number = 0
   private pendingUpdates: Map<number, number> = new Map()
+  // Track timeout IDs for cleanup to prevent memory leaks
+  private pendingTimeouts: Set<ReturnType<typeof setTimeout>> = new Set()
+  private destroyed = false
 
   constructor(count: number, config: TrailConfig = {}) {
     const { followDelay = 2, ...springConfig } = config
@@ -90,13 +93,20 @@ class TrailImpl implements Trail {
       // Use setTimeout for delay (approximately 16ms per frame at 60fps)
       const delayMs = Math.max(framesToWait * 16, 0)
 
-      setTimeout(() => {
-        // Only update if this is still the current pending update
+      const timeoutId = setTimeout(() => {
+        // Remove from pending set
+        this.pendingTimeouts.delete(timeoutId)
+
+        // Skip if destroyed or not the current pending update
+        if (this.destroyed) return
         const currentTarget = this.pendingUpdates.get(index)
         if (currentTarget === targetFrame) {
           this.springs[index]!.set(targetValue)
         }
       }, delayMs)
+
+      // Track timeout for cleanup
+      this.pendingTimeouts.add(timeoutId)
     }
   }
 
@@ -148,6 +158,14 @@ class TrailImpl implements Trail {
   }
 
   destroy(): void {
+    this.destroyed = true
+
+    // Clear all pending timeouts to prevent memory leaks
+    for (const timeoutId of this.pendingTimeouts) {
+      clearTimeout(timeoutId)
+    }
+    this.pendingTimeouts.clear()
+
     this.leader.destroy()
     for (const spring of this.springs) {
       spring.destroy()
