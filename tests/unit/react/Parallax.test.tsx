@@ -495,14 +495,15 @@ describe('TiltCard', () => {
       expect(wrapper).toHaveStyle({ perspective: '1000px' })
     })
 
-    it('should have preserve-3d', () => {
+    it('should have preserve-3d on inner transform div', () => {
       const { container } = render(
         <TiltCard>
           <span>Content</span>
         </TiltCard>
       )
       const wrapper = container.firstChild as HTMLElement
-      expect(wrapper).toHaveStyle({ transformStyle: 'preserve-3d' })
+      const innerDiv = wrapper.firstChild as HTMLElement
+      expect(innerDiv).toHaveStyle({ transformStyle: 'preserve-3d' })
     })
   })
 })
