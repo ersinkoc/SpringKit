@@ -5,7 +5,7 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'jsdom',
-    exclude: ['**/node_modules/**', '**/dist/**', '**/tests/unit/react/**'],
+    exclude: ['**/node_modules/**', '**/dist/**'],
     coverage: {
       provider: 'v8',
       reporter: ['text', 'json', 'html'],
@@ -32,6 +32,7 @@ export default defineConfig({
   },
   resolve: {
     alias: {
+      '@oxog/springkit/react': resolve(__dirname, './src/adapters/react'),
       '@oxog/springkit': resolve(__dirname, './src'),
     },
     extensions: ['.ts', '.tsx', '.js', '.jsx', '.json'],

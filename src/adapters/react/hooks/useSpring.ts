@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useMemo } from 'react'
 import { createSpringGroup } from '../../../index.js'
 import type { SpringConfig, SpringGroup } from '../../../types.js'
 
@@ -50,7 +50,17 @@ export function useSpring<T extends Record<string, number>>(
   const springRef = useRef<SpringGroup<T> | null>(null)
   const [, forceUpdate] = useState({})
   const isFirstRender = useRef(true)
-  const prevValuesStringRef = useRef<string>(JSON.stringify(values))
+  const prevValuesRef = useRef<T>(values)
+  const configRef = useRef(config)
+
+  // Memoize values to detect actual changes without JSON.stringify on every render
+  const valuesKey = useMemo(() => {
+    const keys = Object.keys(values).sort()
+    return keys.map(k => `${k}:${values[k]}`).join('|')
+  }, [values])
+
+  // Keep config ref updated
+  configRef.current = config
 
   // Initialize spring group with ACTUAL initial values (not 0)
   if (!springRef.current) {
@@ -65,13 +75,17 @@ export function useSpring<T extends Record<string, number>>(
       return
     }
 
-    // Compare using JSON string to detect actual value changes
-    const currentValuesString = JSON.stringify(values)
-    if (currentValuesString !== prevValuesStringRef.current) {
-      springRef.current?.set(values, config)
-      prevValuesStringRef.current = currentValuesString
+    // Check if any value actually changed
+    const prev = prevValuesRef.current
+    const hasChanged = Object.keys(values).some(
+      key => values[key] !== prev[key]
+    )
+
+    if (hasChanged) {
+      springRef.current?.set(values, configRef.current)
+      prevValuesRef.current = values
     }
-  }, [JSON.stringify(values)]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [valuesKey, values])
 
   // Cleanup on unmount
   useEffect(() => {

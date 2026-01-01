@@ -5,7 +5,6 @@
  * timing, sequencing, and playback.
  */
 
-import { createSpringValue, type SpringValue } from '../core/spring-value.js'
 import { createSpringGroup, type SpringGroup } from '../core/spring-group.js'
 import type { SpringConfig } from '../core/config.js'
 import { clamp } from '../utils/math.js'
@@ -354,10 +353,15 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
 
   // ============ Animation Loop ============
 
+  // Maximum delta time to prevent jumps after tab suspension (64ms = ~15fps minimum)
+  const MAX_DELTA_TIME = 64
+
   const tick = (timestamp: number) => {
     if (!isPlaying || isPaused) return
 
-    const deltaTime = lastFrameTime ? (timestamp - lastFrameTime) / 1000 : 0
+    // Clamp delta time to prevent jumps after tab suspension or debugger pauses
+    const rawDelta = lastFrameTime ? (timestamp - lastFrameTime) : 0
+    const deltaTime = Math.min(rawDelta, MAX_DELTA_TIME) / 1000
     lastFrameTime = timestamp
 
     // Update time

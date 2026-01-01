@@ -1,4 +1,3 @@
-import type { SpringValue } from '../core/spring-value.js'
 
 /**
  * RGB color representation

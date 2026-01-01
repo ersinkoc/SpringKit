@@ -522,23 +522,16 @@ function HeroSpringDemo() {
         ))}
       </div>
 
-      {/* Concentric rings */}
+      {/* Concentric rings - using CSS animation for continuous rotation */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
         {[...Array(5)].map((_, i) => (
-          <AnimatedDiv
+          <div
             key={i}
             className="absolute rounded-full border border-orange-500/10"
             style={{
               width: 100 + i * 80,
               height: 100 + i * 80,
-            }}
-            animate={{
-              rotate: i % 2 === 0 ? 360 : -360,
-              scale: [1, 1.02, 1],
-            }}
-            transition={{
-              rotate: { duration: 20 + i * 5, repeat: Infinity, ease: 'linear' },
-              scale: { duration: 3, repeat: Infinity, ease: 'easeInOut' },
+              animation: `spin ${20 + i * 5}s linear infinite ${i % 2 === 0 ? '' : 'reverse'}`,
             }}
           />
         ))}
@@ -1438,7 +1431,7 @@ function FeatureCard({ icon: Icon, title, description, gradient, delay }: {
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, margin: '-50px' }}
       transition={{ duration: 0.6, delay, ease: [0.21, 0.47, 0.32, 0.98] }}
-      whileHover={{ y: -8, transition: { duration: 0.3 } }}
+      whileHover={{ y: -8, scale: 1.02 }}
       className="group relative"
     >
       {/* Hover glow */}
@@ -1658,32 +1651,12 @@ const drag = createDragSpring(element, {
     <div className="relative min-h-screen overflow-hidden">
       {/* Animated background */}
       <div className="fixed inset-0 mesh-gradient">
-        {/* Floating orbs */}
-        <AnimatedDiv
-          className="absolute top-1/4 left-1/4 w-[600px] h-[600px] rounded-full bg-gradient-to-br from-orange-500/20 to-transparent blur-3xl"
-          animate={{
-            x: [0, 50, 0],
-            y: [0, -30, 0],
-            scale: [1, 1.1, 1],
-          }}
-          transition={{
-            duration: 20,
-            repeat: Infinity,
-            ease: 'easeInOut',
-          }}
+        {/* Floating orbs - using CSS animations for smooth infinite loops */}
+        <div
+          className="absolute top-1/4 left-1/4 w-[600px] h-[600px] rounded-full bg-gradient-to-br from-orange-500/20 to-transparent blur-3xl animate-float-slow"
         />
-        <AnimatedDiv
-          className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] rounded-full bg-gradient-to-tl from-rose-500/15 to-transparent blur-3xl"
-          animate={{
-            x: [0, -40, 0],
-            y: [0, 40, 0],
-            scale: [1, 1.15, 1],
-          }}
-          transition={{
-            duration: 25,
-            repeat: Infinity,
-            ease: 'easeInOut',
-          }}
+        <div
+          className="absolute bottom-1/4 right-1/4 w-[500px] h-[500px] rounded-full bg-gradient-to-tl from-rose-500/15 to-transparent blur-3xl animate-float-slow-reverse"
         />
 
         {/* Grid overlay */}
@@ -1789,13 +1762,9 @@ const drag = createDragSpring(element, {
               animate={{ opacity: 1 }}
               transition={{ delay: 1.5 }}
             >
-              <AnimatedDiv
-                animate={{ y: [0, 8, 0] }}
-                transition={{ duration: 2, repeat: Infinity, ease: 'easeInOut' }}
-                className="text-white/30"
-              >
+              <div className="text-white/30 animate-bounce">
                 <ChevronDown className="w-6 h-6" />
-              </AnimatedDiv>
+              </div>
             </AnimatedDiv>
           </div>
         </section>

@@ -1,6 +1,9 @@
 import React, { useMemo, useCallback, useRef, useEffect } from 'react'
 import { PresenceContext, type PresenceContextValue } from '../context/PresenceContext.js'
 
+/** Default timeout for exit animations (10 seconds) */
+export const DEFAULT_EXIT_TIMEOUT = 10000
+
 export interface PresenceChildProps {
   /** Unique identifier for this child */
   id: string
@@ -12,6 +15,8 @@ export interface PresenceChildProps {
   onExitComplete: (id: string) => void
   /** Custom data to pass to the child via context */
   custom?: unknown
+  /** Maximum time to wait for exit animation before forcing removal (ms). Set to 0 to disable. Default: 10000 */
+  exitTimeout?: number
 }
 
 /**
@@ -26,6 +31,7 @@ export function PresenceChild({
   isPresent,
   onExitComplete,
   custom,
+  exitTimeout = DEFAULT_EXIT_TIMEOUT,
 }: PresenceChildProps) {
   const presenceIdRef = useRef(id)
 
@@ -50,25 +56,37 @@ export function PresenceChild({
 
   // Auto-call safeToRemove after a timeout if exit animation doesn't complete
   // This prevents "zombie" children from staying in the tree forever
-  const hasExited = useRef(false)
+  const hasExitedRef = useRef(false)
+  const hasCalledRemoveRef = useRef(false)
+
   useEffect(() => {
-    if (!isPresent && !hasExited.current) {
-      hasExited.current = true
-
-      // Set a generous timeout for exit animations
-      // If the animation hasn't called safeToRemove by then, force removal
-      const timeout = setTimeout(() => {
-        safeToRemove()
-      }, 10000) // 10 seconds max for exit animation
-
-      return () => clearTimeout(timeout)
-    }
-
     // Reset when becoming present again
     if (isPresent) {
-      hasExited.current = false
+      hasExitedRef.current = false
+      hasCalledRemoveRef.current = false
+      return
     }
-  }, [isPresent, safeToRemove])
+
+    // Already processed exit
+    if (hasExitedRef.current) return
+
+    hasExitedRef.current = true
+
+    // If exitTimeout is 0 or negative, don't set a timeout (rely on animation to call safeToRemove)
+    if (exitTimeout <= 0) return
+
+    // Set a configurable timeout for exit animations
+    // If the animation hasn't called safeToRemove by then, force removal
+    const timeout = setTimeout(() => {
+      // Only call if not already called
+      if (!hasCalledRemoveRef.current) {
+        hasCalledRemoveRef.current = true
+        safeToRemove()
+      }
+    }, exitTimeout)
+
+    return () => clearTimeout(timeout)
+  }, [isPresent, safeToRemove, exitTimeout])
 
   return (
     <PresenceContext.Provider value={contextValue}>

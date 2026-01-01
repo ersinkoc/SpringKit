@@ -97,15 +97,14 @@ export function useAnimate(): UseAnimateReturn {
   const valuesRef = useRef<Map<string, number>>(new Map())
   const isAnimatingRef = useRef(false)
   const cleanupRef = useRef<(() => void)[]>([])
+  // Track RAF IDs and timeouts for proper cleanup
+  const rafIdsRef = useRef<Set<number>>(new Set())
+  const timeoutIdsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
+  const isDestroyedRef = useRef(false)
 
-  // Map CSS property names to transform functions
-  const getPropertyStyle = useCallback((property: string, value: number): string | null => {
-    const transforms = ['x', 'y', 'z', 'scale', 'scaleX', 'scaleY', 'rotate', 'rotateX', 'rotateY', 'rotateZ']
-
-    if (transforms.includes(property)) {
-      return null // Handle transforms separately
-    }
-
+  // Map CSS property names to transform functions (reserved for future use)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const _getPropertyStyle = useCallback((_property: string, _value: number): string | null => {
     return null // Direct style property
   }, [])
 
@@ -167,67 +166,99 @@ export function useAnimate(): UseAnimateReturn {
   const animate: AnimateFunction = useCallback(async (target, options = {}) => {
     const { config = {}, delay = 0, onComplete } = options
 
-    if (delay > 0) {
-      await new Promise((resolve) => setTimeout(resolve, delay))
-    }
-
-    isAnimatingRef.current = true
-
-    const promises: Promise<void>[] = []
-
-    for (const [property, value] of Object.entries(target)) {
-      const targetValues = Array.isArray(value) ? value : [value]
-      const currentValue = valuesRef.current.get(property) ?? 0
-
-      // Animate through each value in sequence
-      let animationPromise = Promise.resolve()
-
-      for (const targetValue of targetValues) {
-        animationPromise = animationPromise.then(() => {
-          return new Promise<void>((resolve) => {
-            // Get or create spring for this property
-            let spring = springsRef.current.get(property)
-
-            if (!spring) {
-              spring = createSpringValue(valuesRef.current.get(property) ?? 0, config)
-              springsRef.current.set(property, spring)
-
-              const unsubscribe = spring.subscribe((v) => {
-                valuesRef.current.set(property, v)
-                applyStyles()
-              })
-
-              cleanupRef.current.push(unsubscribe)
-            }
-
-            // Update config if provided
-            if (config.stiffness || config.damping || config.mass) {
-              spring.setConfig(config)
-            }
-
-            spring.set(targetValue)
-
-            // Wait for animation to complete
-            const checkComplete = () => {
-              if (spring && !spring.isAnimating()) {
-                resolve()
-              } else {
-                requestAnimationFrame(checkComplete)
-              }
-            }
-
-            setTimeout(checkComplete, 16)
-          })
+    try {
+      if (delay > 0) {
+        await new Promise<void>((resolve) => {
+          const timeoutId = setTimeout(() => {
+            timeoutIdsRef.current.delete(timeoutId)
+            resolve()
+          }, delay)
+          timeoutIdsRef.current.add(timeoutId)
         })
       }
 
-      promises.push(animationPromise)
+      // Check if destroyed during delay
+      if (isDestroyedRef.current) return
+
+      isAnimatingRef.current = true
+
+      const promises: Promise<void>[] = []
+
+      for (const [property, value] of Object.entries(target)) {
+        const targetValues = Array.isArray(value) ? value : [value]
+
+        // Animate through each value in sequence
+        let animationPromise = Promise.resolve()
+
+        for (const targetValue of targetValues) {
+          animationPromise = animationPromise.then(() => {
+            return new Promise<void>((resolve) => {
+              // Early exit if destroyed
+              if (isDestroyedRef.current) {
+                resolve()
+                return
+              }
+
+              try {
+                // Get or create spring for this property
+                let spring = springsRef.current.get(property)
+
+                if (!spring) {
+                  spring = createSpringValue(valuesRef.current.get(property) ?? 0, config)
+                  springsRef.current.set(property, spring)
+
+                  const unsubscribe = spring.subscribe((v) => {
+                    if (!isDestroyedRef.current) {
+                      valuesRef.current.set(property, v)
+                      applyStyles()
+                    }
+                  })
+
+                  cleanupRef.current.push(unsubscribe)
+                }
+
+                // Update config if provided
+                if (config.stiffness || config.damping || config.mass) {
+                  spring.setConfig(config)
+                }
+
+                spring.set(targetValue)
+
+                // Wait for animation to complete with tracked RAF
+                const checkComplete = () => {
+                  // If destroyed or animation complete, resolve
+                  if (isDestroyedRef.current || !spring || !spring.isAnimating()) {
+                    resolve()
+                  } else {
+                    const rafId = requestAnimationFrame(checkComplete)
+                    rafIdsRef.current.add(rafId)
+                  }
+                }
+
+                // Initial check after one frame
+                const initialRafId = requestAnimationFrame(checkComplete)
+                rafIdsRef.current.add(initialRafId)
+              } catch {
+                // If animation fails, resolve anyway to prevent hanging
+                resolve()
+              }
+            })
+          })
+        }
+
+        promises.push(animationPromise)
+      }
+
+      await Promise.all(promises)
+
+      if (!isDestroyedRef.current) {
+        isAnimatingRef.current = false
+        onComplete?.()
+      }
+    } catch {
+      // Ensure animating flag is reset on error
+      isAnimatingRef.current = false
     }
-
-    await Promise.all(promises)
-
-    isAnimatingRef.current = false
-    onComplete?.()
   }, [applyStyles])
 
   const controls: AnimationControls = {
@@ -249,10 +280,30 @@ export function useAnimate(): UseAnimateReturn {
 
   // Cleanup on unmount
   useEffect(() => {
+    // Capture refs at effect creation time for cleanup
+    const cleanups = cleanupRef.current
+    const springs = springsRef.current
+    const rafIds = rafIdsRef.current
+    const timeoutIds = timeoutIdsRef.current
+
     return () => {
-      cleanupRef.current.forEach((cleanup) => cleanup())
-      springsRef.current.forEach((spring) => spring.destroy())
-      springsRef.current.clear()
+      // Mark as destroyed to prevent further updates
+      isDestroyedRef.current = true
+
+      // Cancel all pending RAF callbacks
+      rafIds.forEach((id) => cancelAnimationFrame(id))
+      rafIds.clear()
+
+      // Clear all pending timeouts
+      timeoutIds.forEach((id) => clearTimeout(id))
+      timeoutIds.clear()
+
+      // Run cleanup functions
+      cleanups.forEach((cleanup) => cleanup())
+
+      // Destroy springs
+      springs.forEach((spring) => spring.destroy())
+      springs.clear()
     }
   }, [])
 

@@ -39,7 +39,12 @@ export function mapRange(
   outMin: number,
   outMax: number
 ): number {
-  return ((value - inMin) * (outMax - outMin)) / (inMax - inMin) + outMin
+  // Guard against division by zero - return outMin when input range is zero
+  const inputRange = inMax - inMin
+  if (inputRange === 0) {
+    return outMin
+  }
+  return ((value - inMin) * (outMax - outMin)) / inputRange + outMin
 }
 
 /**

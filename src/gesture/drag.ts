@@ -1,4 +1,3 @@
-import { defaultConfig } from '../core/config.js'
 import { createSpringValue, type SpringValue } from '../core/spring-value.js'
 import { clamp } from '../utils/math.js'
 
@@ -90,6 +89,10 @@ export interface DragSpringConfig {
   momentum?: boolean
   /** Deceleration rate for momentum (0-1, default: 0.95) */
   momentumDecay?: number
+  /** Elastic factor (0-1) - how much element can be dragged outside bounds */
+  dragElastic?: number | boolean | { top?: number; right?: number; bottom?: number; left?: number }
+  /** Modify the target position during inertia (useful for snap-to-grid) */
+  modifyTarget?: (target: { x: number; y: number }) => { x: number; y: number }
   /** Callback called when drag starts */
   onDragStart?: (event: PointerEvent) => void
   /** Callback called during drag */
@@ -177,6 +180,8 @@ class DragSpringImpl implements DragSpring {
   private lastTime = 0
   private velocity = { x: 0, y: 0 }
   private currentSnap: SnapPoint | null = null
+  private snapTimeoutId: ReturnType<typeof setTimeout> | null = null
+  private destroyed = false
 
   // Springs for each axis
   private springX: SpringValue
@@ -250,10 +255,20 @@ class DragSpringImpl implements DragSpring {
     const now = performance.now()
     const dt = now - this.lastTime
 
-    // Calculate velocity (pixels per ms, scaled to pixels per second)
+    // Calculate instant velocity with minimum dt to prevent spikes
+    // Use at least 16ms (one frame) to avoid unrealistic velocity on first move
+    const safeDt = Math.max(dt, 16)
+    const instantVelocity = {
+      x: (e.clientX - this.lastPosition.x) / safeDt,
+      y: (e.clientY - this.lastPosition.y) / safeDt,
+    }
+
+    // Smooth velocity using exponential moving average to prevent jarring animations
+    // This prevents velocity spikes on quick movements or first move events
+    const smoothingFactor = 0.2
     this.velocity = {
-      x: (e.clientX - this.lastPosition.x) / Math.max(dt, 1),
-      y: (e.clientY - this.lastPosition.y) / Math.max(dt, 1),
+      x: this.velocity.x * (1 - smoothingFactor) + instantVelocity.x * smoothingFactor,
+      y: this.velocity.y * (1 - smoothingFactor) + instantVelocity.y * smoothingFactor,
     }
 
     this.lastPosition = { x: e.clientX, y: e.clientY }
@@ -263,17 +278,19 @@ class DragSpringImpl implements DragSpring {
     let newX = this.startPosition.x + (e.clientX - this.pointerStart.x)
     let newY = this.startPosition.y + (e.clientY - this.pointerStart.y)
 
-    // Apply bounds with rubber band
+    // Apply bounds with elastic effect
     if (this.config.bounds) {
       newX = this.applyBounds(
         newX,
         this.config.bounds.left ?? -Infinity,
-        this.config.bounds.right ?? Infinity
+        this.config.bounds.right ?? Infinity,
+        'x'
       )
       newY = this.applyBounds(
         newY,
         this.config.bounds.top ?? -Infinity,
-        this.config.bounds.bottom ?? Infinity
+        this.config.bounds.bottom ?? Infinity,
+        'y'
       )
     }
 
@@ -293,19 +310,48 @@ class DragSpringImpl implements DragSpring {
     }
   }
 
-  private applyBounds(value: number, min: number, max: number): number {
+  private getElasticFactor(edge: 'left' | 'right' | 'top' | 'bottom'): number {
+    const dragElastic = this.config.dragElastic
+
+    // If not specified, use rubberBand settings
+    if (dragElastic === undefined) {
+      if (this.config.rubberBand) {
+        return this.config.rubberBandFactor ?? 0.5
+      }
+      return 0 // No elasticity
+    }
+
+    // Boolean: true = 0.5, false = 0
+    if (typeof dragElastic === 'boolean') {
+      return dragElastic ? 0.5 : 0
+    }
+
+    // Number: use directly
+    if (typeof dragElastic === 'number') {
+      return clamp(dragElastic, 0, 1)
+    }
+
+    // Object: per-edge configuration
+    return clamp(dragElastic[edge] ?? 0.5, 0, 1)
+  }
+
+  private applyBounds(value: number, min: number, max: number, axis: 'x' | 'y' = 'x'): number {
     if (!isFinite(min) && !isFinite(max)) return value
 
     const actualMin = isFinite(min) ? min : -Infinity
     const actualMax = isFinite(max) ? max : Infinity
 
-    if (this.config.rubberBand) {
-      const factor = this.config.rubberBandFactor || 0.5
+    // Determine elastic factor based on which edge
+    const hasElastic = this.config.dragElastic !== undefined || this.config.rubberBand
+
+    if (hasElastic) {
       if (value < actualMin) {
-        return actualMin - (actualMin - value) * factor
+        const elasticFactor = this.getElasticFactor(axis === 'x' ? 'left' : 'top')
+        return actualMin - (actualMin - value) * elasticFactor
       }
       if (value > actualMax) {
-        return actualMax + (value - actualMax) * factor
+        const elasticFactor = this.getElasticFactor(axis === 'x' ? 'right' : 'bottom')
+        return actualMax + (value - actualMax) * elasticFactor
       }
     }
 
@@ -315,10 +361,17 @@ class DragSpringImpl implements DragSpring {
   private onPointerUp = (e: PointerEvent): void => {
     this._isDragging = false
 
-    this.element.releasePointerCapture(e.pointerId)
-    this.element.removeEventListener('pointermove', this.onPointerMove)
-    this.element.removeEventListener('pointerup', this.onPointerUp)
-    this.element.removeEventListener('pointercancel', this.onPointerUp)
+    // Safety check: element might be removed from DOM during drag
+    if (this.element && document.contains(this.element)) {
+      try {
+        this.element.releasePointerCapture(e.pointerId)
+      } catch {
+        // Ignore errors if pointer capture was already released
+      }
+      this.element.removeEventListener('pointermove', this.onPointerMove)
+      this.element.removeEventListener('pointerup', this.onPointerUp)
+      this.element.removeEventListener('pointercancel', this.onPointerUp)
+    }
 
     // Check for snap points first
     if (this.config.snap?.snapOnRelease !== false) {
@@ -508,11 +561,21 @@ class DragSpringImpl implements DragSpring {
 
     // Apply momentum if enabled
     if (this.config.momentum) {
-      const decay = this.config.momentumDecay ?? 0.95
-      const momentumX = velocityX * (1 / (1 - decay)) * 0.1
-      const momentumY = velocityY * (1 / (1 - decay)) * 0.1
+      // Clamp decay to valid range [0, 0.99] to prevent division by zero
+      const rawDecay = this.config.momentumDecay ?? 0.95
+      const decay = Math.max(0, Math.min(0.99, rawDecay))
+      const decayFactor = decay < 1 ? (1 / (1 - decay)) : 100 // Fallback for edge case
+      const momentumX = velocityX * decayFactor * 0.1
+      const momentumY = velocityY * decayFactor * 0.1
       targetX += momentumX
       targetY += momentumY
+    }
+
+    // Apply modifyTarget for snap-to-grid or custom modifications
+    if (this.config.modifyTarget) {
+      const modified = this.config.modifyTarget({ x: targetX, y: targetY })
+      targetX = modified.x
+      targetY = modified.y
     }
 
     // Clamp to bounds
@@ -552,9 +615,15 @@ class DragSpringImpl implements DragSpring {
     this.springX.set(point.x)
     this.springY.set(point.y)
 
-    // Simple completion detection
-    setTimeout(() => {
-      if (this.currentSnap === point && this.config.onSnapComplete) {
+    // Cancel previous snap timeout to prevent memory leak
+    if (this.snapTimeoutId !== null) {
+      clearTimeout(this.snapTimeoutId)
+    }
+
+    // Simple completion detection with tracked timeout
+    this.snapTimeoutId = setTimeout(() => {
+      this.snapTimeoutId = null
+      if (!this.destroyed && this.currentSnap === point && this.config.onSnapComplete) {
         this.config.onSnapComplete(point)
       }
     }, 500)
@@ -569,6 +638,14 @@ class DragSpringImpl implements DragSpring {
   }
 
   destroy(): void {
+    this.destroyed = true
+
+    // Cancel any pending snap timeout
+    if (this.snapTimeoutId !== null) {
+      clearTimeout(this.snapTimeoutId)
+      this.snapTimeoutId = null
+    }
+
     this.element.removeEventListener('pointerdown', this.onPointerDown)
     this.springX.destroy()
     this.springY.destroy()

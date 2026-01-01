@@ -63,8 +63,13 @@ class SpringValueImpl implements SpringValue {
       this.currentAnimation = null
     }
 
+    // Capture resolver in local scope to prevent race condition
+    // Each animation gets its own resolver that won't be overwritten
+    let animationResolver: (() => void) | null = null
+
     // Create new promise for this animation
     this.finishedPromise = new Promise((resolve) => {
+      animationResolver = resolve
       this.resolveComplete = resolve
     })
 
@@ -83,9 +88,8 @@ class SpringValueImpl implements SpringValue {
       },
       onComplete: () => {
         originalOnComplete?.()
-        if (this.resolveComplete) {
-          this.resolveComplete()
-        }
+        // Use captured resolver to prevent race condition
+        animationResolver?.()
       },
     })
 

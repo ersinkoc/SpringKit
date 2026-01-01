@@ -33,6 +33,8 @@ class SpringGroupImpl<T extends Record<string, number>> implements SpringGroup<T
   private subscribers = new Set<(values: T) => void>()
   private resolveComplete: (() => void) | null = null
   private finishedPromise: Promise<void>
+  private notifyRafId: number | null = null
+  private destroyed = false
 
   constructor(initialValues: T, config: SpringConfig = {}) {
     this.config = { ...defaultConfig, ...config }
@@ -41,7 +43,7 @@ class SpringGroupImpl<T extends Record<string, number>> implements SpringGroup<T
     this.values = new Map()
     for (const [key, value] of Object.entries(initialValues)) {
       const springValue = createSpringValue(value, this.config)
-      springValue.subscribe(() => this.notify())
+      springValue.subscribe(() => this.scheduleNotify())
       this.values.set(key as keyof T, springValue)
     }
 
@@ -118,6 +120,24 @@ class SpringGroupImpl<T extends Record<string, number>> implements SpringGroup<T
     return this.finishedPromise
   }
 
+  /**
+   * Schedule notification for next animation frame to prevent excessive updates.
+   * When animating multiple properties, this debounces notifications to once per frame
+   * instead of once per property update.
+   */
+  private scheduleNotify(): void {
+    // Skip if destroyed or already scheduled
+    if (this.destroyed || this.notifyRafId !== null) return
+
+    this.notifyRafId = requestAnimationFrame(() => {
+      this.notifyRafId = null
+      // Double-check destroyed state after RAF
+      if (!this.destroyed) {
+        this.notify()
+      }
+    })
+  }
+
   private notify(): void {
     const values = this.get()
     for (const subscriber of this.subscribers) {
@@ -126,6 +146,14 @@ class SpringGroupImpl<T extends Record<string, number>> implements SpringGroup<T
   }
 
   destroy(): void {
+    this.destroyed = true
+
+    // Cancel pending RAF to prevent memory leak
+    if (this.notifyRafId !== null) {
+      cancelAnimationFrame(this.notifyRafId)
+      this.notifyRafId = null
+    }
+
     for (const springValue of this.values.values()) {
       springValue.destroy()
     }

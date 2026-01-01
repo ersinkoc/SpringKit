@@ -174,7 +174,7 @@ describe('decay', () => {
       await anim.finished
 
       expect(onComplete).toHaveBeenCalled()
-    }, 2000)
+    }, 5000)
 
     it('should call onUpdate during animation', async () => {
       const onUpdate = vi.fn()

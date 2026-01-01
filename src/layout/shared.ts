@@ -7,7 +7,6 @@
 
 import { createSpringGroup, type SpringGroup } from '../core/spring-group.js'
 import type { SpringConfig } from '../core/config.js'
-import { clamp } from '../utils/math.js'
 
 // ============ Types ============
 
@@ -177,7 +176,8 @@ export function createLayoutGroup(config: LayoutAnimationConfig = {}): LayoutGro
     onAnimationStart,
     onAnimationComplete,
     crossfade = false,
-    transition = {},
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    transition: _transition = {},
   } = config
 
   const elements = new Map<string, SharedLayoutElement[]>()
@@ -236,15 +236,6 @@ export function createLayoutGroup(config: LayoutAnimationConfig = {}): LayoutGro
   ): void => {
     // Cleanup previous animation
     entry.spring?.destroy()
-
-    const springConfig = {
-      x: transition.x || defaultSpring,
-      y: transition.y || defaultSpring,
-      width: transition.width || defaultSpring,
-      height: transition.height || defaultSpring,
-      opacity: transition.opacity || defaultSpring,
-      borderRadius: transition.borderRadius || defaultSpring,
-    }
 
     // Create spring with initial values
     const initialValues: Record<string, number> = {

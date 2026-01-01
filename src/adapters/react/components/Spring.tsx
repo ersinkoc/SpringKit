@@ -63,6 +63,8 @@ export const Spring = <T extends Record<string, number>>({
     })
 
     return () => spring.destroy()
+    // Intentionally only run on mount - updates handled in separate effect
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Update when props change

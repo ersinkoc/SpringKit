@@ -37,18 +37,17 @@ import { isBrowser } from '../utils/ssr.js'
  * ```
  */
 export function useReducedMotion(): boolean {
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(() => {
-    // SSR-safe: assume no preference on server
-    if (!isBrowser) return false
-
-    // Check initial value
-    return window.matchMedia('(prefers-reduced-motion: reduce)').matches
-  })
+  // Always start with false to prevent SSR hydration mismatch
+  // The actual value will be set in useEffect after hydration
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false)
 
   useEffect(() => {
     if (!isBrowser) return
 
     const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
+
+    // Set initial value after mount (prevents hydration mismatch)
+    setPrefersReducedMotion(mediaQuery.matches)
 
     // Update state when preference changes
     const handleChange = (event: MediaQueryListEvent) => {

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, type RefObject } from 'react'
+import { useState, useRef, useEffect, type RefObject } from 'react'
 import { isBrowser } from '../utils/ssr.js'
 
 export interface GestureState {

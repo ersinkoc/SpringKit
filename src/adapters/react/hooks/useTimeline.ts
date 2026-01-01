@@ -14,6 +14,7 @@ import { useIsomorphicLayoutEffect } from '../utils/ssr.js'
 
 // ============ Types ============
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface UseTimelineOptions extends TimelineConfig {}
 
 export interface UseTimelineReturn {
@@ -231,16 +232,24 @@ export function useTimelineState(
     // Update initially
     updateState()
 
-    // Update on animation frame while timeline exists
-    let rafId: number | null = null
+    // Use a ref to store the latest rafId to ensure proper cleanup
+    // This fixes the memory leak where intermediate RAF callbacks weren't cancelled
+    let currentRafId: number | null = null
+    let isActive = true
+
     const tick = () => {
+      if (!isActive) return
       updateState()
-      rafId = requestAnimationFrame(tick)
+      currentRafId = requestAnimationFrame(tick)
     }
-    rafId = requestAnimationFrame(tick)
+    currentRafId = requestAnimationFrame(tick)
 
     return () => {
-      if (rafId) cancelAnimationFrame(rafId)
+      isActive = false
+      if (currentRafId !== null) {
+        cancelAnimationFrame(currentRafId)
+        currentRafId = null
+      }
     }
   }, [timeline])
 

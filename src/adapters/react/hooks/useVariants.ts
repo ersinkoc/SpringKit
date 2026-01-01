@@ -4,15 +4,11 @@
 import { useRef, useCallback, useMemo, createContext, useContext, type ReactNode } from 'react'
 import React from 'react'
 import {
-  resolveVariant,
   getVariant,
   calculateStaggerDelays,
-  buildTransformString,
   type Variants,
-  type Variant,
   type AnimationValues,
   type VariantTransition,
-  type OrchestrationOptions,
 } from '../../../index.js'
 import { useSpring } from './useSpring.js'
 import { useIsomorphicLayoutEffect } from '../utils/ssr.js'

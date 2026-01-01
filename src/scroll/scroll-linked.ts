@@ -417,7 +417,6 @@ export function createScrollTrigger(
     }
 
     const isInView = rect.top < windowHeight && rect.bottom > 0
-    const nowActive = progress > 0 && progress < 1
 
     return {
       progress,

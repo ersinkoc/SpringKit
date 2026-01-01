@@ -83,13 +83,16 @@ describe('spring integration tests', () => {
       expect(group.isAnimating()).toBe(true)
     })
 
-    it('should notify subscribers on changes', () => {
+    it('should notify subscribers on changes', async () => {
       const group = createSpringGroup({ x: 0, y: 0 })
       const callback = vi.fn()
 
       group.subscribe(callback)
 
       group.jump({ x: 100 })
+
+      // Wait for the debounced notification via requestAnimationFrame
+      await new Promise(resolve => requestAnimationFrame(resolve))
 
       expect(callback).toHaveBeenLastCalledWith({ x: 100, y: 0 })
     })

@@ -25,7 +25,8 @@ describe('Animated', () => {
         </Animated.div>
       )
       const element = screen.getByTestId('animated')
-      expect(element).toHaveStyle({ color: 'red', fontSize: '16px' })
+      // Use rgb format for color comparison as browsers normalize color values
+      expect(element).toHaveStyle({ color: 'rgb(255, 0, 0)', fontSize: '16px' })
     })
 
     it('should forward ref', () => {

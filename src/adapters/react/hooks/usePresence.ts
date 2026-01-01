@@ -1,4 +1,4 @@
-import { useContext, useCallback, useEffect } from 'react'
+import { useContext } from 'react'
 import { PresenceContext } from '../context/PresenceContext.js'
 
 /**

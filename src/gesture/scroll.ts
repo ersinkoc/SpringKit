@@ -1,4 +1,3 @@
-import { defaultConfig } from '../core/config.js'
 import { createSpringValue, type SpringValue } from '../core/spring-value.js'
 
 /**
@@ -156,17 +155,17 @@ class ScrollSpringImpl implements ScrollSpring {
       this.target.x += deltaX
       this.target.y += deltaY
 
-      // Apply rubber band at edges
+      // Apply rubber band at edges with safe Math.sqrt (use Math.abs to prevent NaN)
       if (this.target.x < 0) {
-        this.target.x = -Math.sqrt(-this.target.x) * 10
+        this.target.x = -Math.sqrt(Math.abs(this.target.x)) * 10
       } else if (this.target.x > maxScrollX) {
-        this.target.x = maxScrollX + Math.sqrt(this.target.x - maxScrollX) * 10
+        this.target.x = maxScrollX + Math.sqrt(Math.abs(this.target.x - maxScrollX)) * 10
       }
 
       if (this.target.y < 0) {
-        this.target.y = -Math.sqrt(-this.target.y) * 10
+        this.target.y = -Math.sqrt(Math.abs(this.target.y)) * 10
       } else if (this.target.y > maxScrollY) {
-        this.target.y = maxScrollY + Math.sqrt(this.target.y - maxScrollY) * 10
+        this.target.y = maxScrollY + Math.sqrt(Math.abs(this.target.y - maxScrollY)) * 10
       }
 
       // Prevent default to handle scroll ourselves

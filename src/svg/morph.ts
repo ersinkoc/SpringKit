@@ -5,7 +5,7 @@
  * and spring-based animation.
  */
 
-import { createSpringValue, type SpringValue } from '../core/spring-value.js'
+import { createSpringValue } from '../core/spring-value.js'
 import type { SpringConfig } from '../core/config.js'
 import { lerp, clamp } from '../utils/math.js'
 
@@ -77,7 +77,6 @@ function parsePath(d: string): PathCommand[] {
   const commands: PathCommand[] = []
   const regex = /([MLCQAZHVST])([^MLCQAZHVST]*)/gi
 
-  let match: RegExpMatchArray | null
   // Use matchAll instead of regex.exec for safer iteration
   const matches = d.matchAll(regex)
 

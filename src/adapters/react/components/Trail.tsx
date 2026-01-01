@@ -80,7 +80,7 @@ export const Trail = <T, V extends Record<string, number>>({
       unsubscribe()
       trail.destroy()
     }
-  }, [items.length, config.stiffness, config.damping])
+  }, [items.length, config.stiffness, config.damping]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Update when to values change
   useEffect(() => {

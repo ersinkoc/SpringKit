@@ -25,6 +25,7 @@ const SharedLayoutContextReact = createContext<SharedLayoutContext | null>(null)
 
 // ============ useLayoutGroup ============
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface UseLayoutGroupOptions extends LayoutAnimationConfig {}
 
 export interface UseLayoutGroupReturn {
@@ -180,6 +181,7 @@ export function useLayoutId(
 
 // ============ useFlip ============
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface UseFlipOptions extends FlipOptions {}
 
 export interface UseFlipReturn {
@@ -243,6 +245,7 @@ export function useFlip(options: UseFlipOptions = {}): UseFlipReturn {
 
 // ============ useAutoLayout ============
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface UseAutoLayoutOptions extends AutoLayoutConfig {}
 
 export interface UseAutoLayoutReturn {
@@ -288,7 +291,7 @@ export function useAutoLayout(
     if (element) {
       autoLayoutRef.current = createAutoLayout(options)
     }
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const update = useCallback(() => {
     autoLayoutRef.current?.update()

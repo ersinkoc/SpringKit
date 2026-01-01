@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, forwardRef } from 'react'
+import { createPortal } from 'react-dom'
 import {
   Play, RotateCcw, GripVertical, ChevronRight, Sparkles, Layers, Zap,
   MousePointer2, ArrowRight, Activity, Target, Gauge, Box,
@@ -6,7 +7,7 @@ import {
   Rocket, Globe, Cpu, Eye, Shuffle, X, Check, Bell, Mail, Settings,
   User, ShoppingCart, CreditCard, Volume2,
   Wifi, RefreshCw,
-  Menu, Plus, Clock, MoveVertical, Shapes, Grid3X3, Timer
+  Menu, Plus, Code, Copy, Timer, Shapes, Grid3X3
 } from 'lucide-react'
 import {
   useSpring,
@@ -25,18 +26,30 @@ import {
   useTap,
   useFocus,
   useGestureAnimation,
+  // New imports for additional features
+  useTimeline,
+  useMorph,
   useVariants,
-  useStaggerChildren,
-  VariantProvider,
+  useAnimate,
+  useMomentum,
+  useElastic,
+  useBounce,
+  useGravity,
+  usePointer,
+  Reorder,
+  SpringText,
+  SpringNumber,
+  TypeWriter,
+  SplitText,
+  TiltCard,
+  MouseParallax,
+  Magnetic,
 } from '@oxog/springkit/react'
 import {
   spring,
+  animate,
   springPresets,
   physicsPresets,
-  getPhysicsPreset,
-  createFeeling,
-  adjustSpeed,
-  adjustBounce,
   createSpringValue,
   decay,
   sequence,
@@ -49,17 +62,133 @@ import {
   keyframes,
   createPathAnimation,
   flip,
+  // New imports
   createTimeline,
   createMorph,
   shapes,
   linearStagger,
   centerStagger,
   waveStagger,
-  spiralStagger,
   gridStagger,
-  randomStagger,
-  variantPresets,
+  spiralStagger,
+  staggerPresets,
 } from '@oxog/springkit'
+
+// ============================================================================
+// TAB CATEGORIES
+// ============================================================================
+
+const CATEGORIES = [
+  { id: 'all', label: 'All Examples', icon: Sparkles, color: 'from-orange-500 to-amber-500' },
+  { id: 'new', label: 'New in v1.2', icon: Zap, color: 'from-orange-500 to-amber-500' },
+  { id: 'visual', label: 'Visual Effects', icon: Shapes, color: 'from-purple-500 to-pink-500' },
+  { id: 'spectacular', label: 'Spectacular', icon: Star, color: 'from-yellow-500 to-orange-500' },
+  { id: 'ui', label: 'UI Components', icon: Layers, color: 'from-blue-500 to-cyan-500' },
+  { id: 'interactive', label: 'Interactive', icon: MousePointer2, color: 'from-emerald-500 to-teal-500' },
+  { id: 'hooks', label: 'Advanced Hooks', icon: Activity, color: 'from-violet-500 to-purple-500' },
+  { id: 'core', label: 'Core Features', icon: Grid3X3, color: 'from-rose-500 to-red-500' },
+] as const
+
+type CategoryId = typeof CATEGORIES[number]['id']
+
+// ============================================================================
+// CODE VIEWER COMPONENT
+// ============================================================================
+
+interface CodeViewerProps {
+  code: string
+  title: string
+}
+
+function CodeViewer({ code, title }: CodeViewerProps) {
+  const [isOpen, setIsOpen] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  const copyCode = async () => {
+    await navigator.clipboard.writeText(code)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <>
+      <button
+        onClick={() => setIsOpen(true)}
+        className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-slate-400 hover:text-white bg-slate-800/50 hover:bg-slate-700/50 rounded-lg transition-colors"
+      >
+        <Code className="w-3 h-3" />
+        Code
+      </button>
+
+      {isOpen && createPortal(
+        <div
+          className="fixed inset-0 z-[9999] flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+          onClick={() => setIsOpen(false)}
+        >
+          <div
+            className="relative w-full max-w-4xl max-h-[85vh] bg-slate-900 rounded-xl border border-slate-700 shadow-2xl overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-4 py-3 bg-slate-800/50 border-b border-slate-700">
+              <div className="flex items-center gap-3">
+                <div className="flex gap-1.5">
+                  <div className="w-3 h-3 rounded-full bg-red-500/80" />
+                  <div className="w-3 h-3 rounded-full bg-yellow-500/80" />
+                  <div className="w-3 h-3 rounded-full bg-green-500/80" />
+                </div>
+                <span className="text-sm font-medium text-white">{title}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={copyCode}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-400 hover:text-white bg-slate-700/50 hover:bg-slate-600/50 rounded-lg transition-colors"
+                >
+                  {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  {copied ? 'Copied!' : 'Copy'}
+                </button>
+                <button
+                  onClick={() => setIsOpen(false)}
+                  className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-700/50 rounded-lg transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+            <div className="overflow-auto max-h-[calc(85vh-60px)]">
+              <pre className="p-4 text-sm leading-relaxed">
+                <code className="text-slate-300 font-mono whitespace-pre">{code}</code>
+              </pre>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </>
+  )
+}
+
+// ============================================================================
+// DEMO CARD WRAPPER - Adds code viewer to demos
+// ============================================================================
+
+interface DemoCardWrapperProps {
+  title: string
+  code?: string
+  children: React.ReactNode
+}
+
+function DemoCardWrapper({ title, code, children }: DemoCardWrapperProps) {
+  if (!code) return <>{children}</>
+
+  return (
+    <div className="relative group">
+      <div className="absolute top-3 right-3 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+        <CodeViewer code={code} title={title} />
+      </div>
+      {children}
+    </div>
+  )
+}
 
 // ============================================================================
 // ANIMATED DIV COMPONENT - Using SpringKit instead of framer-motion
@@ -75,23 +204,20 @@ interface AnimatedDivProps extends React.HTMLAttributes<HTMLDivElement> {
   children?: React.ReactNode
 }
 
-const AnimatedDiv = forwardRef<HTMLDivElement, AnimatedDivProps>(function AnimatedDiv(
-  {
-    initial,
-    animate,
-    whileInView,
-    whileHover,
-    viewport,
-    transition,
-    children,
-    className,
-    style,
-    ...rest
-  },
-  forwardedRef
-) {
+const AnimatedDiv = forwardRef<HTMLDivElement, AnimatedDivProps>(function AnimatedDiv({
+  initial,
+  animate,
+  whileInView,
+  whileHover,
+  viewport,
+  transition,
+  children,
+  className,
+  style,
+  ...rest
+}, externalRef) {
   const internalRef = useRef<HTMLDivElement>(null)
-  const ref = (forwardedRef as React.RefObject<HTMLDivElement>) || internalRef
+  const ref = (externalRef as React.RefObject<HTMLDivElement>) || internalRef
   const [isInView, setIsInView] = useState(false)
   const [isHovered, setIsHovered] = useState(false)
   const hasAnimated = useRef(false)
@@ -124,8 +250,7 @@ const AnimatedDiv = forwardRef<HTMLDivElement, AnimatedDivProps>(function Animat
 
   // Intersection Observer for whileInView
   useEffect(() => {
-    const currentRef = typeof ref === 'function' ? null : ref?.current
-    if (!whileInView || !currentRef) return
+    if (!whileInView || !ref.current) return
 
     const observer = new IntersectionObserver(
       (entries) => {
@@ -145,9 +270,9 @@ const AnimatedDiv = forwardRef<HTMLDivElement, AnimatedDivProps>(function Animat
       }
     )
 
-    observer.observe(currentRef)
+    observer.observe(ref.current)
     return () => observer.disconnect()
-  }, [whileInView, viewport?.once, viewport?.margin, ref])
+  }, [whileInView, viewport?.once, viewport?.margin])
 
   // Auto-animate on mount if no whileInView
   useEffect(() => {
@@ -156,14 +281,9 @@ const AnimatedDiv = forwardRef<HTMLDivElement, AnimatedDivProps>(function Animat
       const timer = setTimeout(() => setIsInView(true), delay)
       return () => clearTimeout(timer)
     }
-  }, [whileInView, animate, transition?.delay])
+  }, [])
 
-  // Ensure scale is a valid number
-  const scaleValue = typeof springValues.scale === 'number' && !isNaN(springValues.scale)
-    ? springValues.scale
-    : 1
-
-  const transform = `translate(${springValues.x}px, ${springValues.y}px) scale(${scaleValue})`
+  const transform = `translate(${springValues.x}px, ${springValues.y}px) scale(${springValues.scale})`
 
   return (
     <div
@@ -2063,630 +2183,6 @@ function GesturePropsDemo() {
   )
 }
 
-// ============================================================================
-// NEW v1.3.0 FEATURES - Timeline, SVG Morph, Scroll-Linked, Stagger Patterns
-// ============================================================================
-
-// Timeline Animation Demo
-function TimelineDemo() {
-  const [isPlaying, setIsPlaying] = useState(false)
-  const [progress, setProgress] = useState(0)
-  const box1Ref = useRef<HTMLDivElement>(null)
-  const box2Ref = useRef<HTMLDivElement>(null)
-  const box3Ref = useRef<HTMLDivElement>(null)
-  const timelineRef = useRef<ReturnType<typeof createTimeline> | null>(null)
-
-  useEffect(() => {
-    return () => timelineRef.current?.kill()
-  }, [])
-
-  const handlePlay = () => {
-    if (isPlaying) return
-    setIsPlaying(true)
-    setProgress(0)
-
-    // Reset boxes
-    if (box1Ref.current) box1Ref.current.style.transform = 'translateX(0) scale(1)'
-    if (box2Ref.current) box2Ref.current.style.transform = 'translateX(0) scale(1)'
-    if (box3Ref.current) box3Ref.current.style.transform = 'translateX(0) scale(1)'
-    if (box1Ref.current) box1Ref.current.style.opacity = '0.5'
-    if (box2Ref.current) box2Ref.current.style.opacity = '0.5'
-    if (box3Ref.current) box3Ref.current.style.opacity = '0.5'
-
-    const tl = createTimeline({
-      onUpdate: (p) => setProgress(p),
-      onComplete: () => setIsPlaying(false),
-    })
-
-    tl.to(box1Ref.current!, { x: 120, opacity: 1 })
-      .to(box2Ref.current!, { x: 120, opacity: 1 }, '-=300')
-      .to(box3Ref.current!, { x: 120, opacity: 1 }, '-=300')
-      .to(box1Ref.current!, { scale: 1.2 })
-      .to(box2Ref.current!, { scale: 1.2 }, '-=200')
-      .to(box3Ref.current!, { scale: 1.2 }, '-=200')
-
-    timelineRef.current = tl
-    tl.play()
-  }
-
-  const handleReverse = () => {
-    if (!timelineRef.current) return
-    setIsPlaying(true)
-    timelineRef.current.reverse()
-  }
-
-  return (
-    <div className="glass rounded-2xl p-6 border border-white/10">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-500/20 to-violet-500/20 flex items-center justify-center">
-          <Clock className="w-5 h-5 text-indigo-400" />
-        </div>
-        <div>
-          <h3 className="text-lg font-semibold text-white">Timeline API</h3>
-          <p className="text-xs text-white/40">GSAP-style sequencing</p>
-        </div>
-      </div>
-
-      <div className="h-32 bg-black/20 rounded-xl relative overflow-hidden mb-4 p-4 flex flex-col justify-center gap-2">
-        <div
-          ref={box1Ref}
-          className="w-8 h-8 rounded-lg bg-gradient-to-r from-indigo-500 to-violet-500 shadow-lg shadow-indigo-500/30"
-          style={{ opacity: 0.5 }}
-        />
-        <div
-          ref={box2Ref}
-          className="w-8 h-8 rounded-lg bg-gradient-to-r from-violet-500 to-purple-500 shadow-lg shadow-violet-500/30"
-          style={{ opacity: 0.5 }}
-        />
-        <div
-          ref={box3Ref}
-          className="w-8 h-8 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 shadow-lg shadow-purple-500/30"
-          style={{ opacity: 0.5 }}
-        />
-        <div className="absolute bottom-2 right-2 text-xs text-white/40">
-          {(progress * 100).toFixed(0)}%
-        </div>
-      </div>
-
-      <div className="flex gap-2">
-        <button
-          onClick={handlePlay}
-          disabled={isPlaying}
-          className="flex-1 py-2 bg-indigo-500/20 hover:bg-indigo-500/30 disabled:opacity-50 text-indigo-400 rounded-lg transition-colors flex items-center justify-center gap-2"
-        >
-          <Play className="w-4 h-4" />
-          Play
-        </button>
-        <button
-          onClick={handleReverse}
-          disabled={!timelineRef.current}
-          className="flex-1 py-2 bg-violet-500/20 hover:bg-violet-500/30 disabled:opacity-50 text-violet-400 rounded-lg transition-colors flex items-center justify-center gap-2"
-        >
-          <RotateCcw className="w-4 h-4" />
-          Reverse
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// SVG Morphing Demo
-function SVGMorphDemo() {
-  const [currentShape, setCurrentShape] = useState(0)
-  const [isAnimating, setIsAnimating] = useState(false)
-  const [currentPath, setCurrentPath] = useState('')
-  const pathRef = useRef<SVGPathElement>(null)
-  const morphRef = useRef<ReturnType<typeof createMorph> | null>(null)
-
-  // Pre-compute shape paths (they use newlines so we clean them)
-  const shapeList = useRef([
-    { name: 'Circle', path: shapes.circle(50, 50, 40).replace(/\s+/g, ' ').trim() },
-    { name: 'Square', path: shapes.rect(10, 10, 80, 80, 8).replace(/\s+/g, ' ').trim() },
-    { name: 'Star', path: shapes.star(50, 50, 45, 20, 5).replace(/\s+/g, ' ').trim() },
-    { name: 'Heart', path: shapes.heart(50, 50, 40).replace(/\s+/g, ' ').trim() },
-  ]).current
-
-  useEffect(() => {
-    // Initialize with the first shape path
-    const initialPath = shapeList[0].path
-    setCurrentPath(initialPath)
-
-    morphRef.current = createMorph(initialPath, {
-      spring: { stiffness: 150, damping: 15 },
-    })
-
-    // Subscribe to path updates
-    const unsubscribe = morphRef.current.subscribe((path) => {
-      setCurrentPath(path)
-      if (pathRef.current) {
-        pathRef.current.setAttribute('d', path)
-      }
-    })
-
-    return () => {
-      unsubscribe()
-      morphRef.current?.destroy()
-    }
-  }, [shapeList])
-
-  const handleMorph = (index: number) => {
-    if (!morphRef.current || isAnimating || index === currentShape) return
-    setIsAnimating(true)
-    morphRef.current.morphTo(shapeList[index].path)
-    setCurrentShape(index)
-    // Animation completes via spring physics
-    setTimeout(() => setIsAnimating(false), 800)
-  }
-
-  return (
-    <div className="glass rounded-2xl p-6 border border-white/10">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500/20 to-pink-500/20 flex items-center justify-center">
-          <Shapes className="w-5 h-5 text-rose-400" />
-        </div>
-        <div>
-          <h3 className="text-lg font-semibold text-white">SVG Morphing</h3>
-          <p className="text-xs text-white/40">Shape-to-shape transitions</p>
-        </div>
-      </div>
-
-      <div className="h-32 bg-black/20 rounded-xl relative overflow-hidden mb-4 flex items-center justify-center">
-        <svg viewBox="0 0 100 100" className="w-24 h-24">
-          <path
-            ref={pathRef}
-            d={currentPath || shapeList[0].path}
-            fill="url(#morphGradient2)"
-          />
-          <defs>
-            <linearGradient id="morphGradient2" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#f43f5e" />
-              <stop offset="100%" stopColor="#ec4899" />
-            </linearGradient>
-          </defs>
-        </svg>
-      </div>
-
-      <div className="grid grid-cols-4 gap-2">
-        {shapeList.map((shape, i) => (
-          <button
-            key={shape.name}
-            onClick={() => handleMorph(i)}
-            disabled={isAnimating}
-            className={`py-2 text-xs rounded-lg transition-colors ${
-              currentShape === i
-                ? 'bg-rose-500/30 text-rose-300'
-                : 'bg-white/5 hover:bg-white/10 text-white/60 disabled:opacity-50'
-            }`}
-          >
-            {shape.name}
-          </button>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-// Scroll-Linked Progress Demo
-function ScrollLinkedDemo() {
-  const containerRef = useRef<HTMLDivElement>(null)
-  const [progress, setProgress] = useState(0)
-
-  useEffect(() => {
-    const container = containerRef.current
-    if (!container) return
-
-    const handleScroll = () => {
-      const { scrollTop, scrollHeight, clientHeight } = container
-      const maxScroll = scrollHeight - clientHeight
-      const scrollProgress = maxScroll > 0 ? scrollTop / maxScroll : 0
-      setProgress(scrollProgress)
-    }
-
-    container.addEventListener('scroll', handleScroll)
-    return () => container.removeEventListener('scroll', handleScroll)
-  }, [])
-
-  return (
-    <div className="glass rounded-2xl p-6 border border-white/10">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500/20 to-cyan-500/20 flex items-center justify-center">
-          <MoveVertical className="w-5 h-5 text-sky-400" />
-        </div>
-        <div>
-          <h3 className="text-lg font-semibold text-white">Scroll Progress</h3>
-          <p className="text-xs text-white/40">Scroll-linked animations</p>
-        </div>
-      </div>
-
-      {/* Progress bar */}
-      <div className="h-2 bg-black/30 rounded-full mb-4 overflow-hidden">
-        <div
-          className="h-full bg-gradient-to-r from-sky-500 to-cyan-500 transition-all duration-75"
-          style={{ width: `${progress * 100}%` }}
-        />
-      </div>
-
-      <div
-        ref={containerRef}
-        className="h-32 bg-black/20 rounded-xl overflow-y-auto"
-      >
-        <div className="p-4 space-y-4" style={{ height: 400 }}>
-          {[1, 2, 3, 4, 5].map((i) => (
-            <div
-              key={i}
-              className="p-3 bg-white/5 rounded-lg text-white/60 text-sm"
-              style={{
-                opacity: 0.3 + (progress * 0.7),
-                transform: `translateX(${(1 - progress) * 20}px)`,
-              }}
-            >
-              Scroll item {i}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <p className="text-center text-xs text-white/40 mt-3">
-        Progress: {(progress * 100).toFixed(0)}%
-      </p>
-    </div>
-  )
-}
-
-// Enhanced Stagger Patterns Demo
-function StaggerPatternsDemo() {
-  const [pattern, setPattern] = useState<'linear' | 'center' | 'wave' | 'spiral' | 'grid' | 'random'>('linear')
-  const [isAnimating, setIsAnimating] = useState(false)
-  const gridRef = useRef<HTMLDivElement>(null)
-
-  const patterns = ['linear', 'center', 'wave', 'spiral', 'grid', 'random'] as const
-
-  const handleAnimate = async () => {
-    if (!gridRef.current || isAnimating) return
-    setIsAnimating(true)
-
-    const items = Array.from(gridRef.current.children) as HTMLElement[]
-
-    // Reset
-    items.forEach(item => {
-      item.style.opacity = '0'
-      item.style.transform = 'scale(0.5)'
-    })
-
-    // Get stagger delays based on pattern
-    let delays: number[] = []
-    const baseDelay = 50
-
-    switch (pattern) {
-      case 'linear':
-        delays = linearStagger(items.length, baseDelay)
-        break
-      case 'center':
-        delays = centerStagger(items.length, baseDelay)
-        break
-      case 'wave':
-        delays = waveStagger(items.length, { delay: baseDelay, frequency: 2 })
-        break
-      case 'spiral':
-        delays = spiralStagger(items.length, { delay: baseDelay, columns: 4 })
-        break
-      case 'grid':
-        delays = gridStagger(items.length, { delay: baseDelay, columns: 4 })
-        break
-      case 'random':
-        delays = randomStagger(items.length, { minDelay: 0, maxDelay: baseDelay * 8 })
-        break
-    }
-
-    // Animate with delays
-    await Promise.all(
-      items.map((item, i) =>
-        new Promise<void>(resolve => {
-          setTimeout(() => {
-            spring(0, 1, {
-              onUpdate: (v) => {
-                item.style.opacity = String(v)
-                item.style.transform = `scale(${0.5 + v * 0.5})`
-              },
-              onComplete: resolve,
-            }).start()
-          }, delays[i])
-        })
-      )
-    )
-
-    setIsAnimating(false)
-  }
-
-  return (
-    <div className="glass rounded-2xl p-6 border border-white/10">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-teal-500/20 to-emerald-500/20 flex items-center justify-center">
-          <Grid3X3 className="w-5 h-5 text-teal-400" />
-        </div>
-        <div>
-          <h3 className="text-lg font-semibold text-white">Stagger Patterns</h3>
-          <p className="text-xs text-white/40">Advanced timing patterns</p>
-        </div>
-      </div>
-
-      <div
-        ref={gridRef}
-        className="grid grid-cols-4 gap-2 mb-4 bg-black/20 rounded-xl p-3"
-      >
-        {Array.from({ length: 16 }).map((_, i) => (
-          <div
-            key={i}
-            className="aspect-square bg-gradient-to-br from-teal-500 to-emerald-500 rounded-lg shadow-lg shadow-teal-500/20"
-            style={{ opacity: 1 }}
-          />
-        ))}
-      </div>
-
-      <div className="flex gap-1 mb-3 flex-wrap">
-        {patterns.map((p) => (
-          <button
-            key={p}
-            onClick={() => setPattern(p)}
-            className={`px-3 py-1 text-xs rounded-lg transition-colors capitalize ${
-              pattern === p
-                ? 'bg-teal-500/30 text-teal-300'
-                : 'bg-white/5 hover:bg-white/10 text-white/60'
-            }`}
-          >
-            {p}
-          </button>
-        ))}
-      </div>
-
-      <button
-        onClick={handleAnimate}
-        disabled={isAnimating}
-        className="w-full py-2 bg-teal-500/20 hover:bg-teal-500/30 disabled:opacity-50 text-teal-400 rounded-lg transition-colors flex items-center justify-center gap-2"
-      >
-        <Timer className="w-4 h-4" />
-        {isAnimating ? 'Animating...' : 'Animate Grid'}
-      </button>
-    </div>
-  )
-}
-
-// Physics Presets Demo - Semantic Spring Configurations
-function PhysicsPresetsDemo() {
-  const [selectedPreset, setSelectedPreset] = useState<string>('button')
-  const [selectedFeeling, setSelectedFeeling] = useState<string>('snappy')
-  const ballRef = useRef<HTMLDivElement>(null)
-  const springRef = useRef<ReturnType<typeof createSpringValue> | null>(null)
-
-  const presetCategories = {
-    'UI': ['button', 'toggle', 'checkbox', 'hover', 'focus'],
-    'Layout': ['pageTransition', 'modalEnter', 'sidebar', 'dropdown', 'toast'],
-    'Gestures': ['dragRelease', 'swipe', 'snap', 'rubberBand'],
-    'Natural': ['pendulum', 'jelly', 'elastic', 'heavy', 'light'],
-  }
-
-  const feelings = ['snappy', 'smooth', 'bouncy', 'heavy', 'light', 'elastic'] as const
-
-  const handlePresetClick = (preset: string) => {
-    setSelectedPreset(preset)
-    animateBall(getPhysicsPreset(preset as keyof typeof physicsPresets))
-  }
-
-  const handleFeelingClick = (feeling: typeof feelings[number]) => {
-    setSelectedFeeling(feeling)
-    animateBall(createFeeling(feeling))
-  }
-
-  const animateBall = (config: { stiffness: number; damping: number; mass: number }) => {
-    if (!ballRef.current) return
-
-    // Stop previous animation
-    if (springRef.current) {
-      springRef.current.stop()
-    }
-
-    // Create new spring with the preset config
-    springRef.current = createSpringValue(0, config)
-
-    // Subscribe to updates
-    springRef.current.subscribe((value) => {
-      if (ballRef.current) {
-        ballRef.current.style.transform = `translateX(${value * 100}px) scale(${1 + value * 0.2})`
-      }
-    })
-
-    // Animate to 1 then back to 0
-    springRef.current.set(1)
-    setTimeout(() => {
-      springRef.current?.set(0)
-    }, 500)
-  }
-
-  return (
-    <div className="glass rounded-2xl p-6 border border-white/10">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center">
-          <Gauge className="w-5 h-5 text-amber-400" />
-        </div>
-        <div>
-          <h3 className="text-lg font-semibold text-white">Physics Presets</h3>
-          <p className="text-xs text-white/40">40+ semantic configurations</p>
-        </div>
-      </div>
-
-      {/* Animation Preview */}
-      <div className="bg-black/20 rounded-xl p-4 mb-4 h-20 flex items-center">
-        <div
-          ref={ballRef}
-          className="w-12 h-12 rounded-full bg-gradient-to-r from-amber-400 to-orange-500 shadow-lg shadow-amber-500/30"
-        />
-      </div>
-
-      {/* Preset Categories */}
-      <div className="space-y-2 mb-4">
-        {Object.entries(presetCategories).map(([category, presets]) => (
-          <div key={category}>
-            <p className="text-xs text-white/40 mb-1">{category}</p>
-            <div className="flex gap-1 flex-wrap">
-              {presets.map((preset) => (
-                <button
-                  key={preset}
-                  onClick={() => handlePresetClick(preset)}
-                  className={`px-2 py-0.5 text-xs rounded transition-colors ${
-                    selectedPreset === preset
-                      ? 'bg-amber-500/30 text-amber-300'
-                      : 'bg-white/5 hover:bg-white/10 text-white/60'
-                  }`}
-                >
-                  {preset}
-                </button>
-              ))}
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Feelings */}
-      <p className="text-xs text-white/40 mb-1">Or use feelings:</p>
-      <div className="flex gap-1 flex-wrap">
-        {feelings.map((feeling) => (
-          <button
-            key={feeling}
-            onClick={() => handleFeelingClick(feeling)}
-            className={`px-2 py-0.5 text-xs rounded transition-colors capitalize ${
-              selectedFeeling === feeling
-                ? 'bg-orange-500/30 text-orange-300'
-                : 'bg-white/5 hover:bg-white/10 text-white/60'
-            }`}
-          >
-            {feeling}
-          </button>
-        ))}
-      </div>
-    </div>
-  )
-}
-
-// Variants System Demo - Declarative Animation States
-function VariantsDemo() {
-  const [variant, setVariant] = useState<'initial' | 'visible' | 'exit'>('initial')
-  const [presetName, setPresetName] = useState<keyof typeof variantPresets>('fadeInUp')
-
-  // Get current preset
-  const preset = variantPresets[presetName]
-
-  // List item component using useVariants
-  function ListItem({ index }: { index: number }) {
-    const { getDelay } = useStaggerChildren({ count: 4, staggerChildren: 100 })
-    const { values } = useVariants({
-      variants: {
-        initial: { opacity: 0, y: 20, scale: 0.9 },
-        visible: {
-          opacity: 1,
-          y: 0,
-          scale: 1,
-          transition: {
-            spring: { stiffness: 300, damping: 20 },
-            delay: getDelay(index)
-          }
-        },
-        exit: { opacity: 0, y: -10, scale: 0.95 }
-      },
-      animate: variant,
-      initial: 'initial'
-    })
-
-    return (
-      <div
-        className="px-4 py-3 bg-gradient-to-r from-violet-500/20 to-fuchsia-500/20 rounded-lg border border-violet-500/30"
-        style={{
-          opacity: values.opacity,
-          transform: `translateY(${values.y}px) scale(${values.scale})`
-        }}
-      >
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-violet-500/30 flex items-center justify-center">
-            <Sparkles className="w-4 h-4 text-violet-400" />
-          </div>
-          <span className="text-white/80 text-sm">Animated Item {index + 1}</span>
-        </div>
-      </div>
-    )
-  }
-
-  const presetOptions = ['fadeIn', 'fadeInUp', 'fadeInDown', 'scaleIn', 'popIn', 'slideUp'] as const
-
-  return (
-    <div className="glass rounded-2xl p-6 border border-white/10">
-      <div className="flex items-center gap-3 mb-6">
-        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500/20 to-fuchsia-500/20 flex items-center justify-center">
-          <Layers className="w-5 h-5 text-violet-400" />
-        </div>
-        <div>
-          <h3 className="text-lg font-semibold text-white">Variants System</h3>
-          <p className="text-xs text-white/40">Declarative animation states</p>
-        </div>
-      </div>
-
-      {/* Preview Box */}
-      <div className="bg-black/20 rounded-xl p-4 mb-4 min-h-[120px] flex items-center justify-center">
-        <VariantProvider variant={variant}>
-          <div className="space-y-2 w-full">
-            {[0, 1, 2, 3].map(i => (
-              <ListItem key={i} index={i} />
-            ))}
-          </div>
-        </VariantProvider>
-      </div>
-
-      {/* Preset Selector */}
-      <div className="flex gap-1 mb-3 flex-wrap">
-        {presetOptions.map((p) => (
-          <button
-            key={p}
-            onClick={() => setPresetName(p)}
-            className={`px-2 py-1 text-xs rounded-lg transition-colors ${
-              presetName === p
-                ? 'bg-violet-500/30 text-violet-300'
-                : 'bg-white/5 hover:bg-white/10 text-white/60'
-            }`}
-          >
-            {p}
-          </button>
-        ))}
-      </div>
-
-      {/* Controls */}
-      <div className="flex gap-2">
-        <button
-          onClick={() => setVariant('initial')}
-          className={`flex-1 py-2 rounded-lg transition-colors text-sm ${
-            variant === 'initial' ? 'bg-violet-500/30 text-violet-300' : 'bg-white/5 text-white/60 hover:bg-white/10'
-          }`}
-        >
-          Initial
-        </button>
-        <button
-          onClick={() => setVariant('visible')}
-          className={`flex-1 py-2 rounded-lg transition-colors text-sm ${
-            variant === 'visible' ? 'bg-violet-500/30 text-violet-300' : 'bg-white/5 text-white/60 hover:bg-white/10'
-          }`}
-        >
-          Visible
-        </button>
-        <button
-          onClick={() => setVariant('exit')}
-          className={`flex-1 py-2 rounded-lg transition-colors text-sm ${
-            variant === 'exit' ? 'bg-violet-500/30 text-violet-300' : 'bg-white/5 text-white/60 hover:bg-white/10'
-          }`}
-        >
-          Exit
-        </button>
-      </div>
-    </div>
-  )
-}
-
 // Elastic Pull-to-Refresh
 function PullToRefreshDemo() {
   const [isRefreshing, setIsRefreshing] = useState(false)
@@ -4007,10 +3503,13 @@ function ScrollProgressDemo() {
 // ============================================================================
 
 function InViewDemo() {
-  const { ref, isInView, progress } = useInView({
+  const { ref, inView, entry } = useInView({
     amount: 0.5,
     once: false,
   })
+
+  // Calculate visibility percentage from intersection ratio
+  const visibilityPercent = entry?.intersectionRatio ?? 0
 
   return (
     <div className="glass rounded-2xl p-6 border border-white/10">
@@ -4028,23 +3527,23 @@ function InViewDemo() {
         <div className="h-32" /> {/* Spacer */}
 
         <div
-          ref={ref}
+          ref={ref as React.RefObject<HTMLDivElement>}
           className={`
             p-6 rounded-xl border-2 transition-all duration-500
-            ${isInView
+            ${inView
               ? 'bg-gradient-to-r from-green-500/20 to-emerald-500/20 border-green-500/50 scale-100 opacity-100'
               : 'bg-black/30 border-white/10 scale-95 opacity-50'
             }
           `}
         >
           <div className="flex items-center gap-3">
-            <div className={`w-3 h-3 rounded-full ${isInView ? 'bg-green-500 animate-pulse' : 'bg-white/30'}`} />
+            <div className={`w-3 h-3 rounded-full ${inView ? 'bg-green-500 animate-pulse' : 'bg-white/30'}`} />
             <span className="text-white font-medium">
-              {isInView ? 'Element is visible!' : 'Scroll to reveal...'}
+              {inView ? 'Element is visible!' : 'Scroll to reveal...'}
             </span>
           </div>
           <div className="mt-3 text-xs text-white/50">
-            Visibility: {(progress * 100).toFixed(0)}%
+            Visibility: {(visibilityPercent * 100).toFixed(0)}%
           </div>
         </div>
 
@@ -4052,9 +3551,9 @@ function InViewDemo() {
       </div>
 
       <div className="flex items-center justify-center gap-4 mt-4">
-        <div className={`flex items-center gap-2 text-xs ${isInView ? 'text-green-400' : 'text-white/40'}`}>
-          <div className={`w-2 h-2 rounded-full ${isInView ? 'bg-green-500' : 'bg-white/30'}`} />
-          isInView: {String(isInView)}
+        <div className={`flex items-center gap-2 text-xs ${inView ? 'text-green-400' : 'text-white/40'}`}>
+          <div className={`w-2 h-2 rounded-full ${inView ? 'bg-green-500' : 'bg-white/30'}`} />
+          inView: {String(inView)}
         </div>
       </div>
     </div>
@@ -4333,300 +3832,1648 @@ function PresetsComparison() {
 }
 
 // ============================================================================
+// NEW FEATURE DEMOS - v1.3.0 Features
+// ============================================================================
+
+// Timeline API Demo
+function TimelineAPIDemo() {
+  const [progress, setProgress] = useState(0)
+  const [isPlaying, setIsPlaying] = useState(false)
+  const boxRefs = useRef<HTMLDivElement[]>([])
+  const timelineRef = useRef<ReturnType<typeof createTimeline> | null>(null)
+
+  const playTimeline = () => {
+    if (isPlaying) return
+    setIsPlaying(true)
+    setProgress(0)
+
+    const boxes = boxRefs.current.filter(Boolean)
+    if (boxes.length === 0) return
+
+    timelineRef.current = createTimeline({
+      onUpdate: (p) => setProgress(Math.round(p * 100)),
+      onComplete: () => setIsPlaying(false),
+    })
+
+    timelineRef.current
+      .to(boxes[0], { x: 200, opacity: 1, duration: 0.5 })
+      .to(boxes[1], { x: 200, opacity: 1, duration: 0.5 }, '-=0.3')
+      .to(boxes[2], { x: 200, opacity: 1, duration: 0.5 }, '-=0.3')
+
+    timelineRef.current.play()
+  }
+
+  const reverseTimeline = () => {
+    if (timelineRef.current) {
+      timelineRef.current.reverse()
+    }
+  }
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 flex items-center justify-center">
+            <Timer className="w-5 h-5 text-cyan-400" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-white">Timeline API</h3>
+            <p className="text-xs text-white/40">GSAP-style sequencing</p>
+          </div>
+        </div>
+        <span className="text-xs text-cyan-400 font-mono">{progress}%</span>
+      </div>
+      <div className="h-24 bg-black/20 rounded-xl p-4 mb-4 flex flex-col justify-center gap-2">
+        {[0, 1, 2].map((i) => (
+          <div
+            key={i}
+            ref={(el) => { if (el) boxRefs.current[i] = el }}
+            className="w-8 h-6 rounded bg-gradient-to-r from-cyan-400 to-blue-500"
+            style={{ opacity: 0.3 }}
+          />
+        ))}
+      </div>
+      <div className="flex gap-2">
+        <button
+          onClick={playTimeline}
+          disabled={isPlaying}
+          className="flex-1 py-2 bg-cyan-500/20 text-cyan-400 rounded-lg text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+        >
+          <Play className="w-4 h-4" /> Play
+        </button>
+        <button
+          onClick={reverseTimeline}
+          className="flex-1 py-2 bg-white/5 text-white/60 rounded-lg text-sm flex items-center justify-center gap-2"
+        >
+          <RotateCcw className="w-4 h-4" /> Reverse
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// SVG Morphing Demo
+function SVGMorphDemo() {
+  const [currentShape, setCurrentShape] = useState<'circle' | 'star' | 'heart'>('circle')
+
+  const shapePaths = {
+    circle: 'M50,10 a40,40 0 1,0 0,80 a40,40 0 1,0 0,-80',
+    star: 'M50,5 L61,40 L98,40 L68,62 L79,97 L50,75 L21,97 L32,62 L2,40 L39,40 Z',
+    heart: 'M50,88 C20,60 5,40 5,25 C5,10 20,5 35,15 C42,20 48,28 50,35 C52,28 58,20 65,15 C80,5 95,10 95,25 C95,40 80,60 50,88 Z',
+  }
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-pink-500/20 to-rose-500/20 flex items-center justify-center">
+          <Shapes className="w-5 h-5 text-pink-400" />
+        </div>
+        <div>
+          <h3 className="font-semibold text-white">SVG Morphing</h3>
+          <p className="text-xs text-white/40">Shape transitions</p>
+        </div>
+      </div>
+      <div className="h-32 bg-black/20 rounded-xl flex items-center justify-center mb-4">
+        <svg viewBox="0 0 100 100" className="w-24 h-24">
+          <path
+            d={shapePaths[currentShape]}
+            fill="url(#morphGradient)"
+            style={{ transition: 'all 0.5s ease-out' }}
+          />
+          <defs>
+            <linearGradient id="morphGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#ec4899" />
+              <stop offset="100%" stopColor="#f43f5e" />
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <div className="flex gap-2">
+        {(['circle', 'star', 'heart'] as const).map((shape) => (
+          <button
+            key={shape}
+            onClick={() => setCurrentShape(shape)}
+            className={`flex-1 py-2 rounded-lg text-sm capitalize transition-colors ${
+              currentShape === shape
+                ? 'bg-pink-500/30 text-pink-300'
+                : 'bg-white/5 hover:bg-white/10 text-white/60'
+            }`}
+          >
+            {shape}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// Variants System Demo
+function VariantsSystemDemo() {
+  const [variant, setVariant] = useState<'hidden' | 'visible' | 'hover'>('visible')
+
+  const variants = {
+    hidden: { opacity: 0, scale: 0.8, y: 20 },
+    visible: { opacity: 1, scale: 1, y: 0 },
+    hover: { opacity: 1, scale: 1.1, y: -5 },
+  }
+
+  const { values, setVariant: animateToVariant } = useVariants({
+    variants,
+    initial: 'hidden',
+    animate: variant,
+  })
+
+  const handleVariant = (v: 'hidden' | 'visible' | 'hover') => {
+    setVariant(v)
+    animateToVariant(v)
+  }
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 flex items-center justify-center">
+          <Layers className="w-5 h-5 text-emerald-400" />
+        </div>
+        <div>
+          <h3 className="font-semibold text-white">Variants System</h3>
+          <p className="text-xs text-white/40">Declarative animation states</p>
+        </div>
+      </div>
+      <div className="h-24 bg-black/20 rounded-xl flex items-center justify-center mb-4">
+        <div
+          className="w-16 h-16 rounded-xl bg-gradient-to-r from-emerald-400 to-teal-500 shadow-lg"
+          style={{
+            opacity: values.opacity ?? 1,
+            transform: `scale(${values.scale ?? 1}) translateY(${values.y ?? 0}px)`,
+          }}
+        />
+      </div>
+      <div className="flex gap-2">
+        {(['hidden', 'visible', 'hover'] as const).map((v) => (
+          <button
+            key={v}
+            onClick={() => handleVariant(v)}
+            className={`flex-1 py-2 rounded-lg text-sm capitalize transition-colors ${
+              variant === v
+                ? 'bg-emerald-500/30 text-emerald-300'
+                : 'bg-white/5 hover:bg-white/10 text-white/60'
+            }`}
+          >
+            {v}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// Physics Presets Demo
+function PhysicsPresetsDemo() {
+  const [preset, setPreset] = useState<'bouncy' | 'snappy' | 'smooth'>('bouncy')
+  const [isAnimating, setIsAnimating] = useState(false)
+  const boxRef = useRef<HTMLDivElement>(null)
+
+  const presetConfigs = {
+    bouncy: { stiffness: 400, damping: 10 },
+    snappy: { stiffness: 500, damping: 30 },
+    smooth: { stiffness: 100, damping: 20 },
+  }
+
+  const runAnimation = () => {
+    if (!boxRef.current || isAnimating) return
+    setIsAnimating(true)
+
+    const config = presetConfigs[preset]
+    const anim1 = spring(0, 150, {
+      ...config,
+      onUpdate: (value) => {
+        if (boxRef.current) {
+          boxRef.current.style.transform = `translateX(${value}px)`
+        }
+      },
+      onComplete: () => {
+        const anim2 = spring(150, 0, {
+          ...config,
+          onUpdate: (value) => {
+            if (boxRef.current) {
+              boxRef.current.style.transform = `translateX(${value}px)`
+            }
+          },
+          onComplete: () => {
+            setIsAnimating(false)
+          },
+        })
+        anim2.start()
+      },
+    })
+    anim1.start()
+  }
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center">
+          <Gauge className="w-5 h-5 text-amber-400" />
+        </div>
+        <div>
+          <h3 className="font-semibold text-white">Physics Presets</h3>
+          <p className="text-xs text-white/40">Pre-configured spring behaviors</p>
+        </div>
+      </div>
+      <div className="h-20 bg-black/20 rounded-xl flex items-center px-4 mb-4">
+        <div
+          ref={boxRef}
+          className="w-12 h-12 rounded-xl bg-gradient-to-r from-amber-400 to-orange-500 shadow-lg"
+        />
+      </div>
+      <div className="flex gap-2 mb-3">
+        {(['bouncy', 'snappy', 'smooth'] as const).map((p) => (
+          <button
+            key={p}
+            onClick={() => setPreset(p)}
+            className={`flex-1 py-1.5 rounded-lg text-xs capitalize transition-colors ${
+              preset === p
+                ? 'bg-amber-500/30 text-amber-300'
+                : 'bg-white/5 hover:bg-white/10 text-white/60'
+            }`}
+          >
+            {p}
+          </button>
+        ))}
+      </div>
+      <button
+        onClick={runAnimation}
+        disabled={isAnimating}
+        className="w-full py-2 bg-amber-500/20 text-amber-400 rounded-lg text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+      >
+        <Play className="w-4 h-4" /> Animate
+      </button>
+    </div>
+  )
+}
+
+// Stagger Patterns Demo
+function StaggerPatternsDemo() {
+  const [pattern, setPattern] = useState<'linear' | 'center' | 'wave'>('linear')
+  const [isAnimating, setIsAnimating] = useState(false)
+  const itemRefs = useRef<HTMLDivElement[]>([])
+
+  const runStagger = () => {
+    if (isAnimating) return
+    setIsAnimating(true)
+
+    const items = itemRefs.current.filter(Boolean)
+    const count = items.length
+
+    let delays: number[]
+    switch (pattern) {
+      case 'center':
+        delays = centerStagger({ count, delay: 0.08 })
+        break
+      case 'wave':
+        delays = waveStagger({ count, delay: 0.1, frequency: 1 })
+        break
+      default:
+        delays = linearStagger({ count, delay: 0.05 })
+    }
+
+    // Reset
+    items.forEach((item) => {
+      item.style.transform = 'scale(0.5)'
+      item.style.opacity = '0.3'
+    })
+
+    // Animate with stagger
+    items.forEach((item, i) => {
+      setTimeout(() => {
+        animate(item, { scale: 1, opacity: 1 }, { stiffness: 300, damping: 15 })
+      }, delays[i] * 1000)
+    })
+
+    setTimeout(() => setIsAnimating(false), 1000)
+  }
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 flex items-center justify-center">
+          <Grid3X3 className="w-5 h-5 text-violet-400" />
+        </div>
+        <div>
+          <h3 className="font-semibold text-white">Stagger Patterns</h3>
+          <p className="text-xs text-white/40">Orchestrated animation delays</p>
+        </div>
+      </div>
+      <div className="h-16 bg-black/20 rounded-xl flex items-center justify-center gap-2 mb-4">
+        {Array.from({ length: 8 }).map((_, i) => (
+          <div
+            key={i}
+            ref={(el) => { if (el) itemRefs.current[i] = el }}
+            className="w-6 h-10 rounded bg-gradient-to-b from-violet-400 to-purple-500"
+          />
+        ))}
+      </div>
+      <div className="flex gap-2 mb-3">
+        {(['linear', 'center', 'wave'] as const).map((p) => (
+          <button
+            key={p}
+            onClick={() => setPattern(p)}
+            className={`flex-1 py-1.5 rounded-lg text-xs capitalize transition-colors ${
+              pattern === p
+                ? 'bg-violet-500/30 text-violet-300'
+                : 'bg-white/5 hover:bg-white/10 text-white/60'
+            }`}
+          >
+            {p}
+          </button>
+        ))}
+      </div>
+      <button
+        onClick={runStagger}
+        disabled={isAnimating}
+        className="w-full py-2 bg-violet-500/20 text-violet-400 rounded-lg text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+      >
+        <Play className="w-4 h-4" /> Run
+      </button>
+    </div>
+  )
+}
+
+// Reorder List Demo
+function ReorderListDemo() {
+  const [items, setItems] = useState(['Apple', 'Banana', 'Cherry', 'Date'])
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500/20 to-indigo-500/20 flex items-center justify-center">
+          <GripVertical className="w-5 h-5 text-blue-400" />
+        </div>
+        <div>
+          <h3 className="font-semibold text-white">Reorder Component</h3>
+          <p className="text-xs text-white/40">Drag to reorder items</p>
+        </div>
+      </div>
+      <Reorder.Group
+        axis="y"
+        values={items}
+        onReorder={setItems}
+        className="space-y-2"
+      >
+        {items.map((item) => (
+          <Reorder.Item
+            key={item}
+            value={item}
+            className="flex items-center gap-3 p-3 bg-white/5 rounded-xl cursor-grab active:cursor-grabbing"
+          >
+            <GripVertical className="w-4 h-4 text-white/40" />
+            <span className="text-white/80">{item}</span>
+          </Reorder.Item>
+        ))}
+      </Reorder.Group>
+    </div>
+  )
+}
+
+// Spring Text Demo
+function SpringTextDemo() {
+  const [count, setCount] = useState(1234)
+  const [text, setText] = useState('')
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-rose-500/20 to-pink-500/20 flex items-center justify-center">
+          <span className="text-lg font-bold text-rose-400">Aa</span>
+        </div>
+        <div>
+          <h3 className="font-semibold text-white">Text Animations</h3>
+          <p className="text-xs text-white/40">SpringNumber & TypeWriter</p>
+        </div>
+      </div>
+      <div className="space-y-4">
+        <div className="bg-black/20 rounded-xl p-4">
+          <p className="text-xs text-white/40 mb-2">SpringNumber</p>
+          <SpringNumber
+            value={count}
+            className="text-3xl font-bold text-rose-400"
+          />
+          <div className="flex gap-2 mt-3">
+            <button
+              onClick={() => setCount((c) => c + 100)}
+              className="px-3 py-1 bg-white/5 rounded text-xs text-white/60"
+            >
+              +100
+            </button>
+            <button
+              onClick={() => setCount((c) => Math.max(0, c - 100))}
+              className="px-3 py-1 bg-white/5 rounded text-xs text-white/60"
+            >
+              -100
+            </button>
+          </div>
+        </div>
+        <div className="bg-black/20 rounded-xl p-4">
+          <p className="text-xs text-white/40 mb-2">TypeWriter</p>
+          <TypeWriter
+            speed={50}
+            className="text-white/80"
+          >
+            SpringKit makes animations easy!
+          </TypeWriter>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Tilt Card Demo
+function TiltCardDemo() {
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-sky-500/20 to-cyan-500/20 flex items-center justify-center">
+          <Box className="w-5 h-5 text-sky-400" />
+        </div>
+        <div>
+          <h3 className="font-semibold text-white">3D Tilt Card</h3>
+          <p className="text-xs text-white/40">Mouse-tracking perspective</p>
+        </div>
+      </div>
+      <div className="flex justify-center">
+        <TiltCard
+          className="w-48 h-32 bg-gradient-to-br from-sky-400 to-cyan-500 rounded-xl flex items-center justify-center cursor-pointer shadow-xl"
+          maxTilt={15}
+          scale={1.05}
+        >
+          <span className="text-white font-bold text-lg">Hover Me!</span>
+        </TiltCard>
+      </div>
+      <p className="text-center text-xs text-white/40 mt-4">
+        Move your mouse over the card
+      </p>
+    </div>
+  )
+}
+
+// Magnetic Button Demo
+function MagneticButtonDemo() {
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-fuchsia-500/20 to-pink-500/20 flex items-center justify-center">
+          <Atom className="w-5 h-5 text-fuchsia-400" />
+        </div>
+        <div>
+          <h3 className="font-semibold text-white">Magnetic Effect</h3>
+          <p className="text-xs text-white/40">Cursor attraction</p>
+        </div>
+      </div>
+      <div className="flex justify-center gap-4 py-8">
+        <Magnetic strength={0.3}>
+          <button className="px-6 py-3 bg-gradient-to-r from-fuchsia-500 to-pink-500 text-white font-medium rounded-xl shadow-lg">
+            Magnetic
+          </button>
+        </Magnetic>
+        <Magnetic strength={0.5}>
+          <div className="w-12 h-12 bg-gradient-to-r from-violet-500 to-purple-500 rounded-full flex items-center justify-center cursor-pointer shadow-lg">
+            <Heart className="w-6 h-6 text-white" />
+          </div>
+        </Magnetic>
+      </div>
+      <p className="text-center text-xs text-white/40">
+        Move cursor near buttons to see attraction
+      </p>
+    </div>
+  )
+}
+
+// useAnimate Hook Demo
+function UseAnimateDemo() {
+  const [scope, animate] = useAnimate()
+  const [isAnimating, setIsAnimating] = useState(false)
+
+  const runAnimation = async () => {
+    if (isAnimating) return
+    setIsAnimating(true)
+
+    await animate('.box', { scale: 1.2, rotate: 180 }, { duration: 0.3 })
+    await animate('.box', { scale: 1, rotate: 360 }, { duration: 0.3 })
+    await animate('.box', { rotate: 0 }, { duration: 0.2 })
+
+    setIsAnimating(false)
+  }
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-lime-500/20 to-green-500/20 flex items-center justify-center">
+          <Cpu className="w-5 h-5 text-lime-400" />
+        </div>
+        <div>
+          <h3 className="font-semibold text-white">useAnimate Hook</h3>
+          <p className="text-xs text-white/40">Imperative animation control</p>
+        </div>
+      </div>
+      <div ref={scope} className="h-24 bg-black/20 rounded-xl flex items-center justify-center mb-4">
+        <div className="box w-14 h-14 rounded-xl bg-gradient-to-r from-lime-400 to-green-500 shadow-lg" />
+      </div>
+      <button
+        onClick={runAnimation}
+        disabled={isAnimating}
+        className="w-full py-2 bg-lime-500/20 text-lime-400 rounded-lg text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+      >
+        <Play className="w-4 h-4" /> Run Sequence
+      </button>
+    </div>
+  )
+}
+
+// Momentum/Elastic Demo
+const MOMENTUM_CODE = `import { useMomentum, useMotionValueState } from '@oxog/springkit/react'
+
+function ThrowableCard() {
+  const { value, push, set } = useMomentum({
+    friction: 0.92,           // Friction coefficient (0.9-0.99)
+    bounds: { min: 0, max: 200 },  // Movement bounds
+  })
+  const x = useMotionValueState(value!) ?? 0
+
+  const handleDragEnd = (velocity) => {
+    if (Math.abs(velocity) > 0.5) {
+      push(velocity)  // Apply momentum on release
+    }
+  }
+
+  return (
+    <div
+      style={{ transform: \`translateX(\${x}px)\` }}
+      onMouseDown={startDrag}
+      onMouseUp={() => handleDragEnd(trackedVelocity)}
+    >
+      Drag me!
+    </div>
+  )
+}`
+
+function MomentumDemo() {
+  const { value, push, set } = useMomentum({
+    friction: 0.92,
+    bounds: { min: 0, max: 200 },
+  })
+  const x = useMotionValueState(value!) ?? 0
+  const isDragging = useRef(false)
+  const lastX = useRef(0)
+  const velocityTracker = useRef(0)
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-red-500/20 to-orange-500/20 flex items-center justify-center">
+            <Rocket className="w-5 h-5 text-red-400" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-white">Momentum Physics</h3>
+            <p className="text-xs text-white/40">Friction-based deceleration</p>
+          </div>
+        </div>
+        <CodeViewer code={MOMENTUM_CODE} title="useMomentum Hook" />
+      </div>
+      <div className="h-20 bg-black/20 rounded-xl flex items-center px-4 mb-4 overflow-hidden relative">
+        <div
+          className="w-12 h-12 rounded-xl bg-gradient-to-r from-red-400 to-orange-500 shadow-lg cursor-grab active:cursor-grabbing"
+          style={{ transform: `translateX(${x}px)` }}
+          onMouseDown={(e) => {
+            isDragging.current = true
+            lastX.current = e.clientX
+            velocityTracker.current = 0
+
+            const handleMove = (ev: MouseEvent) => {
+              const dx = ev.clientX - lastX.current
+              velocityTracker.current = dx * 0.5 // Track velocity
+              const newX = Math.max(0, Math.min(200, (value?.get() ?? 0) + dx))
+              set(newX)
+              lastX.current = ev.clientX
+            }
+
+            const handleUp = () => {
+              isDragging.current = false
+              // Apply momentum on release
+              if (Math.abs(velocityTracker.current) > 0.5) {
+                push(velocityTracker.current)
+              }
+              window.removeEventListener('mousemove', handleMove)
+              window.removeEventListener('mouseup', handleUp)
+            }
+
+            window.addEventListener('mousemove', handleMove)
+            window.addEventListener('mouseup', handleUp)
+          }}
+        />
+      </div>
+      <p className="text-center text-xs text-white/40">
+        Drag and release to see momentum
+      </p>
+    </div>
+  )
+}
+
+// Bouncing Ball Demo - useBounce hook
+const BOUNCE_CODE = `import { useBounce, useMotionValueState } from '@oxog/springkit/react'
+
+function BouncingBall() {
+  const { value, drop } = useBounce({
+    gravity: 0.8,
+    floor: 100,
+    ceiling: 8,
+    restitution: 0.7,  // Bounce factor
+    dampening: 0.02,   // Air resistance
+  })
+  const y = useMotionValueState(value!) ?? 8
+
+  return (
+    <div className="container" onClick={() => drop(8)}>
+      <div className="ball" style={{ top: \`\${y}px\` }} />
+    </div>
+  )
+}`
+
+function BouncingBallDemo() {
+  const { value, drop } = useBounce({
+    gravity: 0.8,
+    floor: 100,
+    ceiling: 8,
+    restitution: 0.7,
+    dampening: 0.02,
+  })
+  const y = useMotionValueState(value!) ?? 8
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-green-500/20 to-emerald-500/20 flex items-center justify-center">
+            <Target className="w-5 h-5 text-green-400" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-white">useBounce Hook</h3>
+            <p className="text-xs text-white/40">Gravity + bounce physics</p>
+          </div>
+        </div>
+        <CodeViewer code={BOUNCE_CODE} title="useBounce Hook" />
+      </div>
+      <div
+        className="h-36 bg-black/20 rounded-xl relative cursor-pointer overflow-hidden"
+        onClick={() => drop(8)}
+      >
+        <div
+          className="absolute left-1/2 -translate-x-1/2 w-8 h-8 rounded-full bg-gradient-to-br from-green-400 to-emerald-500 shadow-lg shadow-green-500/30"
+          style={{ top: `${y}px` }}
+        />
+        <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-green-500/50 to-emerald-500/50" />
+      </div>
+      <p className="text-center text-xs text-white/40 mt-3">
+        Click to drop the ball
+      </p>
+    </div>
+  )
+}
+
+// Elastic Rubber Band Demo - useElastic hook
+const ELASTIC_CODE = `import { useElastic, useMotionValueState } from '@oxog/springkit/react'
+
+function RubberBand() {
+  const { value, stretch, release } = useElastic({
+    elasticity: 0.6,     // Stretch factor
+    maxStretch: 80,      // Maximum stretch distance
+    spring: { stiffness: 400, damping: 15 },
+  })
+  const offset = useMotionValueState(value!) ?? 0
+
+  return (
+    <div
+      onMouseMove={(e) => stretch(e.clientY - startY)}
+      onMouseUp={() => release()}
+    >
+      <div style={{ height: \`\${20 + offset}px\` }} /> {/* Band */}
+      <div onMouseDown={() => startY = e.clientY}> {/* Handle */}
+        Drag me!
+      </div>
+    </div>
+  )
+}`
+
+function ElasticBandDemo() {
+  const { value, stretch, release } = useElastic({
+    elasticity: 0.6,
+    maxStretch: 80,
+    spring: { stiffness: 400, damping: 15 },
+  })
+  const offset = useMotionValueState(value!) ?? 0
+  const isDragging = useRef(false)
+  const startY = useRef(0)
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-yellow-500/20 to-orange-500/20 flex items-center justify-center">
+            <Zap className="w-5 h-5 text-yellow-400" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-white">useElastic Hook</h3>
+            <p className="text-xs text-white/40">Rubber band resistance</p>
+          </div>
+        </div>
+        <CodeViewer code={ELASTIC_CODE} title="useElastic Hook" />
+      </div>
+      <div
+        className="h-36 bg-black/20 rounded-xl relative flex flex-col items-center pt-4 select-none"
+        onMouseMove={(e) => {
+          if (!isDragging.current) return
+          const delta = e.clientY - startY.current
+          stretch(Math.max(0, delta))
+        }}
+        onMouseUp={() => {
+          if (isDragging.current) {
+            isDragging.current = false
+            release()
+          }
+        }}
+        onMouseLeave={() => {
+          if (isDragging.current) {
+            isDragging.current = false
+            release()
+          }
+        }}
+      >
+        {/* Anchor point */}
+        <div className="w-4 h-4 rounded-full bg-yellow-500/50 border-2 border-yellow-400" />
+        {/* Elastic band */}
+        <div
+          className="w-1 bg-gradient-to-b from-yellow-400 to-orange-500 transition-none"
+          style={{ height: `${20 + offset}px` }}
+        />
+        {/* Draggable ball */}
+        <div
+          className="w-10 h-10 rounded-full bg-gradient-to-br from-yellow-400 to-orange-500 shadow-lg shadow-yellow-500/30 cursor-grab active:cursor-grabbing flex items-center justify-center z-10"
+          onMouseDown={(e) => {
+            e.preventDefault()
+            isDragging.current = true
+            startY.current = e.clientY
+          }}
+        >
+          <ArrowRight className="w-4 h-4 text-white rotate-90" />
+        </div>
+      </div>
+      <p className="text-center text-xs text-white/40 mt-3">
+        Drag down and release
+      </p>
+    </div>
+  )
+}
+
+// 2D Gravity Demo - useGravity hook
+const GRAVITY_CODE = `import { useGravity, useMotionValueState } from '@oxog/springkit/react'
+
+function GravityBall() {
+  const { x, y, launch, setPosition, start } = useGravity({
+    gravity: { x: 0, y: 0.5 },  // Gravity vector
+    drag: 0.01,                  // Air resistance
+    bounds: { left: 0, right: 170, top: 0, bottom: 108 },
+    bounciness: 0.6,             // Bounce factor
+  })
+  const posX = useMotionValueState(x!) ?? 80
+  const posY = useMotionValueState(y!) ?? 50
+
+  useEffect(() => {
+    setPosition({ x: 80, y: 20 })
+    start()  // Start simulation
+  }, [])
+
+  const handleClick = (e) => {
+    const rect = containerRef.current.getBoundingClientRect()
+    setPosition({ x: e.clientX - rect.left, y: e.clientY - rect.top })
+    launch({ x: Math.random() * 10 - 5, y: -10 })  // Random horizontal, upward
+  }
+
+  return (
+    <div onClick={handleClick}>
+      <div style={{ left: posX, top: posY }} />
+    </div>
+  )
+}`
+
+function GravityDemo() {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const { x, y, launch, setPosition, start } = useGravity({
+    gravity: { x: 0, y: 0.5 },
+    drag: 0.01,
+    bounds: { left: 0, right: 170, top: 0, bottom: 108 },
+    bounciness: 0.6,
+  })
+  const posX = useMotionValueState(x!) ?? 80
+  const posY = useMotionValueState(y!) ?? 50
+
+  // Start gravity simulation on mount
+  useEffect(() => {
+    setPosition({ x: 80, y: 20 })
+    start()
+  }, [])
+
+  const handleClick = (e: React.MouseEvent) => {
+    if (!containerRef.current) return
+    const rect = containerRef.current.getBoundingClientRect()
+    const clickX = e.clientX - rect.left
+    const clickY = e.clientY - rect.top
+    setPosition({ x: Math.max(0, Math.min(170, clickX - 12)), y: Math.max(0, Math.min(108, clickY - 12)) })
+    launch({ x: (Math.random() - 0.5) * 10, y: -10 })
+  }
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500/20 to-indigo-500/20 flex items-center justify-center">
+            <Globe className="w-5 h-5 text-blue-400" />
+          </div>
+          <div>
+            <h3 className="font-semibold text-white">useGravity Hook</h3>
+            <p className="text-xs text-white/40">2D physics simulation</p>
+          </div>
+        </div>
+        <CodeViewer code={GRAVITY_CODE} title="useGravity Hook" />
+      </div>
+      <div
+        ref={containerRef}
+        className="h-36 bg-black/20 rounded-xl relative cursor-crosshair overflow-hidden"
+        onClick={handleClick}
+      >
+        <div
+          className="absolute w-6 h-6 rounded-full bg-gradient-to-br from-blue-400 to-indigo-500 shadow-lg shadow-blue-500/30"
+          style={{ left: `${posX}px`, top: `${posY}px` }}
+        />
+        <div className="absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r from-blue-500/50 to-indigo-500/50" />
+      </div>
+      <p className="text-center text-xs text-white/40 mt-3">
+        Click anywhere to launch
+      </p>
+    </div>
+  )
+}
+
+// Cursor Tracker Demo - usePointer hook
+function PointerTrackerDemo() {
+  const containerRef = useRef<HTMLDivElement>(null)
+  const { x, y, isHovering } = usePointer({
+    target: containerRef,
+    smooth: 0.15,
+    hoverOnly: true,
+  })
+  const posX = useMotionValueState(x!) ?? 0
+  const posY = useMotionValueState(y!) ?? 0
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500/20 to-pink-500/20 flex items-center justify-center">
+          <MousePointer2 className="w-5 h-5 text-purple-400" />
+        </div>
+        <div>
+          <h3 className="font-semibold text-white">usePointer Hook</h3>
+          <p className="text-xs text-white/40">Smooth cursor tracking</p>
+        </div>
+      </div>
+      <div
+        ref={containerRef}
+        className="h-36 bg-black/20 rounded-xl relative overflow-hidden"
+      >
+        {isHovering && (
+          <>
+            <div
+              className="absolute w-16 h-16 rounded-full bg-gradient-to-br from-purple-400/30 to-pink-500/30 blur-xl pointer-events-none"
+              style={{ left: `${posX - 32}px`, top: `${posY - 32}px` }}
+            />
+            <div
+              className="absolute w-4 h-4 rounded-full bg-gradient-to-br from-purple-400 to-pink-500 pointer-events-none shadow-lg shadow-purple-500/50"
+              style={{ left: `${posX - 8}px`, top: `${posY - 8}px` }}
+            />
+          </>
+        )}
+        <div className="absolute inset-0 flex items-center justify-center text-white/30 text-sm">
+          {isHovering ? `${Math.round(posX)}, ${Math.round(posY)}` : 'Hover here'}
+        </div>
+      </div>
+      <p className="text-center text-xs text-white/40 mt-3">
+        Move mouse with smoothing
+      </p>
+    </div>
+  )
+}
+
+// SplitText Animation Demo
+function SplitTextDemo() {
+  const [key, setKey] = useState(0)
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500/20 to-teal-500/20 flex items-center justify-center">
+          <Sparkles className="w-5 h-5 text-cyan-400" />
+        </div>
+        <div>
+          <h3 className="font-semibold text-white">SplitText Component</h3>
+          <p className="text-xs text-white/40">Per-character animation</p>
+        </div>
+      </div>
+      <div className="h-20 bg-black/20 rounded-xl flex items-center justify-center overflow-hidden">
+        <SplitText
+          key={key}
+          mode="characters"
+          className="text-2xl font-bold"
+          render={(char, index, total) => (
+            <span
+              className="inline-block text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-teal-400"
+              style={{
+                animation: `fadeInUp 0.5s ease-out ${index * 0.05}s both`,
+              }}
+            >
+              {char === ' ' ? '\u00A0' : char}
+            </span>
+          )}
+        >
+          SpringKit!
+        </SplitText>
+      </div>
+      <style>{`
+        @keyframes fadeInUp {
+          from { opacity: 0; transform: translateY(20px) rotate(-10deg); }
+          to { opacity: 1; transform: translateY(0) rotate(0deg); }
+        }
+      `}</style>
+      <button
+        onClick={() => setKey(k => k + 1)}
+        className="w-full mt-4 py-2 bg-cyan-500/20 text-cyan-400 rounded-lg text-sm flex items-center justify-center gap-2"
+      >
+        <RotateCcw className="w-4 h-4" /> Replay
+      </button>
+    </div>
+  )
+}
+
+// Chain Animation Demo - Sequential spring steps
+function ChainAnimationDemo() {
+  const [step, setStep] = useState(0)
+  const [isPlaying, setIsPlaying] = useState(false)
+
+  const animations = [
+    { scale: 1, rotate: 0 },
+    { scale: 1.2, rotate: 0 },
+    { scale: 1, rotate: 180 },
+    { scale: 1.1, rotate: 360 },
+    { scale: 1, rotate: 360 },
+  ]
+
+  // useSpring returns plain numbers, not MotionValues
+  const { scale, rotate } = useSpring({
+    scale: animations[step]?.scale ?? 1,
+    rotate: animations[step]?.rotate ?? 0,
+  }, { stiffness: 300, damping: 20 })
+
+  const play = () => {
+    if (isPlaying) return
+    setIsPlaying(true)
+    setStep(1)
+
+    let currentStep = 1
+    const runNextStep = () => {
+      if (currentStep < animations.length - 1) {
+        currentStep++
+        setStep(currentStep)
+        setTimeout(runNextStep, 400)
+      } else {
+        setIsPlaying(false)
+      }
+    }
+    setTimeout(runNextStep, 400)
+  }
+
+  const reset = () => {
+    setIsPlaying(false)
+    setStep(0)
+  }
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-4">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500/20 to-yellow-500/20 flex items-center justify-center">
+          <Layers className="w-5 h-5 text-amber-400" />
+        </div>
+        <div>
+          <h3 className="font-semibold text-white">Chain Animation</h3>
+          <p className="text-xs text-white/40">Sequential spring steps</p>
+        </div>
+        <span className="ml-auto text-xs text-white/40">
+          Step: {Math.max(1, step)}/4
+        </span>
+      </div>
+      <div className="h-24 bg-black/20 rounded-xl flex items-center justify-center">
+        <div
+          className="w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-400 to-yellow-500 shadow-lg"
+          style={{
+            transform: `scale(${scale}) rotate(${rotate}deg)`,
+          }}
+        />
+      </div>
+      <div className="flex gap-2 mt-4">
+        <button
+          onClick={play}
+          disabled={isPlaying}
+          className="flex-1 py-2 bg-amber-500/20 text-amber-400 rounded-lg text-sm flex items-center justify-center gap-2 disabled:opacity-50"
+        >
+          <Play className="w-4 h-4" /> Play Chain
+        </button>
+        <button
+          onClick={reset}
+          className="px-4 py-2 bg-white/5 text-white/60 rounded-lg text-sm"
+        >
+          <RotateCcw className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ============================================================================
+// SECTION COMPONENTS - Organize demos by category
+// ============================================================================
+
+function NewFeaturesSection() {
+  return (
+    <AnimatedDiv
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.15 }}
+      className="mb-12"
+    >
+      <div className="flex items-center gap-3 mb-2">
+        <h2 className="text-2xl font-bold text-white">New in v1.3.0</h2>
+        <span className="px-2 py-0.5 bg-gradient-to-r from-orange-500 to-amber-500 text-white text-xs font-bold rounded-full">NEW</span>
+      </div>
+      <p className="text-white/40 mb-6">Latest features: Timeline API, SVG Morphing, Variants System, Stagger Patterns, Physics Presets</p>
+
+      <div className="grid lg:grid-cols-4 gap-6">
+        {/* Row 1: v1.2 features */}
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16 }}>
+          <KeyframesDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.17 }}>
+          <SVGPathDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18 }}>
+          <FLIPLayoutDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.19 }}>
+          <GesturePropsDemo />
+        </AnimatedDiv>
+        {/* Row 2: v1.3 features */}
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.20 }}>
+          <TimelineAPIDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.21 }}>
+          <SVGMorphDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.22 }}>
+          <VariantsSystemDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.23 }}>
+          <PhysicsPresetsDemo />
+        </AnimatedDiv>
+        {/* Row 3: More v1.3 features */}
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.24 }}>
+          <StaggerPatternsDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
+          <ReorderListDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.26 }}>
+          <SpringTextDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.27 }}>
+          <TiltCardDemo />
+        </AnimatedDiv>
+        {/* Row 4: Physics & Advanced */}
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.28 }}>
+          <MagneticButtonDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.29 }}>
+          <UseAnimateDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.30 }}>
+          <MomentumDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.31 }}>
+          <ChainAnimationDemo />
+        </AnimatedDiv>
+        {/* Row 5: More Physics Hooks */}
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.32 }}>
+          <BouncingBallDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.33 }}>
+          <ElasticBandDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.34 }}>
+          <GravityDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
+          <PointerTrackerDemo />
+        </AnimatedDiv>
+        {/* Row 6: Text & Utilities */}
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.36 }}>
+          <SplitTextDemo />
+        </AnimatedDiv>
+      </div>
+    </AnimatedDiv>
+  )
+}
+
+function VisualEffectsSection() {
+  return (
+    <AnimatedDiv
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.2 }}
+      className="mb-12"
+    >
+      <h2 className="text-2xl font-bold text-white mb-2">Visual Effects</h2>
+      <p className="text-white/40 mb-6">Stunning visual demonstrations of spring physics</p>
+
+      <div className="grid lg:grid-cols-3 gap-6">
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
+          <ParticleExplosion />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+          <GravitySimulation />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
+          <WaveAnimation />
+        </AnimatedDiv>
+      </div>
+    </AnimatedDiv>
+  )
+}
+
+function SpectacularEffectsSection() {
+  return (
+    <AnimatedDiv
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.35 }}
+      className="mb-12"
+    >
+      <h2 className="text-2xl font-bold text-white mb-2">Spectacular Effects</h2>
+      <p className="text-white/40 mb-6">Eye-catching animations that showcase SpringKit's power</p>
+
+      <div className="grid lg:grid-cols-3 gap-6">
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.36 }}>
+          <LiquidButtonDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.37 }}>
+          <OdometerDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.38 }}>
+          <BouncyCardsDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.39 }}>
+          <AnimatedTabsDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.395 }}>
+          <FloatingActionDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.398 }}>
+          <PullToRefreshDemo />
+        </AnimatedDiv>
+      </div>
+    </AnimatedDiv>
+  )
+}
+
+function UIComponentsSection() {
+  return (
+    <AnimatedDiv
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.4 }}
+      className="mb-12"
+    >
+      <h2 className="text-2xl font-bold text-white mb-2">Real-World UI Components</h2>
+      <p className="text-white/40 mb-6">Production-ready animated components for your apps</p>
+
+      <div className="grid lg:grid-cols-3 gap-6">
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.42 }}>
+          <CardStackDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.44 }}>
+          <FlipCardDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.46 }}>
+          <NotificationDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.48 }}>
+          <ProgressRingDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
+          <ElasticMenuDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.52 }}>
+          <ToggleSwitchDemo />
+        </AnimatedDiv>
+      </div>
+    </AnimatedDiv>
+  )
+}
+
+function InteractiveControlsSection() {
+  return (
+    <AnimatedDiv
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.55 }}
+      className="mb-12"
+    >
+      <h2 className="text-2xl font-bold text-white mb-2">Interactive Controls</h2>
+      <p className="text-white/40 mb-6">Click, drag, and hover to experience spring physics</p>
+
+      <div className="grid lg:grid-cols-3 gap-6">
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.57 }}>
+          <MorphingShapes />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.59 }}>
+          <MagneticButtonsDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.61 }}>
+          <IconCarousel />
+        </AnimatedDiv>
+      </div>
+    </AnimatedDiv>
+  )
+}
+
+function AdvancedHooksSection() {
+  return (
+    <AnimatedDiv
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.58 }}
+      className="mb-12"
+    >
+      <h2 className="text-2xl font-bold text-white mb-2">Advanced Hooks</h2>
+      <p className="text-white/40 mb-6">High-performance React hooks for complex animations</p>
+
+      <div className="grid lg:grid-cols-2 gap-6">
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.59 }}>
+          <MotionValueDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.60 }}>
+          <ScrollProgressDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.61 }}>
+          <InViewDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.62 }}>
+          <GestureHooksDemo />
+        </AnimatedDiv>
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.63 }} className="lg:col-span-2">
+          <ReducedMotionDemo />
+        </AnimatedDiv>
+      </div>
+    </AnimatedDiv>
+  )
+}
+
+function CoreFeaturesSection() {
+  return (
+    <AnimatedDiv
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ delay: 0.65 }}
+      className="mb-12"
+    >
+      <h2 className="text-2xl font-bold text-white mb-2">Core Features</h2>
+      <p className="text-white/40 mb-6">Essential SpringKit functionality in action</p>
+
+      <div className="grid lg:grid-cols-2 gap-6">
+        <AnimatedDiv
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.65 }}
+          className="lg:col-span-2"
+        >
+          <PhysicsVisualizer />
+        </AnimatedDiv>
+
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7 }}>
+          <TrailDemo />
+        </AnimatedDiv>
+
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.75 }}>
+          <OrchestrationDemo />
+        </AnimatedDiv>
+
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.8 }}>
+          <AdvancedDragDemo />
+        </AnimatedDiv>
+
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.85 }}>
+          <DecayDemo />
+        </AnimatedDiv>
+
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.87 }}>
+          <BallDropDemo />
+        </AnimatedDiv>
+
+        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.88 }}>
+          <AnimatePresenceDemo />
+        </AnimatedDiv>
+
+        <AnimatedDiv
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.9 }}
+          className="lg:col-span-2"
+        >
+          <PresetsComparison />
+        </AnimatedDiv>
+
+        <AnimatedDiv
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.95 }}
+          className="lg:col-span-2"
+        >
+          <LibraryComparison />
+        </AnimatedDiv>
+      </div>
+    </AnimatedDiv>
+  )
+}
+
+// ============================================================================
+// SPRINGKIT VS FRAMER MOTION COMPARISON
+// ============================================================================
+
+function LibraryComparison() {
+  const features = [
+    { category: 'Core Animation', features: [
+      { name: 'Spring Physics Engine', springkit: true, framer: true, notes: 'Both use spring physics' },
+      { name: 'Decay/Inertia Animation', springkit: true, framer: true, notes: '' },
+      { name: 'Keyframe Animation', springkit: true, framer: true, notes: '' },
+      { name: 'Timeline API', springkit: true, framer: false, notes: 'GSAP-like timeline sequencing' },
+      { name: 'Physics Presets (20+)', springkit: true, framer: false, notes: 'Material, Bounce, Wobbly, etc.' },
+    ]},
+    { category: 'Advanced Physics', features: [
+      { name: 'useBounce (Gravity Simulation)', springkit: true, framer: false, notes: 'Real gravity + restitution' },
+      { name: 'useElastic (Rubber Band)', springkit: true, framer: false, notes: 'Stretch resistance physics' },
+      { name: 'useGravity (2D Physics)', springkit: true, framer: false, notes: 'Full 2D physics with bounds' },
+      { name: 'useMomentum (Inertial)', springkit: true, framer: false, notes: 'Friction-based deceleration' },
+      { name: 'useChain (Sequence Steps)', springkit: true, framer: false, notes: 'Multi-step animations' },
+    ]},
+    { category: 'Stagger Patterns', features: [
+      { name: 'Linear/Reverse Stagger', springkit: true, framer: true, notes: '' },
+      { name: 'Center/Edge Stagger', springkit: true, framer: false, notes: 'From center outward' },
+      { name: 'Grid Stagger', springkit: true, framer: false, notes: '2D grid patterns' },
+      { name: 'Wave Stagger', springkit: true, framer: false, notes: 'Sine wave timing' },
+      { name: 'Spiral Stagger', springkit: true, framer: false, notes: 'Spiral pattern' },
+    ]},
+    { category: 'Gestures & Interaction', features: [
+      { name: 'Drag Gesture', springkit: true, framer: true, notes: '' },
+      { name: 'Pan/Pinch/Rotate', springkit: true, framer: true, notes: '' },
+      { name: 'Hover/Tap/Focus States', springkit: true, framer: true, notes: '' },
+      { name: 'usePointer (Smooth Tracking)', springkit: true, framer: false, notes: 'Smoothed cursor following' },
+      { name: 'useDragControls', springkit: true, framer: true, notes: '' },
+    ]},
+    { category: 'Components', features: [
+      { name: 'AnimatePresence', springkit: true, framer: true, notes: '' },
+      { name: 'Reorder (Drag & Drop)', springkit: true, framer: true, notes: '' },
+      { name: 'TiltCard (3D Tilt)', springkit: true, framer: false, notes: 'Gyroscope-aware' },
+      { name: 'Magnetic (Cursor Attraction)', springkit: true, framer: false, notes: 'Magnetic field effect' },
+      { name: 'SpringText (Text Animation)', springkit: true, framer: false, notes: 'Char/Word/Line stagger' },
+      { name: 'SpringNumber (Counter)', springkit: true, framer: false, notes: 'Animated number counter' },
+      { name: 'TypeWriter', springkit: true, framer: false, notes: 'Typing effect' },
+      { name: 'ParallaxLayers', springkit: true, framer: false, notes: 'Scroll + mouse parallax' },
+    ]},
+    { category: 'Layout & SVG', features: [
+      { name: 'FLIP Layout Animation', springkit: true, framer: true, notes: '' },
+      { name: 'Shared Layout Transitions', springkit: true, framer: true, notes: '' },
+      { name: 'SVG Path Animation', springkit: true, framer: true, notes: '' },
+      { name: 'SVG Morphing', springkit: true, framer: false, notes: 'Shape-to-shape morphing' },
+    ]},
+    { category: 'Developer Experience', features: [
+      { name: 'TypeScript Support', springkit: true, framer: true, notes: '' },
+      { name: 'Tree Shakeable', springkit: true, framer: true, notes: '' },
+      { name: 'Zero Dependencies', springkit: true, framer: false, notes: 'No external deps' },
+      { name: 'Bundle Size', springkit: '~15kb', framer: '~42kb', notes: 'Gzipped size' },
+      { name: 'Vanilla JS Support', springkit: true, framer: false, notes: 'Works without React' },
+    ]},
+  ]
+
+  return (
+    <div className="glass rounded-2xl p-6 border border-white/10">
+      <div className="flex items-center gap-3 mb-6">
+        <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-orange-500/20 to-amber-500/20 flex items-center justify-center">
+          <Gauge className="w-5 h-5 text-orange-400" />
+        </div>
+        <div>
+          <h3 className="text-xl font-bold text-white">SpringKit vs Framer Motion</h3>
+          <p className="text-xs text-white/40">Feature comparison</p>
+        </div>
+      </div>
+
+      <div className="space-y-6 max-h-[600px] overflow-y-auto pr-2">
+        {features.map((section) => (
+          <div key={section.category}>
+            <h4 className="text-sm font-semibold text-white/80 mb-3 flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-gradient-to-r from-orange-500 to-amber-500" />
+              {section.category}
+            </h4>
+            <div className="space-y-2">
+              {section.features.map((feature) => (
+                <div
+                  key={feature.name}
+                  className="flex items-center gap-3 p-2 rounded-lg bg-black/20 hover:bg-black/30 transition-colors"
+                >
+                  <span className="flex-1 text-sm text-white/70">{feature.name}</span>
+                  <div className="flex items-center gap-4 text-xs">
+                    <div className="flex items-center gap-1.5 w-20">
+                      {feature.springkit === true ? (
+                        <Check className="w-4 h-4 text-green-400" />
+                      ) : feature.springkit === false ? (
+                        <X className="w-4 h-4 text-red-400/50" />
+                      ) : (
+                        <span className="text-orange-400 font-mono">{feature.springkit}</span>
+                      )}
+                      <span className="text-white/40">SK</span>
+                    </div>
+                    <div className="flex items-center gap-1.5 w-20">
+                      {feature.framer === true ? (
+                        <Check className="w-4 h-4 text-blue-400" />
+                      ) : feature.framer === false ? (
+                        <X className="w-4 h-4 text-red-400/50" />
+                      ) : (
+                        <span className="text-blue-400 font-mono">{feature.framer}</span>
+                      )}
+                      <span className="text-white/40">FM</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-6 pt-4 border-t border-white/10">
+        <div className="grid grid-cols-2 gap-4 text-center">
+          <div className="p-4 rounded-xl bg-gradient-to-br from-orange-500/10 to-amber-500/10 border border-orange-500/20">
+            <div className="text-2xl font-bold text-orange-400">35+</div>
+            <div className="text-xs text-white/50">Unique Features</div>
+          </div>
+          <div className="p-4 rounded-xl bg-gradient-to-br from-green-500/10 to-emerald-500/10 border border-green-500/20">
+            <div className="text-2xl font-bold text-green-400">~65%</div>
+            <div className="text-xs text-white/50">Smaller Bundle</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function FooterCTA() {
+  return (
+    <AnimatedDiv
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      transition={{ delay: 1 }}
+      className="text-center mt-16"
+    >
+      <div className="glass rounded-3xl p-12 border border-white/10 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-r from-orange-500/10 via-transparent to-amber-500/10" />
+        <div className="relative">
+          <Sparkles className="w-12 h-12 text-orange-400 mx-auto mb-4" />
+          <h3 className="text-2xl font-bold text-white mb-2">Ready to Create Amazing Animations?</h3>
+          <p className="text-white/40 mb-6 max-w-md mx-auto">
+            Start building fluid, natural animations with SpringKit's physics-based spring engine.
+          </p>
+          <a
+            href="/docs/getting-started"
+            className="inline-flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-semibold rounded-xl transition-all shadow-lg shadow-orange-500/20"
+          >
+            Get Started
+            <ChevronRight className="w-5 h-5" />
+          </a>
+        </div>
+      </div>
+    </AnimatedDiv>
+  )
+}
+
+// ============================================================================
+// TAB NAVIGATION COMPONENT
+// ============================================================================
+
+function TabNavigation({ activeTab, onTabChange }: { activeTab: CategoryId; onTabChange: (tab: CategoryId) => void }) {
+  return (
+    <div className="flex flex-wrap justify-center gap-2 mb-8">
+      {CATEGORIES.map((category) => {
+        const Icon = category.icon
+        const isActive = activeTab === category.id
+        return (
+          <button
+            key={category.id}
+            onClick={() => onTabChange(category.id)}
+            className={`
+              flex items-center gap-2 px-4 py-2.5 rounded-xl font-medium text-sm transition-all
+              ${isActive
+                ? `bg-gradient-to-r ${category.color} text-white shadow-lg`
+                : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
+              }
+            `}
+          >
+            <Icon className="w-4 h-4" />
+            {category.label}
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+// ============================================================================
 // MAIN EXAMPLES PAGE
 // ============================================================================
 
 export function Examples() {
+  const [activeTab, setActiveTab] = useState<CategoryId>('all')
+
+  const renderContent = () => {
+    switch (activeTab) {
+      case 'new':
+        return <NewFeaturesSection />
+      case 'visual':
+        return <VisualEffectsSection />
+      case 'spectacular':
+        return <SpectacularEffectsSection />
+      case 'ui':
+        return <UIComponentsSection />
+      case 'interactive':
+        return <InteractiveControlsSection />
+      case 'hooks':
+        return <AdvancedHooksSection />
+      case 'core':
+        return <CoreFeaturesSection />
+      case 'all':
+      default:
+        return (
+          <>
+            <NewFeaturesSection />
+            <VisualEffectsSection />
+            <SpectacularEffectsSection />
+            <UIComponentsSection />
+            <InteractiveControlsSection />
+            <AdvancedHooksSection />
+            <CoreFeaturesSection />
+          </>
+        )
+    }
+  }
+
   return (
     <div className="min-h-screen py-16 px-4">
       <div className="max-w-7xl mx-auto">
         {/* Spectacular Hero */}
         <SpectacularHero />
 
-        {/* NEW v1.2.0 Features Section */}
+        {/* Tab Navigation */}
         <AnimatedDiv
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.15 }}
-          className="mb-12"
+          transition={{ delay: 0.1 }}
+          className="mb-8"
         >
-          <div className="flex items-center gap-3 mb-2">
-            <h2 className="text-2xl font-bold text-white">New in v1.2.0</h2>
-            <span className="px-2 py-0.5 bg-gradient-to-r from-orange-500 to-amber-500 text-white text-xs font-bold rounded-full">NEW</span>
-          </div>
-          <p className="text-white/40 mb-6">Latest features: Keyframes, SVG Path, FLIP Layout, Gesture Props</p>
-
-          <div className="grid lg:grid-cols-4 gap-6">
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16 }}>
-              <KeyframesDemo />
-            </AnimatedDiv>
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.17 }}>
-              <SVGPathDemo />
-            </AnimatedDiv>
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18 }}>
-              <FLIPLayoutDemo />
-            </AnimatedDiv>
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.19 }}>
-              <GesturePropsDemo />
-            </AnimatedDiv>
-          </div>
+          <TabNavigation activeTab={activeTab} onTabChange={setActiveTab} />
         </AnimatedDiv>
 
-        {/* NEW v1.3.0 Features Section */}
-        <AnimatedDiv
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.12 }}
-          className="mb-12"
-        >
-          <div className="flex items-center gap-3 mb-2">
-            <h2 className="text-2xl font-bold text-white">New in v1.3.0</h2>
-            <span className="px-2 py-0.5 bg-gradient-to-r from-indigo-500 to-purple-500 text-white text-xs font-bold rounded-full animate-pulse">LATEST</span>
-          </div>
-          <p className="text-white/40 mb-6">Variants System, Timeline API, SVG Morphing, Scroll-Linked, Stagger Patterns, Physics Presets</p>
-
-          <div className="grid lg:grid-cols-6 gap-6">
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.125 }}>
-              <VariantsDemo />
-            </AnimatedDiv>
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.13 }}>
-              <TimelineDemo />
-            </AnimatedDiv>
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.135 }}>
-              <SVGMorphDemo />
-            </AnimatedDiv>
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.14 }}>
-              <ScrollLinkedDemo />
-            </AnimatedDiv>
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.145 }}>
-              <StaggerPatternsDemo />
-            </AnimatedDiv>
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.15 }}>
-              <PhysicsPresetsDemo />
-            </AnimatedDiv>
-          </div>
-        </AnimatedDiv>
-
-        {/* Visual Effects Section */}
-        <AnimatedDiv
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="mb-12"
-        >
-          <h2 className="text-2xl font-bold text-white mb-2">Visual Effects</h2>
-          <p className="text-white/40 mb-6">Stunning visual demonstrations of spring physics</p>
-
-          <div className="grid lg:grid-cols-3 gap-6">
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
-              <ParticleExplosion />
-            </AnimatedDiv>
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
-              <GravitySimulation />
-            </AnimatedDiv>
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
-              <WaveAnimation />
-            </AnimatedDiv>
-          </div>
-        </AnimatedDiv>
-
-        {/* Spectacular Effects Section */}
-        <AnimatedDiv
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.35 }}
-          className="mb-12"
-        >
-          <h2 className="text-2xl font-bold text-white mb-2">Spectacular Effects</h2>
-          <p className="text-white/40 mb-6">Eye-catching animations that showcase SpringKit's power</p>
-
-          <div className="grid lg:grid-cols-3 gap-6">
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.36 }}>
-              <LiquidButtonDemo />
-            </AnimatedDiv>
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.37 }}>
-              <OdometerDemo />
-            </AnimatedDiv>
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.38 }}>
-              <BouncyCardsDemo />
-            </AnimatedDiv>
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.39 }}>
-              <AnimatedTabsDemo />
-            </AnimatedDiv>
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.395 }}>
-              <FloatingActionDemo />
-            </AnimatedDiv>
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.398 }}>
-              <PullToRefreshDemo />
-            </AnimatedDiv>
-          </div>
-        </AnimatedDiv>
-
-        {/* Real-World UI Components Section */}
-        <AnimatedDiv
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.4 }}
-          className="mb-12"
-        >
-          <h2 className="text-2xl font-bold text-white mb-2">Real-World UI Components</h2>
-          <p className="text-white/40 mb-6">Production-ready animated components for your apps</p>
-
-          <div className="grid lg:grid-cols-3 gap-6">
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.42 }}>
-              <CardStackDemo />
-            </AnimatedDiv>
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.44 }}>
-              <FlipCardDemo />
-            </AnimatedDiv>
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.46 }}>
-              <NotificationDemo />
-            </AnimatedDiv>
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.48 }}>
-              <ProgressRingDemo />
-            </AnimatedDiv>
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.5 }}>
-              <ElasticMenuDemo />
-            </AnimatedDiv>
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.52 }}>
-              <ToggleSwitchDemo />
-            </AnimatedDiv>
-          </div>
-        </AnimatedDiv>
-
-        {/* Interactive Controls Section */}
-        <AnimatedDiv
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.55 }}
-          className="mb-12"
-        >
-          <h2 className="text-2xl font-bold text-white mb-2">Interactive Controls</h2>
-          <p className="text-white/40 mb-6">Click, drag, and hover to experience spring physics</p>
-
-          <div className="grid lg:grid-cols-3 gap-6">
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.57 }}>
-              <MorphingShapes />
-            </AnimatedDiv>
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.59 }}>
-              <MagneticButtonsDemo />
-            </AnimatedDiv>
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.61 }}>
-              <IconCarousel />
-            </AnimatedDiv>
-          </div>
-        </AnimatedDiv>
-
-        {/* Advanced Hooks Section - NEW */}
-        <AnimatedDiv
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.58 }}
-          className="mb-12"
-        >
-          <h2 className="text-2xl font-bold text-white mb-2">Advanced Hooks</h2>
-          <p className="text-white/40 mb-6">High-performance React hooks for complex animations</p>
-
-          <div className="grid lg:grid-cols-2 gap-6">
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.59 }}>
-              <MotionValueDemo />
-            </AnimatedDiv>
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.60 }}>
-              <ScrollProgressDemo />
-            </AnimatedDiv>
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.61 }}>
-              <InViewDemo />
-            </AnimatedDiv>
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.62 }}>
-              <GestureHooksDemo />
-            </AnimatedDiv>
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.63 }} className="lg:col-span-2">
-              <ReducedMotionDemo />
-            </AnimatedDiv>
-          </div>
-        </AnimatedDiv>
-
-        {/* Core Demos Section */}
-        <AnimatedDiv
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.65 }}
-          className="mb-12"
-        >
-          <h2 className="text-2xl font-bold text-white mb-2">Core Features</h2>
-          <p className="text-white/40 mb-6">Essential SpringKit functionality in action</p>
-
-          <div className="grid lg:grid-cols-2 gap-6">
-            <AnimatedDiv
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.65 }}
-              className="lg:col-span-2"
-            >
-              <PhysicsVisualizer />
-            </AnimatedDiv>
-
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7 }}>
-              <TrailDemo />
-            </AnimatedDiv>
-
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.75 }}>
-              <OrchestrationDemo />
-            </AnimatedDiv>
-
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.8 }}>
-              <AdvancedDragDemo />
-            </AnimatedDiv>
-
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.85 }}>
-              <DecayDemo />
-            </AnimatedDiv>
-
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.87 }}>
-              <BallDropDemo />
-            </AnimatedDiv>
-
-            <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.88 }}>
-              <AnimatePresenceDemo />
-            </AnimatedDiv>
-
-            <AnimatedDiv
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.9 }}
-              className="lg:col-span-2"
-            >
-              <PresetsComparison />
-            </AnimatedDiv>
-          </div>
-        </AnimatedDiv>
+        {/* Content based on active tab */}
+        <div key={activeTab}>
+          {renderContent()}
+        </div>
 
         {/* Footer CTA */}
-        <AnimatedDiv
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 1 }}
-          className="text-center mt-16"
-        >
-          <div className="glass rounded-3xl p-12 border border-white/10 relative overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-r from-orange-500/10 via-transparent to-amber-500/10" />
-            <div className="relative">
-              <Sparkles className="w-12 h-12 text-orange-400 mx-auto mb-4" />
-              <h3 className="text-2xl font-bold text-white mb-2">Ready to Create Amazing Animations?</h3>
-              <p className="text-white/40 mb-6 max-w-md mx-auto">
-                Start building fluid, natural animations with SpringKit's physics-based spring engine.
-              </p>
-              <a
-                href="/docs/getting-started"
-                className="inline-flex items-center gap-2 px-8 py-4 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 text-white font-semibold rounded-xl transition-all shadow-lg shadow-orange-500/20"
-              >
-                Get Started
-                <ChevronRight className="w-5 h-5" />
-              </a>
-            </div>
-          </div>
-        </AnimatedDiv>
+        <FooterCTA />
       </div>
     </div>
   )
 }
+
+export default Examples

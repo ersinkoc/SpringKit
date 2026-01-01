@@ -1,4 +1,4 @@
-import { useRef, useEffect, useState, useCallback } from 'react'
+import { useRef, useEffect, useState } from 'react'
 import { MotionValue, createMotionValue, type MotionValueOptions } from '../../../core/MotionValue.js'
 
 /**

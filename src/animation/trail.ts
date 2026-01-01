@@ -1,5 +1,4 @@
 import type { SpringConfig } from '../core/config.js'
-import { defaultConfig } from '../core/config.js'
 import { createSpringValue, type SpringValue } from '../core/spring-value.js'
 
 /**
@@ -79,7 +78,7 @@ class TrailImpl implements Trail {
     index: number,
     targetValue: number,
     targetFrame: number,
-    delayFrames: number
+    _delayFrames: number
   ): void {
     const startFrame = this.frameCount
     const framesToWait = targetFrame - startFrame

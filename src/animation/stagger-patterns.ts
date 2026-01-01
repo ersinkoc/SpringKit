@@ -254,7 +254,7 @@ export function gridStagger(config: GridStaggerConfig): number[] {
         break
 
       case 'radial':
-      default:
+      default: {
         // Distance from origin
         const maxDistance = gridDistance(
           origin === 'center' ? 0 : count - 1,
@@ -265,6 +265,7 @@ export function gridStagger(config: GridStaggerConfig): number[] {
         const distance = gridDistance(i, columns, rows, origin)
         t = maxDistance > 0 ? distance / maxDistance : 0
         break
+      }
     }
 
     delays.push(easing(clamp(t, 0, 1)) * delay * Math.max(columns, rows))

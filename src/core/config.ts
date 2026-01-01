@@ -263,7 +263,6 @@ export function adjustSpeed(preset: SpringConfig, speed: number): SpringConfig {
  * @param bounce - Bounce factor (0 = no bounce, 1 = very bouncy)
  */
 export function adjustBounce(preset: SpringConfig, bounce: number): SpringConfig {
-  const baseDamping = preset.damping ?? 10
   const minDamping = 5
   const maxDamping = 40
   const damping = maxDamping - (bounce * (maxDamping - minDamping))

@@ -720,11 +720,11 @@ progress.set(100)`} />
 
 function MotionValueApi() {
   const boxRef = useRef<HTMLDivElement>(null)
-  const motionValueRef = useRef<ReturnType<typeof createMotionValue> | null>(null)
+  const motionValueRef = useRef<ReturnType<typeof createMotionValue<number>> | null>(null)
   const [displayValue, setDisplayValue] = useState(0)
 
   useEffect(() => {
-    motionValueRef.current = createMotionValue(0, {
+    motionValueRef.current = createMotionValue<number>(0, {
       spring: { stiffness: 200, damping: 20 }
     })
     motionValueRef.current.subscribe((v) => {

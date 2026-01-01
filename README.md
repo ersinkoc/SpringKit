@@ -27,12 +27,15 @@
 - **Spring Groups** - Animate multiple values together with `createSpringGroup()`
 - **Interruptible** - Pause, resume, reverse with velocity preservation
 - **Presets** - bounce, gentle, stiff, wobbly, slow, molasses...
+- **Physics Presets** - 40+ semantic presets: button, modal, toast, dragRelease, jelly...
 - **Keyframes** - Multi-value animations with per-keyframe spring configs
+- **Timeline API** - Complex choreographed animations with labels and controls
 
 ### Orchestration
 - **Sequence** - Run animations one after another
 - **Parallel** - Run multiple animations simultaneously
 - **Stagger** - Run animations with customizable delay patterns
+- **Stagger Patterns** - linear, center, wave, spiral, grid, random stagger functions
 - **Trail Effect** - Follow animations with staggered delays
 - **Decay** - Natural momentum deceleration with velocity
 
@@ -43,11 +46,15 @@
 
 ### Gestures
 - **Drag Spring** - Rubber band physics with bounds and release momentum
+- **Snap Points** - Snap to grid or custom points on release
+- **Drag Constraints** - Parent/element constraints, elastic bounds, momentum
 - **Scroll Spring** - Momentum scrolling with bounce and snap points
 - **Gesture Props** - `whileHover`, `whileTap`, `whileFocus`, `whileInView`, `whileDrag`
 
 ### SVG Animations
 - **Path Animation** - `createPathAnimation()` for line drawing effects
+- **SVG Morphing** - `createMorph()` for shape-to-shape transitions
+- **Shape Library** - Built-in shapes: circle, square, star, heart, triangle...
 - **Path Utilities** - `getPathLength()`, `preparePathForAnimation()`, `getPointAtProgress()`
 
 ### Layout Animations (FLIP)
@@ -70,6 +77,7 @@
 ### React Integration
 - **Hooks** - `useSpring`, `useSpringValue`, `useSprings`, `useTrail`, `useDrag`, `useGesture`
 - **Motion Hooks** - `useMotionValue`, `useTransform`, `useInView`, `useScroll`, `useAnimate`
+- **Variants System** - Declarative animation states with `useVariants`, `VariantProvider`
 - **Accessibility** - `useReducedMotion` for motion-sensitive users
 - **Components** - `<Spring>`, `<Animated>`, `<Trail>`, `<AnimatePresence>`, `<MotionConfig>`
 - **Exit Animations** - `<AnimatePresence>` for unmounting component animations
@@ -209,6 +217,82 @@ await flip(element, () => {
 }, {
   config: { stiffness: 300, damping: 25 }
 })
+```
+
+### Physics Presets (v1.3.0)
+
+```typescript
+import { physicsPresets, getPhysicsPreset, createFeeling } from '@oxog/springkit'
+
+// Use semantic presets directly
+const anim = spring(0, 100, {
+  ...physicsPresets.button, // Quick, responsive
+  onUpdate: (v) => element.style.transform = `scale(${1 + v * 0.1})`
+})
+
+// Or use "feelings" for quick configuration
+const config = createFeeling('bouncy') // snappy, smooth, bouncy, heavy, light, elastic
+
+// Adjust presets
+import { adjustSpeed, adjustBounce } from '@oxog/springkit'
+const faster = adjustSpeed(physicsPresets.modal, 1.5)
+const bouncier = adjustBounce(physicsPresets.button, 0.8)
+```
+
+### Variants System (v1.3.0)
+
+```tsx
+import { useVariants, VariantProvider } from '@oxog/springkit/react'
+
+const cardVariants = {
+  initial: { opacity: 0, y: 20 },
+  visible: { opacity: 1, y: 0 },
+  hover: { scale: 1.05 },
+}
+
+function Card() {
+  const { variant, setVariant, style } = useVariants(cardVariants, 'initial')
+
+  return (
+    <div
+      style={style}
+      onMouseEnter={() => setVariant('hover')}
+      onMouseLeave={() => setVariant('visible')}
+    />
+  )
+}
+```
+
+### SVG Morphing (v1.3.0)
+
+```typescript
+import { createMorph, shapes } from '@oxog/springkit'
+
+const morph = createMorph(pathElement, {
+  from: shapes.circle(50, 50, 40),
+  to: shapes.star(50, 50, 40, 20, 5),
+})
+
+await morph.play() // Morph from circle to star
+await morph.reverse() // Morph back
+```
+
+### Drag with Snap Points (v1.3.0)
+
+```tsx
+import { useDrag } from '@oxog/springkit/react'
+
+function DraggableCard() {
+  const [pos, api] = useDrag({
+    bounds: { left: -100, right: 100, top: -50, bottom: 50 },
+    snap: {
+      grid: { x: 50, y: 50 }, // Snap to grid
+      snapOnRelease: true,
+    },
+  })
+
+  return <div ref={api.ref} style={{ transform: `translate(${pos.x}px, ${pos.y}px)` }} />
+}
 ```
 
 ## Documentation

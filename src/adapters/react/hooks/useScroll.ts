@@ -265,8 +265,8 @@ function parseOffset(
   offset: string,
   rect: DOMRect,
   viewportHeight: number,
-  viewportWidth: number,
-  type: 'start' | 'end'
+  _viewportWidth: number,
+  _type: 'start' | 'end'
 ): number {
   const parts = offset.split(' ')
   const elementPart = parts[0] || 'start'
@@ -275,7 +275,7 @@ function parseOffset(
   // Element position
   let elementPos: number
   if (elementPart === 'start') {
-    elementPos = type === 'start' ? rect.top : rect.top
+    elementPos = rect.top
   } else if (elementPart === 'center') {
     elementPos = rect.top + rect.height / 2
   } else if (elementPart === 'end') {

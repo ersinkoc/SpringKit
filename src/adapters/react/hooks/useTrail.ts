@@ -70,7 +70,7 @@ export function useTrail<T extends Record<string, number>>(
     // Subscribe to all springs and update state
     const unsubscribers: (() => void)[] = []
 
-    springs.forEach((propSprings, key) => {
+    springs.forEach((propSprings, _key) => {
       propSprings.forEach((spring, index) => {
         const unsub = spring.subscribe(() => {
           setCurrentValues(prev => {
@@ -98,7 +98,7 @@ export function useTrail<T extends Record<string, number>>(
       })
       springsRef.current = null
     }
-  }, [count])
+  }, [count]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Update springs when values change with staggered delay
   useEffect(() => {
@@ -128,7 +128,7 @@ export function useTrail<T extends Record<string, number>>(
         }, index * staggerDelay)
       })
     })
-  }, [JSON.stringify(values), config.stiffness, config.damping])
+  }, [JSON.stringify(values), config.stiffness, config.damping]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return currentValues
 }

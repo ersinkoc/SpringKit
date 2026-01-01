@@ -12,6 +12,7 @@ import { useIsomorphicLayoutEffect } from '../utils/ssr.js'
 
 // ============ useMorph ============
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface UseMorphOptions extends MorphConfig {}
 
 export interface UseMorphReturn {
@@ -65,13 +66,15 @@ export function useMorph(
       },
     })
 
-    morph.subscribe((newPath) => {
+    // Store unsubscribe function to prevent memory leak
+    const unsubscribe = morph.subscribe((newPath) => {
       setPath(newPath)
     })
 
     morphRef.current = morph
 
     return () => {
+      unsubscribe()
       morph.destroy()
     }
   }, [initialPath])
@@ -95,6 +98,7 @@ export function useMorph(
 
 // ============ useMorphSequence ============
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface UseMorphSequenceOptions extends MorphConfig {}
 
 export interface UseMorphSequenceReturn {
@@ -145,7 +149,8 @@ export function useMorphSequence(
 
     const sequence = createMorphSequence(paths, options)
 
-    sequence.subscribe((newPath) => {
+    // Store unsubscribe function to prevent memory leak
+    const unsubscribe = sequence.subscribe((newPath) => {
       setPath(newPath)
       setCurrentIndex(sequence.getCurrentIndex())
     })
@@ -153,6 +158,7 @@ export function useMorphSequence(
     sequenceRef.current = sequence
 
     return () => {
+      unsubscribe()
       sequence.destroy()
     }
   }, [paths.length])
@@ -209,9 +215,14 @@ export function useMorphRef(
   const [progress, setProgressState] = useState(0)
   const morphRef = useRef<MorphController | null>(null)
   const elementRef = useRef<SVGPathElement | null>(null)
+  const unsubscribeRef = useRef<(() => void) | null>(null)
 
   const pathRef = useCallback(
     (element: SVGPathElement | null) => {
+      // Cleanup previous subscription to prevent memory leak
+      unsubscribeRef.current?.()
+      unsubscribeRef.current = null
+
       if (!element) {
         morphRef.current?.destroy()
         morphRef.current = null
@@ -229,12 +240,15 @@ export function useMorphRef(
         },
       })
 
-      morph.subscribe((path) => {
+      // Store unsubscribe function to prevent memory leak
+      unsubscribeRef.current = morph.subscribe((path) => {
         element.setAttribute('d', path)
       })
 
       morphRef.current = morph
     },
+    // options used only on initialization
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [initialPath]
   )
 

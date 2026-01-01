@@ -51,6 +51,8 @@ export { sequence, parallel, stagger } from './animation/sequence.js'
 export { createTrail } from './animation/trail.js'
 export { decay } from './animation/decay.js'
 export { keyframes, parseKeyframeArray, isKeyframeArray } from './animation/keyframes.js'
+export { animate, animateAll } from './animation/animate.js'
+export type { AnimateTarget, AnimateOptions, AnimateControls } from './animation/animate.js'
 
 // ============ Interpolation ============
 

@@ -65,6 +65,9 @@ export function useSprings<T extends Record<string, number>>(
     springsRef.current.forEach((s) => s?.destroy())
     springsRef.current = []
 
+    // Track timeouts for cleanup to prevent memory leaks
+    const timeoutIds: ReturnType<typeof setTimeout>[] = []
+
     // Create new springs
     for (let i = 0; i < count; i++) {
       const item = items(i)
@@ -77,16 +80,19 @@ export function useSprings<T extends Record<string, number>>(
       spring.subscribe(() => forceUpdate({}))
       springsRef.current.push(spring)
 
-      // Start animation with delay
-      setTimeout(() => {
+      // Start animation with delay (track timeout for cleanup)
+      const timeoutId = setTimeout(() => {
         spring.set(item.values as Partial<T>)
       }, item.delay ?? 0)
+      timeoutIds.push(timeoutId)
     }
 
     return () => {
+      // Clear all pending timeouts to prevent memory leaks
+      timeoutIds.forEach(clearTimeout)
       springsRef.current.forEach((s) => s?.destroy())
     }
-  }, [count, defaultConfig])
+  }, [count, defaultConfig]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Get current values
   return springsRef.current.map((spring) => spring?.get() ?? ({} as T))

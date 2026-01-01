@@ -1,7 +1,7 @@
 /**
  * React hooks for scroll-linked animations
  */
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useRef, useState } from 'react'
 import {
   createScrollProgress,
   createParallax,
@@ -143,6 +143,7 @@ export function useParallax(
 
 // ============ useScrollTrigger ============
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface UseScrollTriggerOptions
   extends Omit<ScrollTriggerConfig, 'onEnter' | 'onLeave' | 'onProgress'> {}
 
@@ -211,6 +212,7 @@ export function useScrollTrigger(
 
 // ============ useScrollLinkedValue ============
 
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface UseScrollLinkedValueOptions extends ScrollLinkedConfig {}
 
 /**

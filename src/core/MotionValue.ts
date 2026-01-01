@@ -23,7 +23,7 @@ import { createSpringValue } from './spring-value.js'
 import type { SpringConfig } from '../types.js'
 
 export type MotionValueSubscriber<T> = (value: T) => void
-export type MotionValueEvent = 'change' | 'animationStart' | 'animationEnd'
+export type MotionValueEvent = 'change' | 'animationStart' | 'animationEnd' | 'animationComplete' | 'animationCancel'
 
 export interface MotionValueOptions {
   /** Spring configuration for animated transitions */
@@ -48,6 +48,7 @@ export class MotionValue<T = number> {
   private _springConfig: SpringConfig
   private _isAnimating: boolean = false
   private _destroyed: boolean = false
+  private _checkEndRafId: number | null = null
 
   constructor(initialValue: T, options: MotionValueOptions = {}) {
     this._value = initialValue
@@ -94,22 +95,37 @@ export class MotionValue<T = number> {
   set(newValue: T, animate: boolean = true): void {
     if (this._destroyed) return
 
+    // Cancel any pending animation end check to prevent memory leak
+    if (this._checkEndRafId !== null) {
+      cancelAnimationFrame(this._checkEndRafId)
+      this._checkEndRafId = null
+    }
+
     if (typeof newValue === 'number' && this._springValue && animate) {
       this._isAnimating = true
       this._emit('animationStart')
 
       this._springValue.set(newValue as number)
 
-      // Check for animation end
+      // Check for animation end with proper cleanup
       const checkEnd = () => {
+        // Bail out if destroyed during animation
+        if (this._destroyed) {
+          this._checkEndRafId = null
+          return
+        }
+
         if (this._springValue && Math.abs(this._springValue.getVelocity()) < 0.01) {
           this._isAnimating = false
+          this._checkEndRafId = null
           this._emit('animationEnd')
         } else if (this._isAnimating) {
-          requestAnimationFrame(checkEnd)
+          this._checkEndRafId = requestAnimationFrame(checkEnd)
+        } else {
+          this._checkEndRafId = null
         }
       }
-      requestAnimationFrame(checkEnd)
+      this._checkEndRafId = requestAnimationFrame(checkEnd)
     } else {
       this._value = newValue
       this._velocity = 0
@@ -138,6 +154,12 @@ export class MotionValue<T = number> {
    * Stop any running animation
    */
   stop(): void {
+    // Cancel pending RAF callback
+    if (this._checkEndRafId !== null) {
+      cancelAnimationFrame(this._checkEndRafId)
+      this._checkEndRafId = null
+    }
+
     // SpringValue doesn't have stop(), so we jump to current value
     if (this._springValue) {
       this._springValue.jump(this._springValue.get())
@@ -188,6 +210,13 @@ export class MotionValue<T = number> {
    */
   destroy(): void {
     this._destroyed = true
+
+    // Cancel pending RAF callback to prevent memory leak
+    if (this._checkEndRafId !== null) {
+      cancelAnimationFrame(this._checkEndRafId)
+      this._checkEndRafId = null
+    }
+
     this._subscribers.clear()
     this._eventListeners.clear()
 
@@ -255,9 +284,17 @@ export function transformValue<T, U>(
 ): MotionValue<U> {
   const derived = new MotionValue<U>(transform(source.get()))
 
-  source.subscribe((value) => {
+  // Store unsubscribe function for cleanup
+  const unsubscribe = source.subscribe((value) => {
     derived.jump(transform(value))
   })
+
+  // Override destroy to clean up subscription (prevents memory leak)
+  const originalDestroy = derived.destroy.bind(derived)
+  derived.destroy = () => {
+    unsubscribe()
+    originalDestroy()
+  }
 
   return derived
 }
@@ -282,9 +319,15 @@ export function mapRange(
 ): MotionValue<number> {
   const [inMin, inMax] = inputRange
   const [outMin, outMax] = outputRange
+  const inputDelta = inMax - inMin
 
   return transformValue(source, (value) => {
-    let normalized = (value - inMin) / (inMax - inMin)
+    // Guard against division by zero
+    if (inputDelta === 0) {
+      return outMin
+    }
+
+    let normalized = (value - inMin) / inputDelta
 
     if (options.clamp) {
       normalized = Math.max(0, Math.min(1, normalized))
