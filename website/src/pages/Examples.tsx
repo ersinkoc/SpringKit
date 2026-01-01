@@ -1381,7 +1381,20 @@ function NotificationToast({ icon: Icon, message, color, onClose }: {
   color: string
   onClose: () => void
 }) {
-  const style = useSpring({ opacity: 1, x: 0, scale: 1 }, { stiffness: 300, damping: 25 })
+  const [isVisible, setIsVisible] = useState(false)
+
+  // Start with hidden state, then animate in
+  const style = useSpring({
+    opacity: isVisible ? 1 : 0,
+    x: isVisible ? 0 : 50,
+    scale: isVisible ? 1 : 0.8,
+  }, { stiffness: 300, damping: 25 })
+
+  // Trigger animation on mount
+  useEffect(() => {
+    const timer = setTimeout(() => setIsVisible(true), 50)
+    return () => clearTimeout(timer)
+  }, [])
 
   return (
     <div
@@ -1829,10 +1842,19 @@ function LiquidButtonDemo() {
 }
 
 function RippleEffect({ x, y }: { x: number; y: number }) {
+  const [isAnimating, setIsAnimating] = useState(false)
+
+  // Start small and visible, then grow and fade
   const style = useSpring({
-    scale: 4,
-    opacity: 0,
+    scale: isAnimating ? 4 : 0,
+    opacity: isAnimating ? 0 : 0.6,
   }, { stiffness: 100, damping: 20 })
+
+  // Trigger animation on mount
+  useEffect(() => {
+    const timer = setTimeout(() => setIsAnimating(true), 10)
+    return () => clearTimeout(timer)
+  }, [])
 
   return (
     <div
@@ -2269,16 +2291,31 @@ function PullToRefreshDemo() {
 // Animated Tabs
 function AnimatedTabsDemo() {
   const [activeTab, setActiveTab] = useState(0)
+  const [contentKey, setContentKey] = useState(0) // Key to trigger content animation
   const tabs = ['Overview', 'Features', 'Pricing', 'FAQ']
 
   const indicatorStyle = useSpring({
     x: activeTab * 90,
   }, { stiffness: 300, damping: 30 })
 
+  // Content animation resets on each tab change
+  const [isContentVisible, setIsContentVisible] = useState(true)
+
   const contentStyle = useSpring({
-    opacity: 1,
-    y: 0,
+    opacity: isContentVisible ? 1 : 0,
+    y: isContentVisible ? 0 : 15,
   }, { stiffness: 200, damping: 20 })
+
+  // Animate content when tab changes
+  const handleTabChange = (index: number) => {
+    if (index === activeTab) return
+    setIsContentVisible(false)
+    setTimeout(() => {
+      setActiveTab(index)
+      setContentKey(k => k + 1)
+      setIsContentVisible(true)
+    }, 150)
+  }
 
   return (
     <div className="glass rounded-2xl p-6 border border-white/10">
@@ -2298,7 +2335,7 @@ function AnimatedTabsDemo() {
           {tabs.map((tab, i) => (
             <button
               key={tab}
-              onClick={() => setActiveTab(i)}
+              onClick={() => handleTabChange(i)}
               className={`flex-1 py-2.5 text-sm font-medium rounded-lg transition-colors relative z-10 ${
                 activeTab === i ? 'text-white' : 'text-white/50 hover:text-white/70'
               }`}
@@ -2316,6 +2353,7 @@ function AnimatedTabsDemo() {
 
       {/* Content */}
       <div
+        key={contentKey}
         className="h-24 bg-black/20 rounded-xl p-4 flex items-center justify-center"
         style={{
           opacity: contentStyle.opacity,
@@ -2681,9 +2719,17 @@ function PhysicsVisualizer() {
 
 function TrailDemo() {
   const [show, setShow] = useState(false) // Start hidden to show animation on mount
-  const items = ['useSpring', 'useTrail', 'useDrag', 'useGesture', 'Animated']
 
-  const trail = useTrail(items.length, {
+  // Each item has unique properties for variety
+  const itemConfigs = [
+    { name: 'useSpring', desc: 'Single value animation', xOffset: -60, rotation: -10 },
+    { name: 'useTrail', desc: 'Staggered sequence', xOffset: -40, rotation: 5 },
+    { name: 'useDrag', desc: 'Drag gestures', xOffset: -70, rotation: -5 },
+    { name: 'useGesture', desc: 'Multi-gesture handler', xOffset: -50, rotation: 8 },
+    { name: 'Animated', desc: 'Declarative component', xOffset: -55, rotation: -8 },
+  ]
+
+  const trail = useTrail(itemConfigs.length, {
     opacity: show ? 1 : 0,
     x: show ? 0 : -50,
     scale: show ? 1 : 0.8,
@@ -2720,29 +2766,42 @@ function TrailDemo() {
       </div>
 
       <div className="space-y-2 min-h-[240px]">
-        {items.map((item, i) => (
-          <div
-            key={item}
-            className="flex items-center gap-3 p-3 bg-white/5 rounded-xl border border-white/5"
-            style={{
-              opacity: trail[i]?.opacity ?? 0,
-              transform: `translateX(${trail[i]?.x ?? -50}px) scale(${trail[i]?.scale ?? 0.8})`,
-            }}
-          >
+        {itemConfigs.map((config, i) => {
+          // Use trail values directly - x goes from -50 to 0
+          const trailX = trail[i]?.x ?? -50
+          const trailScale = trail[i]?.scale ?? 0.8
+          const trailOpacity = trail[i]?.opacity ?? 0
+
+          // Calculate offset: when x is -50 (hidden), use full config.xOffset
+          // when x is 0 (shown), offset is 0
+          const offsetMultiplier = Math.abs(trailX) / 50 // 1 when hidden, 0 when shown
+          const xOffset = config.xOffset * offsetMultiplier
+          const rotationOffset = config.rotation * (1 - trailOpacity)
+
+          return (
             <div
-              className="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-sm"
+              key={config.name}
+              className="flex items-center gap-3 p-3 bg-white/5 rounded-xl border border-white/5"
               style={{
-                background: `linear-gradient(135deg, hsl(${260 + i * 20}, 70%, 50%), hsl(${280 + i * 20}, 70%, 40%))`,
+                opacity: trailOpacity,
+                transform: `translateX(${xOffset}px) scale(${trailScale}) rotate(${rotationOffset}deg)`,
               }}
             >
-              {i + 1}
+              <div
+                className="w-10 h-10 rounded-lg flex items-center justify-center text-white font-bold text-sm"
+                style={{
+                  background: `linear-gradient(135deg, hsl(${260 + i * 25}, 70%, 50%), hsl(${280 + i * 25}, 70%, 40%))`,
+                }}
+              >
+                {i + 1}
+              </div>
+              <div>
+                <span className="text-white font-medium">{config.name}</span>
+                <p className="text-xs text-white/40">{config.desc}</p>
+              </div>
             </div>
-            <div>
-              <span className="text-white font-medium">{item}</span>
-              <p className="text-xs text-white/40">React Hook</p>
-            </div>
-          </div>
-        ))}
+          )
+        })}
       </div>
     </div>
   )
@@ -2899,12 +2958,12 @@ function AdvancedDragDemo() {
         <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-[260px] h-[140px] border border-dashed border-cyan-500/20 rounded-xl" />
 
         {/* Connection line from center to ball */}
-        <svg className="absolute inset-0 w-full h-full pointer-events-none">
+        <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 400 208" preserveAspectRatio="xMidYMid meet">
           <line
-            x1="50%"
-            y1="50%"
-            x2={`calc(50% + ${pos.x}px)`}
-            y2={`calc(50% + ${pos.y}px)`}
+            x1="200"
+            y1="104"
+            x2={200 + pos.x}
+            y2={104 + pos.y}
             stroke={`hsla(${hue}, 80%, 60%, ${0.3 + normalizedDistance * 0.4})`}
             strokeWidth="2"
             strokeDasharray="4 4"
@@ -3062,52 +3121,68 @@ function DecayDemo() {
 function BallDropDemo() {
   const [balls, setBalls] = useState<Array<{
     id: number
+    x: number
     y: number
     vy: number
     color: string
     size: number
+    restitution: number // Each ball has its own bounciness
+    gravity: number // Each ball has its own gravity
+    settledAt?: number // Timestamp when ball settled
   }>>([])
+  const [isDropping, setIsDropping] = useState(false)
   const animationRef = useRef<number | null>(null)
   const containerHeight = 200
   const floorY = containerHeight - 20
 
   // Physics simulation
   useEffect(() => {
-    const gravity = 0.5
-    const restitution = 0.7 // Bounciness
     const friction = 0.99
+    const settleDelay = 1500 // Remove ball 1.5 seconds after settling
 
     const animate = () => {
-      setBalls(prev => prev.map(ball => {
-        let { y, vy } = ball
+      const now = Date.now()
 
-        // Apply gravity
-        vy += gravity
+      setBalls(prev => {
+        const updated = prev.map(ball => {
+          let { y, vy, settledAt } = ball
 
-        // Update position
-        y += vy
-
-        // Floor collision with spring bounce
-        const ballBottom = y + ball.size / 2
-        if (ballBottom >= floorY) {
-          y = floorY - ball.size / 2
-          vy = -Math.abs(vy) * restitution
-
-          // Stop if velocity is very low
-          if (Math.abs(vy) < 1) {
-            vy = 0
+          // If already settled, just return as-is
+          if (settledAt) {
+            return ball
           }
-        }
 
-        // Apply friction
-        vy *= friction
+          // Apply ball's own gravity
+          vy += ball.gravity
 
-        return { ...ball, y, vy }
-      }).filter(ball => {
-        // Remove balls that have settled
-        const isSettled = ball.vy === 0 && ball.y >= floorY - ball.size / 2 - 1
-        return !isSettled || Date.now() % 100 < 50 // Keep some settled balls briefly
-      }))
+          // Update position
+          y += vy
+
+          // Floor collision with spring bounce
+          const ballBottom = y + ball.size / 2
+          if (ballBottom >= floorY) {
+            y = floorY - ball.size / 2
+            vy = -Math.abs(vy) * ball.restitution
+
+            // Stop if velocity is very low
+            if (Math.abs(vy) < 1) {
+              vy = 0
+              settledAt = now // Mark as settled
+            }
+          }
+
+          // Apply friction
+          vy *= friction
+
+          return { ...ball, y, vy, settledAt }
+        })
+
+        // Remove balls that have been settled for settleDelay ms
+        return updated.filter(ball => {
+          if (!ball.settledAt) return true // Still bouncing
+          return now - ball.settledAt < settleDelay // Keep until delay passed
+        })
+      })
 
       animationRef.current = requestAnimationFrame(animate)
     }
@@ -3118,7 +3193,17 @@ function BallDropDemo() {
     }
   }, [])
 
+  // Re-enable buttons when all balls settle
+  useEffect(() => {
+    if (isDropping && balls.length === 0) {
+      setIsDropping(false)
+    }
+  }, [balls.length, isDropping])
+
   const dropBall = () => {
+    if (isDropping) return
+
+    setIsDropping(true)
     const colors = [
       'from-orange-500 to-amber-500',
       'from-pink-500 to-rose-500',
@@ -3128,19 +3213,49 @@ function BallDropDemo() {
     ]
     const newBall = {
       id: Date.now(),
+      x: 50, // percentage
       y: 20,
       vy: 0,
       color: colors[Math.floor(Math.random() * colors.length)],
-      size: 30 + Math.random() * 20,
+      size: 35,
+      restitution: 0.7,
+      gravity: 0.5,
     }
-    setBalls(prev => [...prev.slice(-8), newBall]) // Keep max 8 balls
+    setBalls([newBall])
   }
 
   const dropMultiple = () => {
-    const count = 5
-    for (let i = 0; i < count; i++) {
-      setTimeout(() => dropBall(), i * 100)
-    }
+    if (isDropping) return
+
+    setIsDropping(true)
+    const colors = [
+      'from-orange-500 to-amber-500',
+      'from-pink-500 to-rose-500',
+      'from-cyan-500 to-blue-500',
+      'from-violet-500 to-purple-500',
+      'from-emerald-500 to-teal-500',
+    ]
+    // Each ball has unique properties for variety
+    const ballConfigs = [
+      { x: 15, size: 28, y: 10, restitution: 0.85, gravity: 0.4 },  // Small, very bouncy, light
+      { x: 30, size: 36, y: 25, restitution: 0.6, gravity: 0.6 },   // Medium, less bouncy, heavy
+      { x: 50, size: 32, y: 5, restitution: 0.75, gravity: 0.5 },   // Standard ball, starts highest
+      { x: 70, size: 40, y: 30, restitution: 0.5, gravity: 0.7 },   // Large, low bounce, heaviest
+      { x: 85, size: 24, y: 15, restitution: 0.9, gravity: 0.35 },  // Tiny, super bouncy, lightest
+    ]
+
+    const newBalls = ballConfigs.map((config, i) => ({
+      id: Date.now() + i,
+      x: config.x,
+      y: config.y,
+      vy: 0,
+      color: colors[i % colors.length],
+      size: config.size,
+      restitution: config.restitution,
+      gravity: config.gravity,
+    }))
+
+    setBalls(newBalls)
   }
 
   return (
@@ -3158,13 +3273,15 @@ function BallDropDemo() {
         <div className="flex gap-2">
           <button
             onClick={dropBall}
-            className="px-4 py-2 bg-orange-500/20 hover:bg-orange-500/30 text-orange-400 text-sm font-medium rounded-lg transition-colors"
+            disabled={isDropping}
+            className="px-4 py-2 bg-orange-500/20 hover:bg-orange-500/30 disabled:opacity-50 disabled:cursor-not-allowed text-orange-400 text-sm font-medium rounded-lg transition-colors"
           >
             Drop 1
           </button>
           <button
             onClick={dropMultiple}
-            className="px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-500 text-white text-sm font-medium rounded-lg"
+            disabled={isDropping}
+            className="px-4 py-2 bg-gradient-to-r from-orange-500 to-amber-500 hover:from-orange-600 hover:to-amber-600 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
           >
             Drop 5
           </button>
@@ -3183,11 +3300,11 @@ function BallDropDemo() {
         {balls.map(ball => (
           <div
             key={ball.id}
-            className={`absolute left-1/2 bg-gradient-to-br ${ball.color} rounded-full shadow-lg`}
+            className={`absolute bg-gradient-to-br ${ball.color} rounded-full shadow-lg`}
             style={{
               width: ball.size,
               height: ball.size,
-              transform: `translate(-50%, 0)`,
+              left: `calc(${ball.x}% - ${ball.size / 2}px)`,
               top: ball.y - ball.size / 2,
               boxShadow: `0 ${Math.min(10, Math.abs(ball.vy) * 2)}px ${Math.min(30, Math.abs(ball.vy) * 5)}px rgba(0,0,0,0.3)`,
             }}
@@ -3333,6 +3450,33 @@ function MotionValueDemo() {
   const rotateValue = useMotionValueState(rotate)
 
   const containerRef = useRef<HTMLDivElement>(null)
+  const boxRef = useRef<HTMLDivElement>(null)
+
+  // Subscribe to motion values with proper cleanup
+  useEffect(() => {
+    const el = boxRef.current
+    if (!el) return
+
+    const unsubX = x.subscribe((xVal) => {
+      const rotVal = (xVal / 150) * 45
+      const scaleVal = 1 - Math.abs(xVal / 150) * 0.2
+      el.style.transform = `translateX(${xVal}px) translateY(${y.get()}px) rotate(${rotVal}deg) scale(${scaleVal})`
+    })
+
+    const unsubY = y.subscribe((yVal) => {
+      el.style.opacity = String(1 - Math.abs(yVal / 100) * 0.7)
+    })
+
+    const unsubBg = backgroundColor.subscribe((color) => {
+      el.style.backgroundColor = color
+    })
+
+    return () => {
+      unsubX()
+      unsubY()
+      unsubBg()
+    }
+  }, [x, y, backgroundColor])
 
   const handleMouseMove = (e: React.MouseEvent) => {
     if (!containerRef.current) return
@@ -3367,25 +3511,10 @@ function MotionValueDemo() {
         className="h-48 bg-black/20 rounded-xl flex items-center justify-center relative overflow-hidden cursor-pointer"
       >
         <div
+          ref={boxRef}
           className="w-20 h-20 rounded-2xl flex items-center justify-center text-white font-bold shadow-2xl"
           style={{
-            transform: `translateX(${x.get()}px) translateY(${y.get()}px) rotate(${rotate.get()}deg) scale(${scale.get()})`,
-            opacity: opacity.get(),
-            backgroundColor: backgroundColor.get(),
-          }}
-          ref={(el) => {
-            if (!el) return
-            x.subscribe((xVal) => {
-              const rotVal = (xVal / 150) * 45
-              const scaleVal = 1 - Math.abs(xVal / 150) * 0.2
-              el.style.transform = `translateX(${xVal}px) translateY(${y.get()}px) rotate(${rotVal}deg) scale(${scaleVal})`
-            })
-            y.subscribe((yVal) => {
-              el.style.opacity = String(1 - Math.abs(yVal / 100) * 0.7)
-            })
-            backgroundColor.subscribe((color) => {
-              el.style.backgroundColor = color
-            })
+            backgroundColor: '#f97316',
           }}
         >
           <Zap className="w-8 h-8" />
@@ -3423,6 +3552,44 @@ function ScrollProgressDemo() {
     ['#3b82f6', '#8b5cf6', '#ec4899']
   )
 
+  const progressBarRef = useRef<HTMLDivElement>(null)
+  const velocityBallRef = useRef<HTMLDivElement>(null)
+
+  // Subscribe to motion values with proper cleanup
+  useEffect(() => {
+    const progressBar = progressBarRef.current
+    const velocityBall = velocityBallRef.current
+
+    const unsubscribers: (() => void)[] = []
+
+    if (progressBar) {
+      unsubscribers.push(
+        scaleX.subscribe((val) => {
+          progressBar.style.transform = `scaleX(${val})`
+          progressBar.style.transformOrigin = 'left'
+        })
+      )
+      unsubscribers.push(
+        backgroundColor.subscribe((color) => {
+          progressBar.style.backgroundColor = color
+        })
+      )
+    }
+
+    if (velocityBall) {
+      unsubscribers.push(
+        scrollVelocity.subscribe((vel) => {
+          const clamped = Math.max(-500, Math.min(500, vel))
+          velocityBall.style.transform = `translateX(${clamped / 5}px)`
+        })
+      )
+    }
+
+    return () => {
+      unsubscribers.forEach(unsub => unsub())
+    }
+  }, [scaleX, backgroundColor, scrollVelocity])
+
   return (
     <div className="glass rounded-2xl p-6 border border-white/10">
       <div className="flex items-center gap-3 mb-6">
@@ -3444,17 +3611,8 @@ function ScrollProgressDemo() {
           </div>
           <div className="h-3 bg-black/30 rounded-full overflow-hidden">
             <div
+              ref={progressBarRef}
               className="h-full rounded-full transition-none"
-              ref={(el) => {
-                if (!el) return
-                scaleX.subscribe((val) => {
-                  el.style.transform = `scaleX(${val})`
-                  el.style.transformOrigin = 'left'
-                })
-                backgroundColor.subscribe((color) => {
-                  el.style.backgroundColor = color
-                })
-              }}
               style={{
                 transform: `scaleX(${scaleX.get()})`,
                 transformOrigin: 'left',
@@ -3478,14 +3636,8 @@ function ScrollProgressDemo() {
               style={{ left: '50%' }}
             />
             <div
+              ref={velocityBallRef}
               className="w-4 h-4 rounded-full bg-gradient-to-r from-orange-500 to-amber-500 shadow-lg"
-              ref={(el) => {
-                if (!el) return
-                scrollVelocity.subscribe((vel) => {
-                  const clamped = Math.max(-500, Math.min(500, vel))
-                  el.style.transform = `translateX(${clamped / 5}px)`
-                })
-              }}
             />
           </div>
         </div>
@@ -3912,15 +4064,29 @@ function TimelineAPIDemo() {
   )
 }
 
-// SVG Morphing Demo
+// SVG Morphing Demo - Using spring physics for smooth morphing
 function SVGMorphDemo() {
   const [currentShape, setCurrentShape] = useState<'circle' | 'star' | 'heart'>('circle')
+  const pathRef = useRef<SVGPathElement>(null)
 
   const shapePaths = {
     circle: 'M50,10 a40,40 0 1,0 0,80 a40,40 0 1,0 0,-80',
     star: 'M50,5 L61,40 L98,40 L68,62 L79,97 L50,75 L21,97 L32,62 L2,40 L39,40 Z',
     heart: 'M50,88 C20,60 5,40 5,25 C5,10 20,5 35,15 C42,20 48,28 50,35 C52,28 58,20 65,15 C80,5 95,10 95,25 C95,40 80,60 50,88 Z',
   }
+
+  // Spring physics configurations for each shape
+  const springConfigs = {
+    circle: { stiffness: 120, damping: 14 },
+    star: { stiffness: 200, damping: 18 },
+    heart: { stiffness: 150, damping: 12 },
+  }
+
+  // Use morph hook for smooth SVG path transitions
+  const { path: morphedPath } = useMorph(
+    shapePaths[currentShape],
+    springConfigs[currentShape]
+  )
 
   return (
     <div className="glass rounded-2xl p-6 border border-white/10">
@@ -3930,15 +4096,15 @@ function SVGMorphDemo() {
         </div>
         <div>
           <h3 className="font-semibold text-white">SVG Morphing</h3>
-          <p className="text-xs text-white/40">Shape transitions</p>
+          <p className="text-xs text-white/40">Spring physics transitions</p>
         </div>
       </div>
       <div className="h-32 bg-black/20 rounded-xl flex items-center justify-center mb-4">
         <svg viewBox="0 0 100 100" className="w-24 h-24">
           <path
-            d={shapePaths[currentShape]}
+            ref={pathRef}
+            d={morphedPath}
             fill="url(#morphGradient)"
-            style={{ transition: 'all 0.5s ease-out' }}
           />
           <defs>
             <linearGradient id="morphGradient" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -4118,6 +4284,18 @@ function StaggerPatternsDemo() {
   const [isAnimating, setIsAnimating] = useState(false)
   const itemRefs = useRef<HTMLDivElement[]>([])
 
+  // Each item has unique properties for variety
+  const itemConfigs = [
+    { height: 32, color: 'from-violet-400 to-purple-500', stiffness: 400, damping: 12 },
+    { height: 40, color: 'from-blue-400 to-indigo-500', stiffness: 350, damping: 14 },
+    { height: 28, color: 'from-cyan-400 to-blue-500', stiffness: 450, damping: 10 },
+    { height: 44, color: 'from-violet-400 to-indigo-500', stiffness: 300, damping: 16 },
+    { height: 36, color: 'from-purple-400 to-pink-500', stiffness: 380, damping: 13 },
+    { height: 30, color: 'from-indigo-400 to-violet-500', stiffness: 420, damping: 11 },
+    { height: 42, color: 'from-blue-400 to-cyan-500', stiffness: 320, damping: 15 },
+    { height: 34, color: 'from-pink-400 to-purple-500', stiffness: 360, damping: 14 },
+  ]
+
   const runStagger = () => {
     if (isAnimating) return
     setIsAnimating(true)
@@ -4137,20 +4315,26 @@ function StaggerPatternsDemo() {
         delays = linearStagger({ count, delay: 0.05 })
     }
 
-    // Reset
-    items.forEach((item) => {
-      item.style.transform = 'scale(0.5)'
-      item.style.opacity = '0.3'
+    // Reset with variety - different starting states
+    items.forEach((item, i) => {
+      const startScale = 0.3 + (i % 3) * 0.1 // 0.3, 0.4, 0.5, 0.3...
+      const startRotate = (i % 2 === 0 ? -15 : 15) // alternating rotation
+      item.style.transform = `scale(${startScale}) rotate(${startRotate}deg)`
+      item.style.opacity = '0.2'
     })
 
-    // Animate with stagger
+    // Animate with stagger - each item has unique physics
     items.forEach((item, i) => {
+      const config = itemConfigs[i]
       setTimeout(() => {
-        animate(item, { scale: 1, opacity: 1 }, { stiffness: 300, damping: 15 })
+        animate(item, { scale: 1, rotate: 0, opacity: 1 }, {
+          stiffness: config.stiffness,
+          damping: config.damping
+        })
       }, delays[i] * 1000)
     })
 
-    setTimeout(() => setIsAnimating(false), 1000)
+    setTimeout(() => setIsAnimating(false), 1200)
   }
 
   return (
@@ -4165,11 +4349,12 @@ function StaggerPatternsDemo() {
         </div>
       </div>
       <div className="h-16 bg-black/20 rounded-xl flex items-center justify-center gap-2 mb-4">
-        {Array.from({ length: 8 }).map((_, i) => (
+        {itemConfigs.map((config, i) => (
           <div
             key={i}
             ref={(el) => { if (el) itemRefs.current[i] = el }}
-            className="w-6 h-10 rounded bg-gradient-to-b from-violet-400 to-purple-500"
+            className={`w-6 rounded bg-gradient-to-b ${config.color}`}
+            style={{ height: config.height }}
           />
         ))}
       </div>
@@ -4425,6 +4610,50 @@ function MomentumDemo() {
   const isDragging = useRef(false)
   const lastX = useRef(0)
   const velocityTracker = useRef(0)
+  const cleanupRef = useRef<(() => void) | null>(null)
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (cleanupRef.current) {
+        cleanupRef.current()
+      }
+    }
+  }, [])
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    isDragging.current = true
+    lastX.current = e.clientX
+    velocityTracker.current = 0
+
+    const handleMove = (ev: MouseEvent) => {
+      const dx = ev.clientX - lastX.current
+      velocityTracker.current = dx * 0.5 // Track velocity
+      const newX = Math.max(0, Math.min(200, (value?.get() ?? 0) + dx))
+      set(newX)
+      lastX.current = ev.clientX
+    }
+
+    const handleUp = () => {
+      isDragging.current = false
+      // Apply momentum on release
+      if (Math.abs(velocityTracker.current) > 0.5) {
+        push(velocityTracker.current)
+      }
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleUp)
+      cleanupRef.current = null
+    }
+
+    // Store cleanup function
+    cleanupRef.current = () => {
+      window.removeEventListener('mousemove', handleMove)
+      window.removeEventListener('mouseup', handleUp)
+    }
+
+    window.addEventListener('mousemove', handleMove)
+    window.addEventListener('mouseup', handleUp)
+  }
 
   return (
     <div className="glass rounded-2xl p-6 border border-white/10">
@@ -4444,32 +4673,7 @@ function MomentumDemo() {
         <div
           className="w-12 h-12 rounded-xl bg-gradient-to-r from-red-400 to-orange-500 shadow-lg cursor-grab active:cursor-grabbing"
           style={{ transform: `translateX(${x}px)` }}
-          onMouseDown={(e) => {
-            isDragging.current = true
-            lastX.current = e.clientX
-            velocityTracker.current = 0
-
-            const handleMove = (ev: MouseEvent) => {
-              const dx = ev.clientX - lastX.current
-              velocityTracker.current = dx * 0.5 // Track velocity
-              const newX = Math.max(0, Math.min(200, (value?.get() ?? 0) + dx))
-              set(newX)
-              lastX.current = ev.clientX
-            }
-
-            const handleUp = () => {
-              isDragging.current = false
-              // Apply momentum on release
-              if (Math.abs(velocityTracker.current) > 0.5) {
-                push(velocityTracker.current)
-              }
-              window.removeEventListener('mousemove', handleMove)
-              window.removeEventListener('mouseup', handleUp)
-            }
-
-            window.addEventListener('mousemove', handleMove)
-            window.addEventListener('mouseup', handleUp)
-          }}
+          onMouseDown={handleMouseDown}
         />
       </div>
       <p className="text-center text-xs text-white/40">
@@ -4910,6 +5114,27 @@ function ChainAnimationDemo() {
 // ============================================================================
 
 function NewFeaturesSection() {
+  // Varied animation configs for visual interest
+  const animConfigs = [
+    { initial: { opacity: 0, y: 30, scale: 0.95 }, transition: { delay: 0.16, stiffness: 120, damping: 14 } },
+    { initial: { opacity: 0, y: 25, x: -10 }, transition: { delay: 0.18, stiffness: 140, damping: 16 } },
+    { initial: { opacity: 0, y: 35, scale: 0.9 }, transition: { delay: 0.20, stiffness: 100, damping: 12 } },
+    { initial: { opacity: 0, y: 20, x: 10 }, transition: { delay: 0.22, stiffness: 130, damping: 15 } },
+    { initial: { opacity: 0, y: 40 }, transition: { delay: 0.24, stiffness: 110, damping: 13 } },
+    { initial: { opacity: 0, y: 28, scale: 0.92 }, transition: { delay: 0.26, stiffness: 150, damping: 17 } },
+    { initial: { opacity: 0, y: 32, x: -8 }, transition: { delay: 0.28, stiffness: 125, damping: 14 } },
+    { initial: { opacity: 0, y: 22, scale: 0.97 }, transition: { delay: 0.30, stiffness: 135, damping: 16 } },
+  ]
+
+  const demos = [
+    KeyframesDemo, SVGPathDemo, FLIPLayoutDemo, GesturePropsDemo,
+    TimelineAPIDemo, SVGMorphDemo, VariantsSystemDemo, PhysicsPresetsDemo,
+    StaggerPatternsDemo, ReorderListDemo, SpringTextDemo, TiltCardDemo,
+    MagneticButtonDemo, UseAnimateDemo, MomentumDemo, ChainAnimationDemo,
+    BouncingBallDemo, ElasticBandDemo, GravityDemo, PointerTrackerDemo,
+    SplitTextDemo,
+  ]
+
   return (
     <AnimatedDiv
       initial={{ opacity: 0, y: 20 }}
@@ -4924,81 +5149,31 @@ function NewFeaturesSection() {
       <p className="text-white/40 mb-6">Latest features: Timeline API, SVG Morphing, Variants System, Stagger Patterns, Physics Presets</p>
 
       <div className="grid lg:grid-cols-4 gap-6">
-        {/* Row 1: v1.2 features */}
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.16 }}>
-          <KeyframesDemo />
-        </AnimatedDiv>
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.17 }}>
-          <SVGPathDemo />
-        </AnimatedDiv>
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.18 }}>
-          <FLIPLayoutDemo />
-        </AnimatedDiv>
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.19 }}>
-          <GesturePropsDemo />
-        </AnimatedDiv>
-        {/* Row 2: v1.3 features */}
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.20 }}>
-          <TimelineAPIDemo />
-        </AnimatedDiv>
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.21 }}>
-          <SVGMorphDemo />
-        </AnimatedDiv>
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.22 }}>
-          <VariantsSystemDemo />
-        </AnimatedDiv>
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.23 }}>
-          <PhysicsPresetsDemo />
-        </AnimatedDiv>
-        {/* Row 3: More v1.3 features */}
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.24 }}>
-          <StaggerPatternsDemo />
-        </AnimatedDiv>
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
-          <ReorderListDemo />
-        </AnimatedDiv>
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.26 }}>
-          <SpringTextDemo />
-        </AnimatedDiv>
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.27 }}>
-          <TiltCardDemo />
-        </AnimatedDiv>
-        {/* Row 4: Physics & Advanced */}
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.28 }}>
-          <MagneticButtonDemo />
-        </AnimatedDiv>
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.29 }}>
-          <UseAnimateDemo />
-        </AnimatedDiv>
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.30 }}>
-          <MomentumDemo />
-        </AnimatedDiv>
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.31 }}>
-          <ChainAnimationDemo />
-        </AnimatedDiv>
-        {/* Row 5: More Physics Hooks */}
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.32 }}>
-          <BouncingBallDemo />
-        </AnimatedDiv>
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.33 }}>
-          <ElasticBandDemo />
-        </AnimatedDiv>
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.34 }}>
-          <GravityDemo />
-        </AnimatedDiv>
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
-          <PointerTrackerDemo />
-        </AnimatedDiv>
-        {/* Row 6: Text & Utilities */}
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.36 }}>
-          <SplitTextDemo />
-        </AnimatedDiv>
+        {demos.map((Demo, i) => {
+          const config = animConfigs[i % animConfigs.length]
+          return (
+            <AnimatedDiv
+              key={i}
+              initial={config.initial}
+              animate={{ opacity: 1, y: 0, x: 0, scale: 1 }}
+              transition={config.transition}
+            >
+              <Demo />
+            </AnimatedDiv>
+          )
+        })}
       </div>
     </AnimatedDiv>
   )
 }
 
 function VisualEffectsSection() {
+  const demos = [
+    { Demo: ParticleExplosion, initial: { opacity: 0, y: 35, scale: 0.9 }, transition: { delay: 0.25, stiffness: 100, damping: 12 } },
+    { Demo: GravitySimulation, initial: { opacity: 0, y: 25, x: -15 }, transition: { delay: 0.32, stiffness: 130, damping: 15 } },
+    { Demo: WaveAnimation, initial: { opacity: 0, y: 40, scale: 0.85 }, transition: { delay: 0.38, stiffness: 90, damping: 10 } },
+  ]
+
   return (
     <AnimatedDiv
       initial={{ opacity: 0, y: 20 }}
@@ -5010,21 +5185,31 @@ function VisualEffectsSection() {
       <p className="text-white/40 mb-6">Stunning visual demonstrations of spring physics</p>
 
       <div className="grid lg:grid-cols-3 gap-6">
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.25 }}>
-          <ParticleExplosion />
-        </AnimatedDiv>
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
-          <GravitySimulation />
-        </AnimatedDiv>
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.35 }}>
-          <WaveAnimation />
-        </AnimatedDiv>
+        {demos.map(({ Demo, initial, transition }, i) => (
+          <AnimatedDiv
+            key={i}
+            initial={initial}
+            animate={{ opacity: 1, y: 0, x: 0, scale: 1 }}
+            transition={transition}
+          >
+            <Demo />
+          </AnimatedDiv>
+        ))}
       </div>
     </AnimatedDiv>
   )
 }
 
 function SpectacularEffectsSection() {
+  const demos = [
+    { Demo: LiquidButtonDemo, initial: { opacity: 0, y: 30, scale: 0.92 }, transition: { delay: 0.36, stiffness: 140, damping: 14 } },
+    { Demo: OdometerDemo, initial: { opacity: 0, y: 25, x: 12 }, transition: { delay: 0.40, stiffness: 120, damping: 16 } },
+    { Demo: BouncyCardsDemo, initial: { opacity: 0, y: 35, scale: 0.88 }, transition: { delay: 0.44, stiffness: 100, damping: 11 } },
+    { Demo: AnimatedTabsDemo, initial: { opacity: 0, y: 28, x: -10 }, transition: { delay: 0.48, stiffness: 130, damping: 15 } },
+    { Demo: FloatingActionDemo, initial: { opacity: 0, y: 40, scale: 0.85 }, transition: { delay: 0.52, stiffness: 110, damping: 12 } },
+    { Demo: PullToRefreshDemo, initial: { opacity: 0, y: 32, x: 8 }, transition: { delay: 0.56, stiffness: 125, damping: 14 } },
+  ]
+
   return (
     <AnimatedDiv
       initial={{ opacity: 0, y: 20 }}
@@ -5036,24 +5221,16 @@ function SpectacularEffectsSection() {
       <p className="text-white/40 mb-6">Eye-catching animations that showcase SpringKit's power</p>
 
       <div className="grid lg:grid-cols-3 gap-6">
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.36 }}>
-          <LiquidButtonDemo />
-        </AnimatedDiv>
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.37 }}>
-          <OdometerDemo />
-        </AnimatedDiv>
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.38 }}>
-          <BouncyCardsDemo />
-        </AnimatedDiv>
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.39 }}>
-          <AnimatedTabsDemo />
-        </AnimatedDiv>
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.395 }}>
-          <FloatingActionDemo />
-        </AnimatedDiv>
-        <AnimatedDiv initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.398 }}>
-          <PullToRefreshDemo />
-        </AnimatedDiv>
+        {demos.map(({ Demo, initial, transition }, i) => (
+          <AnimatedDiv
+            key={i}
+            initial={initial}
+            animate={{ opacity: 1, y: 0, x: 0, scale: 1 }}
+            transition={transition}
+          >
+            <Demo />
+          </AnimatedDiv>
+        ))}
       </div>
     </AnimatedDiv>
   )

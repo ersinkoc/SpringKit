@@ -271,7 +271,7 @@ function createAnimatedComponent<T extends React.ElementType>(
         return getTargetStyle()
       }, [initial, getTargetStyle])
 
-      // Initialize spring
+      // Initialize spring and handle animations
       useEffect(() => {
         const initialStyle = getInitialStyle()
         const numericInitial = extractNumericValues(initialStyle)
@@ -293,6 +293,7 @@ function createAnimatedComponent<T extends React.ElementType>(
           springRef.current = null
         }
 
+        isDestroyedRef.current = false
         const spring = createSpringGroup(numericInitial, config)
 
         // Subscribe with destroyed check
@@ -304,6 +305,23 @@ function createAnimatedComponent<T extends React.ElementType>(
 
         springRef.current = spring
 
+        // If initial is provided and different from animate, start animation immediately
+        if (initial && initial !== false && animate) {
+          const numericAnimate = extractNumericValues(animate)
+          const needsAnimation = Object.keys(numericAnimate).some(
+            (key) => numericInitial[key] !== numericAnimate[key]
+          )
+
+          if (needsAnimation) {
+            // Use requestAnimationFrame to ensure spring is ready
+            requestAnimationFrame(() => {
+              if (springRef.current && !isDestroyedRef.current) {
+                springRef.current.set(numericAnimate)
+              }
+            })
+          }
+        }
+
         return () => {
           isDestroyedRef.current = true
           if (unsubscribeRef.current) {
@@ -312,36 +330,20 @@ function createAnimatedComponent<T extends React.ElementType>(
           }
           spring.destroy()
         }
-      }, [config.stiffness, config.damping, getInitialStyle]) // eslint-disable-line react-hooks/exhaustive-deps
+      }, [config.stiffness, config.damping]) // eslint-disable-line react-hooks/exhaustive-deps
 
-      // Handle animation updates
+      // Handle animation updates (after initial mount)
       useEffect(() => {
         if (!springRef.current) return
 
-        const targetStyle = getTargetStyle()
-        const numericTarget = extractNumericValues(targetStyle)
-
-        // Skip animation on first render if initial !== false
+        // Skip on first render - handled in spring initialization
         if (isFirstRender.current) {
           isFirstRender.current = false
-
-          // If initial is provided and different from animate, we need to animate
-          if (initial && initial !== false && animate) {
-            const numericInitial = extractNumericValues(initial)
-            const numericAnimate = extractNumericValues(animate)
-
-            // Check if initial and animate are different
-            const needsAnimation = Object.keys(numericAnimate).some(
-              (key) => numericInitial[key] !== numericAnimate[key]
-            )
-
-            if (needsAnimation) {
-              springRef.current.set(numericAnimate)
-            }
-          }
           return
         }
 
+        const targetStyle = getTargetStyle()
+        const numericTarget = extractNumericValues(targetStyle)
         springRef.current.set(numericTarget)
       }, [isPresent, animate, exit, getTargetStyle, initial, isHovered, isPressed, isFocused, isInViewport])
 
