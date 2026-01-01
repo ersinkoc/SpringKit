@@ -90,6 +90,13 @@ export class MotionValue<T = number> {
   }
 
   /**
+   * Check if this MotionValue has been destroyed
+   */
+  isDestroyed(): boolean {
+    return this._destroyed
+  }
+
+  /**
    * Set value with spring animation
    */
   set(newValue: T, animate: boolean = true): void {

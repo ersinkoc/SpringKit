@@ -105,9 +105,10 @@ export function useSpring<T extends Record<string, number>>(
     }
   }, [valuesKey, values])
 
-  // Cleanup on unmount
+  // Cleanup on unmount: stop animations but don't destroy
+  // (Springs are reused across React StrictMode remounts)
   useEffect(() => {
-    return () => springRef.current?.destroy()
+    return () => springRef.current?.stop()
   }, [])
 
   return currentValues as AnimatedValues<T>

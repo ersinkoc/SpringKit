@@ -102,6 +102,11 @@ export function useAnimate(): UseAnimateReturn {
   const timeoutIdsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
   const isDestroyedRef = useRef(false)
 
+  // Reset destroyed flag on mount (handles React StrictMode remount)
+  useEffect(() => {
+    isDestroyedRef.current = false
+  }, [])
+
   // Map CSS property names to transform functions (reserved for future use)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const _getPropertyStyle = useCallback((_property: string, _value: number): string | null => {
@@ -278,32 +283,26 @@ export function useAnimate(): UseAnimateReturn {
     }, []),
   }
 
-  // Cleanup on unmount
+  // Cleanup on unmount: stop animations but don't destroy springs
+  // (Springs are reused across React StrictMode remounts)
   useEffect(() => {
-    // Capture refs at effect creation time for cleanup
-    const cleanups = cleanupRef.current
-    const springs = springsRef.current
-    const rafIds = rafIdsRef.current
-    const timeoutIds = timeoutIdsRef.current
-
     return () => {
       // Mark as destroyed to prevent further updates
       isDestroyedRef.current = true
 
       // Cancel all pending RAF callbacks
-      rafIds.forEach((id) => cancelAnimationFrame(id))
-      rafIds.clear()
+      rafIdsRef.current.forEach((id) => cancelAnimationFrame(id))
+      rafIdsRef.current.clear()
 
       // Clear all pending timeouts
-      timeoutIds.forEach((id) => clearTimeout(id))
-      timeoutIds.clear()
+      timeoutIdsRef.current.forEach((id) => clearTimeout(id))
+      timeoutIdsRef.current.clear()
 
       // Run cleanup functions
-      cleanups.forEach((cleanup) => cleanup())
+      cleanupRef.current.forEach((cleanup) => cleanup())
 
-      // Destroy springs
-      springs.forEach((spring) => spring.destroy())
-      springs.clear()
+      // Stop springs instead of destroying them
+      springsRef.current.forEach((spring) => spring.stop())
     }
   }, [])
 

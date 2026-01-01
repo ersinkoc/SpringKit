@@ -4598,15 +4598,21 @@ function ThrowableCard() {
 }`
 
 function MomentumDemo() {
+  const [x, setX] = useState(0)
   const { value, push, set } = useMomentum({
     friction: 0.92,
     bounds: { min: 0, max: 200 },
   })
-  const x = useMotionValueState(value!) ?? 0
   const isDragging = useRef(false)
   const lastX = useRef(0)
   const velocityTracker = useRef(0)
   const cleanupRef = useRef<(() => void) | null>(null)
+
+  useEffect(() => {
+    if (!value) return
+    const unsubscribe = value.subscribe((v) => setX(v))
+    return unsubscribe
+  }, [value])
 
   // Cleanup on unmount
   useEffect(() => {
@@ -4700,6 +4706,7 @@ function BouncingBall() {
 }`
 
 function BouncingBallDemo() {
+  const [y, setY] = useState(8)
   const { value, drop } = useBounce({
     gravity: 0.8,
     floor: 100,
@@ -4707,7 +4714,12 @@ function BouncingBallDemo() {
     restitution: 0.7,
     dampening: 0.02,
   })
-  const y = useMotionValueState(value!) ?? 8
+
+  useEffect(() => {
+    if (!value) return
+    const unsubscribe = value.subscribe((v) => setY(v))
+    return unsubscribe
+  }, [value])
 
   return (
     <div className="glass rounded-2xl p-6 border border-white/10">
@@ -4765,14 +4777,20 @@ function RubberBand() {
 }`
 
 function ElasticBandDemo() {
+  const [offset, setOffset] = useState(0)
   const { value, stretch, release } = useElastic({
     elasticity: 0.6,
     maxStretch: 80,
     spring: { stiffness: 400, damping: 15 },
   })
-  const offset = useMotionValueState(value!) ?? 0
   const isDragging = useRef(false)
   const startY = useRef(0)
+
+  useEffect(() => {
+    if (!value) return
+    const unsubscribe = value.subscribe((v) => setOffset(v))
+    return unsubscribe
+  }, [value])
 
   return (
     <div className="glass rounded-2xl p-6 border border-white/10">
@@ -4867,20 +4885,30 @@ function GravityBall() {
 
 function GravityDemo() {
   const containerRef = useRef<HTMLDivElement>(null)
+  const [posX, setPosX] = useState(80)
+  const [posY, setPosY] = useState(50)
   const { x, y, launch, setPosition, start } = useGravity({
     gravity: { x: 0, y: 0.5 },
     drag: 0.01,
     bounds: { left: 0, right: 170, top: 0, bottom: 108 },
     bounciness: 0.6,
   })
-  const posX = useMotionValueState(x!) ?? 80
-  const posY = useMotionValueState(y!) ?? 50
+
+  useEffect(() => {
+    if (!x || !y) return
+    const unsubX = x.subscribe((v) => setPosX(v))
+    const unsubY = y.subscribe((v) => setPosY(v))
+    return () => {
+      unsubX()
+      unsubY()
+    }
+  }, [x, y])
 
   // Start gravity simulation on mount
   useEffect(() => {
     setPosition({ x: 80, y: 20 })
     start()
-  }, [])
+  }, [setPosition, start])
 
   const handleClick = (e: React.MouseEvent) => {
     if (!containerRef.current) return
@@ -4926,13 +4954,23 @@ function GravityDemo() {
 // Cursor Tracker Demo - usePointer hook
 function PointerTrackerDemo() {
   const containerRef = useRef<HTMLDivElement>(null)
+  const [posX, setPosX] = useState(0)
+  const [posY, setPosY] = useState(0)
   const { x, y, isHovering } = usePointer({
     target: containerRef,
     smooth: 0.15,
     hoverOnly: true,
   })
-  const posX = useMotionValueState(x!) ?? 0
-  const posY = useMotionValueState(y!) ?? 0
+
+  useEffect(() => {
+    if (!x || !y) return
+    const unsubX = x.subscribe((v) => setPosX(v))
+    const unsubY = y.subscribe((v) => setPosY(v))
+    return () => {
+      unsubX()
+      unsubY()
+    }
+  }, [x, y])
 
   return (
     <div className="glass rounded-2xl p-6 border border-white/10">

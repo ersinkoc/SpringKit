@@ -99,10 +99,11 @@ export function useTrail<T extends Record<string, number>>(
     return () => {
       isMountedRef.current = false
       unsubscribers.forEach(unsub => unsub())
+      // Stop animations but don't destroy springs
+      // (Springs are reused across React StrictMode remounts)
       springs.forEach(propSprings => {
-        propSprings.forEach(spring => spring.destroy())
+        propSprings.forEach(spring => spring.stop())
       })
-      springsRef.current = null
     }
   }, [count]) // eslint-disable-line react-hooks/exhaustive-deps
 

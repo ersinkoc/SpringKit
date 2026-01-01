@@ -70,7 +70,8 @@ export function useSpringState(
   }
 
   // Create motion value wrapper
-  if (motionValueRef.current === null) {
+  // Recreate if destroyed (happens with React StrictMode double-mount)
+  if (motionValueRef.current === null || motionValueRef.current.isDestroyed()) {
     motionValueRef.current = createMotionValue(initial)
   }
 
@@ -82,11 +83,10 @@ export function useSpringState(
     return () => unsub?.()
   }, [])
 
-  // Cleanup
+  // Cleanup: stop animations but don't destroy (reused across StrictMode remounts)
   useEffect(() => {
     return () => {
-      springRef.current?.destroy()
-      motionValueRef.current?.destroy()
+      springRef.current?.stop()
     }
   }, [])
 
@@ -145,10 +145,11 @@ export function useMomentum(options: UseMomentumOptions = {}) {
   const frameRef = useRef<number | null>(null)
   const isActiveRef = useRef(false)
 
-  if (valueRef.current === null) {
+  // Recreate if destroyed (happens with React StrictMode double-mount)
+  if (valueRef.current === null || valueRef.current.isDestroyed()) {
     valueRef.current = createMotionValue(0)
   }
-  if (velocityRef.current === null) {
+  if (velocityRef.current === null || velocityRef.current.isDestroyed()) {
     velocityRef.current = createMotionValue(0)
   }
 
@@ -223,11 +224,12 @@ export function useMomentum(options: UseMomentumOptions = {}) {
     valueRef.current?.jump(applyBounds(value))
   }, [applyBounds])
 
+  // Cleanup: cancel animations but don't destroy MotionValues
+  // (MotionValues are reused across React StrictMode remounts)
   useEffect(() => {
     return () => {
       if (frameRef.current) cancelAnimationFrame(frameRef.current)
-      valueRef.current?.destroy()
-      velocityRef.current?.destroy()
+      isActiveRef.current = false
     }
   }, [])
 
@@ -285,7 +287,8 @@ export function useElastic(options: UseElasticOptions = {}) {
   const springRef = useRef<ReturnType<typeof createSpringValue> | null>(null)
 
   // Initialize refs only once
-  if (motionValueRef.current === null) {
+  // Recreate if destroyed (happens with React StrictMode double-mount)
+  if (motionValueRef.current === null || motionValueRef.current.isDestroyed()) {
     motionValueRef.current = createMotionValue(0)
   }
   if (springRef.current === null) {
@@ -326,10 +329,11 @@ export function useElastic(options: UseElasticOptions = {}) {
     springRef.current?.set(value)
   }, [])
 
+  // Cleanup: don't destroy MotionValues/springs
+  // (They are reused across React StrictMode remounts)
   useEffect(() => {
     return () => {
-      motionValueRef.current?.destroy()
-      springRef.current?.destroy()
+      springRef.current?.stop()
     }
   }, [])
 
@@ -467,12 +471,14 @@ export function useBounce(options: UseBounceOptions = {}) {
     velocityRef.current = 0
   }, [])
 
+  // Cleanup: cancel animations but don't destroy MotionValue
+  // (MotionValue is reused across StrictMode remounts)
   useEffect(() => {
     return () => {
       if (frameRef.current) cancelAnimationFrame(frameRef.current)
-      motionValue.destroy()
+      isActiveRef.current = false
     }
-  }, [motionValue])
+  }, [])
 
   return {
     value: motionValue,
@@ -539,12 +545,13 @@ export function useGravity(options: UseGravityOptions = {}) {
   } = options
 
   // Use useRef for motion values to avoid hook order issues
+  // Recreate if destroyed (happens with React StrictMode double-mount)
   const xRef = useRef<MotionValue<number> | null>(null)
   const yRef = useRef<MotionValue<number> | null>(null)
-  if (xRef.current === null) {
+  if (xRef.current === null || xRef.current.isDestroyed()) {
     xRef.current = createMotionValue(0)
   }
-  if (yRef.current === null) {
+  if (yRef.current === null || yRef.current.isDestroyed()) {
     yRef.current = createMotionValue(0)
   }
   const xMotion = xRef.current
@@ -645,13 +652,14 @@ export function useGravity(options: UseGravityOptions = {}) {
     }
   }, [tick])
 
+  // Cleanup: cancel animations but don't destroy MotionValues
+  // (MotionValues are reused across React StrictMode remounts)
   useEffect(() => {
     return () => {
       if (frameRef.current) cancelAnimationFrame(frameRef.current)
-      xMotion.destroy()
-      yMotion.destroy()
+      isActiveRef.current = false
     }
-  }, [xMotion, yMotion])
+  }, [])
 
   return {
     x: xMotion,
@@ -721,7 +729,8 @@ export function useChain(
     })
 
     allKeys.forEach((key) => {
-      if (!valuesRef.current[key]) {
+      // Recreate if destroyed (happens with React StrictMode double-mount)
+      if (!valuesRef.current[key] || valuesRef.current[key].isDestroyed()) {
         const initial = initialValues[key] ?? 0
         valuesRef.current[key] = createMotionValue(initial)
         springsRef.current[key] = createSpringValue(initial, {
@@ -730,13 +739,11 @@ export function useChain(
       }
     })
 
-    // Capture refs at effect creation time for cleanup
-    const currentValues = valuesRef.current
-    const currentSprings = springsRef.current
-
+    // Cleanup: stop springs but don't destroy MotionValues
+    // (They are reused across React StrictMode remounts)
     return () => {
-      Object.values(currentValues).forEach((v) => v.destroy())
-      Object.values(currentSprings).forEach((s) => s.destroy())
+      Object.values(springsRef.current).forEach((s) => s.stop())
+      if (timeoutRef.current) clearTimeout(timeoutRef.current)
     }
     // Mount only - steps and initialValues used for initialization
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -882,8 +889,9 @@ export function usePointer(options: UsePointerOptions = {}) {
   const [isHovering, setIsHovering] = useState(false)
   const frameRef = useRef<number | null>(null)
 
-  if (xRef.current === null) xRef.current = createMotionValue(0)
-  if (yRef.current === null) yRef.current = createMotionValue(0)
+  // Recreate if destroyed (happens with React StrictMode double-mount)
+  if (xRef.current === null || xRef.current.isDestroyed()) xRef.current = createMotionValue(0)
+  if (yRef.current === null || yRef.current.isDestroyed()) yRef.current = createMotionValue(0)
 
   useEffect(() => {
     const element = target?.current ?? window
@@ -958,10 +966,12 @@ export function usePointer(options: UsePointerOptions = {}) {
     }
   }, [target, smooth, hoverOnly])
 
+  // Cleanup: don't destroy MotionValues
+  // (They are reused across React StrictMode remounts)
   useEffect(() => {
     return () => {
-      xRef.current?.destroy()
-      yRef.current?.destroy()
+      xRef.current?.stop()
+      yRef.current?.stop()
     }
   }, [])
 
@@ -1016,8 +1026,9 @@ export function useGyroscope(options: UseGyroscopeOptions = {}) {
   const [isSupported, setIsSupported] = useState(false)
   const frameRef = useRef<number | null>(null)
 
-  if (tiltXRef.current === null) tiltXRef.current = createMotionValue(0)
-  if (tiltYRef.current === null) tiltYRef.current = createMotionValue(0)
+  // Recreate if destroyed (happens with React StrictMode double-mount)
+  if (tiltXRef.current === null || tiltXRef.current.isDestroyed()) tiltXRef.current = createMotionValue(0)
+  if (tiltYRef.current === null || tiltYRef.current.isDestroyed()) tiltYRef.current = createMotionValue(0)
 
   const clampValue = useCallback((value: number) => {
     return Math.max(-clamp, Math.min(clamp, value * multiplier))
@@ -1071,10 +1082,12 @@ export function useGyroscope(options: UseGyroscopeOptions = {}) {
     }
   }, [clampValue, smooth])
 
+  // Cleanup: don't destroy MotionValues
+  // (They are reused across React StrictMode remounts)
   useEffect(() => {
     return () => {
-      tiltXRef.current?.destroy()
-      tiltYRef.current?.destroy()
+      tiltXRef.current?.stop()
+      tiltYRef.current?.stop()
     }
   }, [])
 
