@@ -742,8 +742,9 @@ export function useChain(
 
     // Cleanup: stop springs but don't destroy MotionValues
     // (They are reused across React StrictMode remounts)
+    const springs = springsRef.current
     return () => {
-      Object.values(springsRef.current).forEach((s) => s.stop())
+      Object.values(springs).forEach((s) => s.stop())
       if (timeoutRef.current) clearTimeout(timeoutRef.current)
     }
     // Mount only - steps and initialValues used for initialization

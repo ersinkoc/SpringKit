@@ -286,23 +286,28 @@ export function useAnimate(): UseAnimateReturn {
   // Cleanup on unmount: stop animations but don't destroy springs
   // (Springs are reused across React StrictMode remounts)
   useEffect(() => {
+    const rafIds = rafIdsRef.current
+    const timeoutIds = timeoutIdsRef.current
+    const cleanup = cleanupRef.current
+    const springs = springsRef.current
+
     return () => {
       // Mark as destroyed to prevent further updates
       isDestroyedRef.current = true
 
       // Cancel all pending RAF callbacks
-      rafIdsRef.current.forEach((id) => cancelAnimationFrame(id))
-      rafIdsRef.current.clear()
+      rafIds.forEach((id) => cancelAnimationFrame(id))
+      rafIds.clear()
 
       // Clear all pending timeouts
-      timeoutIdsRef.current.forEach((id) => clearTimeout(id))
-      timeoutIdsRef.current.clear()
+      timeoutIds.forEach((id) => clearTimeout(id))
+      timeoutIds.clear()
 
       // Run cleanup functions
-      cleanupRef.current.forEach((cleanup) => cleanup())
+      cleanup.forEach((c) => c())
 
       // Stop springs instead of destroying them
-      springsRef.current.forEach((spring) => spring.stop())
+      springs.forEach((spring) => spring.stop())
     }
   }, [])
 

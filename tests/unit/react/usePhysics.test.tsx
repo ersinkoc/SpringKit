@@ -88,7 +88,9 @@ describe('useSpringState', () => {
       result.current[1](100)
     })
 
-    runAnimationFrames(10)
+    act(() => {
+      runAnimationFrames(10)
+    })
 
     expect(onChange).toHaveBeenCalled()
   })
@@ -580,7 +582,9 @@ describe('useGyroscope', () => {
       )
     })
 
-    runAnimationFrames(5)
+    act(() => {
+      runAnimationFrames(5)
+    })
 
     // Values should have updated based on mouse position
     expect(result.current.tiltX).toBeDefined()

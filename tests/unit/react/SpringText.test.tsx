@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { render, screen, cleanup } from '@testing-library/react'
+import { render, screen, cleanup, act } from '@testing-library/react'
 import React from 'react'
 import {
   SpringText,
@@ -113,7 +113,9 @@ describe('SpringText', () => {
       )
 
       // Run all timers and requestAnimationFrame callbacks
-      vi.runAllTimers()
+      act(() => {
+        vi.runAllTimers()
+      })
 
       // onComplete should have been called after animations complete
       expect(onComplete).toHaveBeenCalled()
