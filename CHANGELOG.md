@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.3] - 2026-01-08
+
+### Fixed
+- **useBounce Hook**: Added missing `isDestroyed()` check for MotionValue initialization, ensuring consistency with other physics hooks (`useMomentum`, `useElastic`, `useGravity`, `usePointer`, `useGyroscope`, `useChain`) and proper handling when MotionValue is externally destroyed
+
+### Internal
+- Comprehensive codebase audit (70+ files analyzed)
+- All 931 tests passing
+- Zero security vulnerabilities confirmed
+
+## [1.3.2] - 2026-01-07
+
+### Fixed
+- **React StrictMode**: Improved compatibility for spring hooks with React StrictMode double-mounting behavior
+
+## [1.3.1] - 2026-01-06
+
+### Added
+- Comprehensive unit tests for gesture, layout, scroll, and SVG morph functionalities
+
+### Changed
+- Adjusted test coverage thresholds for better accuracy
+
+## [1.3.0] - 2026-01-05
+
+### Added
+- **SVG Morphing**: `createMorph()`, `createMorphSequence()` for spring-physics shape transitions
+- **Shape Library**: Built-in shapes - `shapes.circle()`, `shapes.star()`, `shapes.heart()`, `shapes.triangle()`, etc.
+- **Variants System**: `useVariants`, `VariantProvider` for declarative animation states
+- **Variant Presets**: `variantPresets` with common animation patterns (fadeIn, slideUp, scale, etc.)
+- **Physics Presets**: 40+ semantic presets (`physicsPresets.button`, `modal`, `toast`, `dragRelease`, `jelly`, etc.)
+- **Feeling Configs**: `createFeeling()` for quick spring configuration (snappy, smooth, bouncy, heavy, light, elastic)
+- **Preset Adjusters**: `adjustSpeed()`, `adjustBounce()` for fine-tuning presets
+- **Advanced Physics Hooks**: `useBounce`, `useElastic`, `useMomentum`, `useGravity`, `useChain`, `usePointer`, `useGyroscope`
+- **Text Animation Components**: `SpringText`, `SpringNumber`, `TypeWriter`, `SplitText`
+- **Magnetic Components**: `Magnetic`, `MagneticGroup`, `MagneticCursor`, `useMagnetic`
+- **Parallax Components**: `Parallax`, `MouseParallax`, `TiltCard`, `ParallaxContainer`, `ParallaxLayer`
+- **Reorder Component**: Drag-to-reorder list with keyboard accessibility
+- **Stagger Patterns**: `linearStagger`, `centerStagger`, `waveStagger`, `spiralStagger`, `gridStagger`, `randomStagger`
+- **Shared Layout**: `createSharedLayoutContext`, `createLayoutGroup`, `createAutoLayout`
+- **Scroll-Linked**: `createScrollProgress`, `createParallax`, `createScrollTrigger`, `scrollEasings`
+
+### Performance
+- 931 tests with comprehensive coverage
+- Zero runtime dependencies maintained
+- ~7KB gzipped core, ~6KB gzipped React adapter
+
 ## [1.2.0] - 2025-12-31
 
 ### Added

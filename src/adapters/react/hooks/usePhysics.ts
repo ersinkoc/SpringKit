@@ -394,8 +394,9 @@ export function useBounce(options: UseBounceOptions = {}) {
   } = options
 
   // Use useRef for motion value to avoid hook order issues
+  // Recreate if destroyed (happens with React StrictMode double-mount)
   const motionValueRef = useRef<MotionValue<number> | null>(null)
-  if (motionValueRef.current === null) {
+  if (motionValueRef.current === null || motionValueRef.current.isDestroyed()) {
     motionValueRef.current = createMotionValue(ceiling)
   }
   const motionValue = motionValueRef.current
