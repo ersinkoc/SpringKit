@@ -129,7 +129,11 @@ function HoverSection() {
           <div
             {...handlers}
             onMouseEnter={(e) => {
-              handlers.onMouseEnter?.()
+              try {
+                handlers.onMouseEnter?.()
+              } catch (error) {
+                console.error('[GesturesDemo] Mouse enter handler error:', error)
+              }
               setHoverCount((c) => c + 1)
             }}
             className="w-28 h-28 rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-500 shadow-lg flex flex-col items-center justify-center text-white transition-all duration-300 cursor-pointer"
@@ -185,6 +189,7 @@ function TapSection() {
           <button
             {...handlers}
             onClick={handleClick}
+            aria-label="Gesture demo button - tap or hold to see press effect"
             className="px-8 py-4 rounded-2xl bg-gradient-to-br from-violet-400 to-purple-600 shadow-lg shadow-purple-500/40 text-white font-medium transition-all"
             style={{
               transform: isPressed ? 'scale(0.92)' : 'scale(1)',

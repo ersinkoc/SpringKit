@@ -34,7 +34,7 @@ function PhysicsDemo() {
     if (!boxRef.current || isAnimating) return
     setIsAnimating(true)
 
-    const config = presets[preset]
+    const config = presets[preset] ?? presets.bouncy
 
     // Animate from 0 to 250px
     const animation = spring(0, 250, {
@@ -127,7 +127,7 @@ function PhysicsDemo() {
     if (!boxRef.current || isAnimating) return
     setIsAnimating(true)
 
-    const config = presets[preset]
+    const config = presets[preset] ?? presets.bouncy
 
     const animation = spring(0, 250, {
       stiffness: config.stiffness,

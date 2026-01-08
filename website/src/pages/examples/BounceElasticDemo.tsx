@@ -76,6 +76,7 @@ function GravityDemo() {
 function BounceSection() {
   const [isBouncing, setIsBouncing] = useState(false)
   const [yPos, setYPos] = useState(0)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout>>()
 
   const { value, drop, stop } = useBounce({
     dampening: 0.02,
@@ -92,14 +93,23 @@ function BounceSection() {
       setYPos(v)
     })
     return unsubscribe
-  }, [value])
+  }, [value, setYPos])
 
   const handleBounce = () => {
     if (isBouncing) return
     setIsBouncing(true)
     drop(0, 0) // Drop from top
-    setTimeout(() => setIsBouncing(false), 2000)
+    timeoutRef.current = setTimeout(() => setIsBouncing(false), 2000)
   }
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+      }
+    }
+  }, [])
 
   const reset = () => {
     stop()
@@ -217,6 +227,7 @@ function ElasticSection() {
 function GravitySection() {
   const [isDropping, setIsDropping] = useState(false)
   const [yPos, setYPos] = useState(0)
+  const timeoutRef = useRef<ReturnType<typeof setTimeout>>()
 
   const { y, launch, setPosition, stop } = useGravity({
     gravity: { x: 0, y: 0.5 },
@@ -237,15 +248,24 @@ function GravitySection() {
     setIsDropping(true)
     setPosition({ x: 0, y: 0 })
     launch({ x: 0, y: 0 }) // Let gravity do the work
-    setTimeout(() => setIsDropping(false), 2000)
+    timeoutRef.current = setTimeout(() => setIsDropping(false), 2000)
   }
 
   const handleThrow = () => {
     setIsDropping(true)
     setPosition({ x: 0, y: 140 })
     launch({ x: 0, y: -15 }) // Throw upward
-    setTimeout(() => setIsDropping(false), 2500)
+    timeoutRef.current = setTimeout(() => setIsDropping(false), 2500)
   }
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current)
+      }
+    }
+  }, [])
 
   const reset = () => {
     stop()

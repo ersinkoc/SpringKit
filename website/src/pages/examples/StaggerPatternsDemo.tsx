@@ -158,9 +158,10 @@ function StaggerDemo() {
     setIsAnimating(true)
     setRunCount(c => c + 1)
 
-    const items = isGridPattern
-      ? gridRefs.current.filter(Boolean)
-      : itemRefs.current.filter(Boolean)
+    // Filter items once
+    const gridItems = gridRefs.current.filter(Boolean)
+    const listItems = itemRefs.current.filter(Boolean)
+    const items = isGridPattern ? gridItems : listItems
     const count = items.length
     const delays = getDelays(count)
 
@@ -190,9 +191,10 @@ function StaggerDemo() {
   }, [isAnimating, isGridPattern, pattern])
 
   const reset = () => {
-    const items = isGridPattern
-      ? gridRefs.current.filter(Boolean)
-      : itemRefs.current.filter(Boolean)
+    // Filter items once
+    const gridItems = gridRefs.current.filter(Boolean)
+    const listItems = itemRefs.current.filter(Boolean)
+    const items = isGridPattern ? gridItems : listItems
 
     items.forEach((item) => {
       item.style.transform = 'scale(1)'

@@ -31,7 +31,11 @@ function MorphDemo() {
     // Subscribe to path updates
     const unsubscribe = morphRef.current.subscribe((path) => {
       if (pathRef.current) {
-        pathRef.current.setAttribute('d', path)
+        try {
+          pathRef.current.setAttribute('d', path)
+        } catch (error) {
+          console.error('[SVGMorphDemo] Failed to set path attribute:', error)
+        }
       }
     })
 
@@ -119,6 +123,7 @@ function SVGMorphDemo() {
   const [cycleSpeed, setCycleSpeed] = useState(1500)
   const [morphCount, setMorphCount] = useState(0)
   const autoCycleRef = useRef<NodeJS.Timeout | null>(null)
+  const mountedRef = useRef(true)
 
   useEffect(() => {
     // Create morph controller with spring physics
@@ -135,7 +140,11 @@ function SVGMorphDemo() {
     // Subscribe to path updates
     const unsubscribe = morphRef.current.subscribe((path) => {
       if (pathRef.current) {
-        pathRef.current.setAttribute('d', path)
+        try {
+          pathRef.current.setAttribute('d', path)
+        } catch (error) {
+          console.error('[SVGMorphDemo] Failed to set path attribute:', error)
+        }
       }
     })
 
@@ -207,9 +216,12 @@ function SVGMorphDemo() {
 
   // Cleanup auto-cycle on unmount
   useEffect(() => {
+    mountedRef.current = true
     return () => {
+      mountedRef.current = false
       if (autoCycleRef.current) {
         clearInterval(autoCycleRef.current)
+        autoCycleRef.current = null
       }
     }
   }, [])
