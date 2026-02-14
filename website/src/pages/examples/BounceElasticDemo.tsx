@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Play, RotateCcw, Zap, Activity, Waves } from 'lucide-react'
 import { useBounce, useElastic, useGravity } from '@oxog/springkit/react'
 import { DemoPageLayout } from './DemoPageLayout'
@@ -76,7 +76,7 @@ function GravityDemo() {
 function BounceSection() {
   const [isBouncing, setIsBouncing] = useState(false)
   const [yPos, setYPos] = useState(0)
-  const timeoutRef = useRef<ReturnType<typeof setTimeout>>()
+  const timeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   const { value, drop, stop } = useBounce({
     dampening: 0.02,
@@ -227,7 +227,7 @@ function ElasticSection() {
 function GravitySection() {
   const [isDropping, setIsDropping] = useState(false)
   const [yPos, setYPos] = useState(0)
-  const timeoutRef = useRef<ReturnType<typeof setTimeout>>()
+  const timeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   const { y, launch, setPosition, stop } = useGravity({
     gravity: { x: 0, y: 0.5 },

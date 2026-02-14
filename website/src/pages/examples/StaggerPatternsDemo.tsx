@@ -190,7 +190,7 @@ function StaggerDemo() {
     setTimeout(() => setIsAnimating(false), maxDelay + 500)
   }, [isAnimating, isGridPattern, pattern])
 
-  const reset = () => {
+  const reset = useCallback(() => {
     // Filter items once
     const gridItems = gridRefs.current.filter(Boolean)
     const listItems = itemRefs.current.filter(Boolean)
@@ -201,9 +201,9 @@ function StaggerDemo() {
       item.style.opacity = '1'
     })
     setIsAnimating(false)
-  }
+  }, [isGridPattern])
 
-  const toggleAutoRun = () => {
+  const toggleAutoRun = useCallback(() => {
     if (isAutoRunning) {
       if (autoRunRef.current) {
         clearInterval(autoRunRef.current)
@@ -223,7 +223,7 @@ function StaggerDemo() {
         setTimeout(runStagger, 100)
       }, 2000)
     }
-  }
+  }, [isAutoRunning, runStagger])
 
   // Cleanup on unmount
   useEffect(() => {
@@ -246,7 +246,7 @@ function StaggerDemo() {
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isAnimating, runStagger])
+  }, [isAnimating, runStagger, reset])
 
   return (
     <div className="space-y-6">

@@ -8,13 +8,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 # Build library (outputs to dist/)
 npm run build
 
-# Run all tests
+# Build in watch mode for development
+npm run dev
+
+# Run all tests (core + React)
 npm run test:all
 
-# Run main tests only (faster)
+# Run core tests only (faster, excludes React adapter tests)
 npm run test
 
-# Run React-specific tests
+# Run React-specific tests (uses separate vitest config with forks pool)
 npm run test:react
 
 # Run single test file
@@ -26,7 +29,7 @@ npm run test:watch
 # Type checking
 npm run typecheck
 
-# Linting
+# Linting (flat ESLint config)
 npm run lint
 
 # Build + test before publish
@@ -47,7 +50,23 @@ src/
 ```
 
 - **Core** (`@oxog/springkit`): Framework-agnostic animation primitives
-- **React** (`@oxog/springkit/react`): Hooks and components for React 18+
+- **React** (`@oxog/springkit/react`): Hooks and components for React 18+ (peer dep, optional)
+
+### Source Modules
+
+```
+src/
+├── core/           # Spring physics: spring, spring-value, spring-group, MotionValue
+├── animation/      # Orchestration: animate, sequence, timeline, stagger, keyframes, decay, trail
+├── gesture/        # Gesture primitives: drag, scroll, advanced (pinch, rotate, swipe, longPress)
+├── interpolation/  # Value and color interpolation
+├── layout/         # FLIP layout animations
+├── scroll/         # Scroll-linked animations (parallax, scroll-trigger, scroll-progress)
+├── svg/            # SVG morph and path animations
+├── utils/          # Math helpers, color parsing, input validation/warnings
+├── types.ts        # Shared type definitions
+└── adapters/react/ # React hooks (24), components (11+), context, SSR utils
+```
 
 ### Core Animation System
 
@@ -84,13 +103,17 @@ if (valueRef.current === null || valueRef.current.isDestroyed()) {
 ### Test Configuration
 
 Two Vitest configs:
-- `vitest.config.ts`: Main tests (jsdom environment)
-- `vitest.config.react.mts`: React tests with single fork pool
+- `vitest.config.ts`: Main tests (jsdom environment, excludes `src/adapters/react/`)
+- `vitest.config.react.mts`: React tests with `forks` pool + `singleFork: true` for isolation
+
+Coverage thresholds: 80% minimum (lines, functions, branches, statements).
 
 Test setup (`tests/setup.ts`) provides polyfills for:
 - `IntersectionObserver`
 - `ResizeObserver`
 - `PointerEvent`
+
+Path aliases in test configs: `@oxog/springkit` → `src/`, `@oxog/springkit/react` → `src/adapters/react/`.
 
 ## Key Conventions
 
@@ -127,6 +150,18 @@ Use `validateAnimationValue()` from `utils/warnings.ts` for NaN/Infinity protect
 const ratio = denominator === 0 ? 0 : value / denominator
 ```
 
+### TypeScript Strictness
+
+`noUncheckedIndexedAccess` is enabled — array/object index access returns `T | undefined`. Always handle the `undefined` case or use non-null assertion (`!`) only when the index is guaranteed valid.
+
+### ESLint Rules
+
+Flat config (`eslint.config.js`). Key rules:
+- Unused vars error (prefix with `_` to ignore)
+- `no-console` warns (only `console.warn`/`console.error` allowed)
+- `react-hooks/exhaustive-deps` warns
+- `@typescript-eslint/no-explicit-any` warns
+
 ## Website
 
-The `website/` folder contains the documentation site (Vite + React + Tailwind). It copies the library dist files via `npm run copy:springkit` before building.
+The `website/` folder contains the documentation site (Vite + React + Tailwind). Before building the website, run `npm run copy:springkit` from the website directory to copy the built library into `website/public/springkit/`. The website imports from these copied bundles, not directly from `src/`.

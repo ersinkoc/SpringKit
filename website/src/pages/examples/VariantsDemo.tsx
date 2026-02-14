@@ -120,7 +120,7 @@ function VariantsDemo() {
     setTransitionCount(c => c + 1)
   }, [])
 
-  const toggleAutoCycle = () => {
+  const toggleAutoCycle = useCallback(() => {
     if (isAutoCycling) {
       if (autoCycleRef.current) {
         clearInterval(autoCycleRef.current)
@@ -132,7 +132,7 @@ function VariantsDemo() {
       cycleToNext()
       autoCycleRef.current = setInterval(cycleToNext, cycleSpeed)
     }
-  }
+  }, [isAutoCycling, cycleToNext, cycleSpeed])
 
   // Update interval when speed changes
   useEffect(() => {
@@ -163,7 +163,7 @@ function VariantsDemo() {
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isAutoCycling, cycleToNext])
+  }, [isAutoCycling, cycleToNext, toggleAutoCycle])
 
   // Cleanup auto-cycle on unmount
   useEffect(() => {
@@ -198,19 +198,19 @@ function VariantsDemo() {
       <div className="grid grid-cols-4 gap-2 text-center">
         <div className="bg-black/20 rounded-lg p-2">
           <p className="text-xs text-white/40">Opacity</p>
-          <p className="text-sm text-white font-mono">{(values.opacity ?? 1).toFixed(2)}</p>
+          <p className="text-sm text-white font-mono">{Number(values.opacity ?? 1).toFixed(2)}</p>
         </div>
         <div className="bg-black/20 rounded-lg p-2">
           <p className="text-xs text-white/40">Scale</p>
-          <p className="text-sm text-white font-mono">{(values.scale ?? 1).toFixed(2)}</p>
+          <p className="text-sm text-white font-mono">{Number(values.scale ?? 1).toFixed(2)}</p>
         </div>
         <div className="bg-black/20 rounded-lg p-2">
           <p className="text-xs text-white/40">Y</p>
-          <p className="text-sm text-white font-mono">{(values.y ?? 0).toFixed(0)}px</p>
+          <p className="text-sm text-white font-mono">{Number(values.y ?? 0).toFixed(0)}px</p>
         </div>
         <div className="bg-black/20 rounded-lg p-2">
           <p className="text-xs text-white/40">Rotate</p>
-          <p className="text-sm text-white font-mono">{(values.rotate ?? 0).toFixed(1)}°</p>
+          <p className="text-sm text-white font-mono">{Number(values.rotate ?? 0).toFixed(1)}°</p>
         </div>
       </div>
 

@@ -154,29 +154,29 @@ function SVGMorphDemo() {
     }
   }, [])
 
-  const morphTo = (shape: keyof typeof shapePaths) => {
+  const morphTo = useCallback((shape: keyof typeof shapePaths) => {
     if (!morphRef.current || isAnimating) return
     setIsAnimating(true)
     setCurrentShape(shape)
     setMorphCount(c => c + 1)
     morphRef.current.morphTo(shapePaths[shape])
-  }
+  }, [isAnimating])
 
   const randomMorph = useCallback(() => {
     const shapes = Object.keys(shapePaths) as Array<keyof typeof shapePaths>
     const otherShapes = shapes.filter((s) => s !== currentShape)
     const randomShape = otherShapes[Math.floor(Math.random() * otherShapes.length)]
     morphTo(randomShape)
-  }, [currentShape])
+  }, [currentShape, morphTo])
 
   const cycleToNext = useCallback(() => {
     const shapes = Object.keys(shapePaths) as Array<keyof typeof shapePaths>
     const currentIndex = shapes.indexOf(currentShape)
     const nextShape = shapes[(currentIndex + 1) % shapes.length]
     morphTo(nextShape)
-  }, [currentShape])
+  }, [currentShape, morphTo])
 
-  const toggleAutoCycle = () => {
+  const toggleAutoCycle = useCallback(() => {
     if (isAutoCycling) {
       if (autoCycleRef.current) {
         clearInterval(autoCycleRef.current)
@@ -188,7 +188,7 @@ function SVGMorphDemo() {
       cycleToNext()
       autoCycleRef.current = setInterval(cycleToNext, cycleSpeed)
     }
-  }
+  }, [isAutoCycling, cycleToNext, cycleSpeed])
 
   // Update interval when speed changes
   useEffect(() => {
@@ -212,7 +212,7 @@ function SVGMorphDemo() {
     }
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [isAutoCycling, cycleToNext, randomMorph])
+  }, [isAutoCycling, cycleToNext, randomMorph, toggleAutoCycle])
 
   // Cleanup auto-cycle on unmount
   useEffect(() => {

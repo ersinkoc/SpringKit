@@ -165,6 +165,67 @@ const BALL_CONFIGS = [
   { x: 100, y: 50, radius: 26, hue: 140, color: 'from-green-400 via-emerald-500 to-teal-600' },
 ]
 
+interface Obstacle {
+  id: number
+  x: number
+  y: number
+  angle: number      // current angle on the ring (radians)
+  radius: number
+  color: string
+  ringRadius: number // the orbit ring this obstacle sits on
+}
+
+const OBSTACLE_COLORS = ['#64748b', '#475569', '#6b7280', '#71717a', '#52525b', '#334155', '#57534e']
+
+// Concentric ring radii: 50, 90, 130, 170, 210 (width = 100 + i*80, so radius = (100+i*80)/2)
+// Place obstacles on the last 2 rings (index 3 → r=170, index 4 → r=210)
+const RING_RADII = [170, 210]
+
+function generateObstacles(): Obstacle[] {
+  const obstacles: Obstacle[] = []
+  const minDistFromBall = 50
+  const minDistBetween = 60
+  const count = 4 // 2 per ring
+  const maxAttempts = 80
+
+  for (let attempt = 0; attempt < maxAttempts && obstacles.length < count; attempt++) {
+    // Pick which ring: first 2 on ring 0 (r=170), next 2 on ring 1 (r=210)
+    const ringIndex = obstacles.length < 2 ? 0 : 1
+    const ringRadius = RING_RADII[ringIndex]
+
+    // Random angle on the ring
+    const angle = Math.random() * Math.PI * 2
+    const x = Math.cos(angle) * ringRadius
+    const y = Math.sin(angle) * ringRadius
+    const radius = 12 + Math.random() * 6
+
+    // Check distance from all ball home positions
+    const tooCloseToBall = BALL_CONFIGS.some(ball => {
+      const dx = x - ball.x
+      const dy = y - ball.y
+      return Math.sqrt(dx * dx + dy * dy) < minDistFromBall + ball.radius + radius
+    })
+    if (tooCloseToBall) continue
+
+    // Check distance from other obstacles
+    const tooCloseToObstacle = obstacles.some(obs => {
+      const dx = x - obs.x
+      const dy = y - obs.y
+      return Math.sqrt(dx * dx + dy * dy) < minDistBetween + obs.radius + radius
+    })
+    if (tooCloseToObstacle) continue
+
+    obstacles.push({
+      id: obstacles.length,
+      x, y, angle, radius,
+      color: OBSTACLE_COLORS[obstacles.length % OBSTACLE_COLORS.length],
+      ringRadius,
+    })
+  }
+
+  return obstacles
+}
+
 const TRAIL_COUNT = 3 // Number of trail shadows per ball
 const TRAIL_SPRING_FACTOR = [0.15, 0.08, 0.04] // Spring stiffness for each trail (lower = more delay)
 
@@ -173,10 +234,24 @@ function HeroSpringDemo() {
   const containerRef = useRef<HTMLDivElement>(null)
   const animationRef = useRef<number | null>(null)
   const draggingBallRef = useRef<number | null>(null)
+  const draggingObstacleRef = useRef<number | null>(null)
   const dragOffsetRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 })
+
+  // Detect mobile for simplified experience
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window !== 'undefined' ? window.innerWidth < 1024 : false
+  )
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 1024)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
   // Extended bounds - balls can roam far but will be pulled back
   const bounds = { left: -400, right: 400, top: -350, bottom: 350 }
+
+  // Generate obstacles once on mount (desktop only)
+  const [obstacles, setObstacles] = useState<Obstacle[]>(() => generateObstacles())
 
   // Initialize balls with relative positions (relative to container center)
   const [balls, setBalls] = useState<Ball[]>(() =>
@@ -322,6 +397,40 @@ function HeroSpringDemo() {
           }
         }
 
+        // Ball-to-obstacle collision (desktop only, obstacles are immovable)
+        if (!isMobile)
+        for (let i = 0; i < newBalls.length; i++) {
+          const ball = newBalls[i]
+
+          for (const obs of obstacles) {
+            const dx = ball.x - obs.x
+            const dy = ball.y - obs.y
+            const dist = Math.sqrt(dx * dx + dy * dy)
+            const minDist = ball.radius + obs.radius
+
+            if (dist < minDist && dist > 0) {
+              const overlap = minDist - dist
+              const nx = dx / dist
+              const ny = dy / dist
+
+              // Push ball out (obstacle doesn't move)
+              ball.x += nx * overlap
+              ball.y += ny * overlap
+
+              // Reflect velocity along collision normal
+              if (!ball.isDragging) {
+                const vDotN = ball.vx * nx + ball.vy * ny
+                if (vDotN < 0) {
+                  ball.vx -= 2 * vDotN * nx * config.restitution
+                  ball.vy -= 2 * vDotN * ny * config.restitution
+                  ball.vx += nx * overlap * config.stiffness * 0.008
+                  ball.vy += ny * overlap * config.stiffness * 0.008
+                }
+              }
+            }
+          }
+        }
+
         // Update trail positions with spring physics (trails follow their ball)
         for (const ball of newBalls) {
           for (let t = 0; t < ball.trail.length; t++) {
@@ -337,6 +446,22 @@ function HeroSpringDemo() {
         return newBalls
       })
 
+      // Move obstacles along their orbits (desktop only)
+      if (!isMobile && draggingObstacleRef.current === null) {
+        const orbitSpeed = 0.008 // radians per frame
+        setObstacles(prev => prev.map(obs => {
+          // Inner ring (170) → counter-clockwise, outer ring (210) → clockwise
+          const direction = obs.ringRadius === RING_RADII[0] ? -1 : 1
+          const newAngle = obs.angle + orbitSpeed * direction
+          return {
+            ...obs,
+            angle: newAngle,
+            x: Math.cos(newAngle) * obs.ringRadius,
+            y: Math.sin(newAngle) * obs.ringRadius,
+          }
+        }))
+      }
+
       animationRef.current = requestAnimationFrame(simulate)
     }
 
@@ -344,7 +469,7 @@ function HeroSpringDemo() {
     return () => {
       if (animationRef.current) cancelAnimationFrame(animationRef.current)
     }
-  }, [config])
+  }, [config, isMobile])
 
   // Find which ball is at a given position (relative to container center)
   const findBallAtPosition = (relX: number, relY: number): number | null => {
@@ -361,6 +486,19 @@ function HeroSpringDemo() {
     return null
   }
 
+  const findObstacleAtPosition = (relX: number, relY: number): number | null => {
+    for (let i = obstacles.length - 1; i >= 0; i--) {
+      const obs = obstacles[i]
+      const dx = relX - obs.x
+      const dy = relY - obs.y
+      const dist = Math.sqrt(dx * dx + dy * dy)
+      if (dist <= obs.radius + 4) { // +4 for easier grab
+        return obs.id
+      }
+    }
+    return null
+  }
+
   const handlePointerDown = (e: React.PointerEvent) => {
     if (!containerRef.current) return
 
@@ -372,32 +510,61 @@ function HeroSpringDemo() {
     const relX = e.clientX - centerX
     const relY = e.clientY - centerY
 
-    // Find which ball was clicked
+    // Check balls first (they render on top)
     const ballId = findBallAtPosition(relX, relY)
-    if (ballId === null) return
-
-    // Store offset from ball center to pointer
-    const ball = balls.find(b => b.id === ballId)!
-    dragOffsetRef.current = {
-      x: ball.x - relX,
-      y: ball.y - relY
+    if (ballId !== null) {
+      const ball = balls.find(b => b.id === ballId)!
+      dragOffsetRef.current = {
+        x: ball.x - relX,
+        y: ball.y - relY
+      }
+      draggingBallRef.current = ballId
+      e.currentTarget.setPointerCapture(e.pointerId)
+      setBalls(prev => prev.map(b =>
+        b.id === ballId ? { ...b, isDragging: true, vx: 0, vy: 0 } : b
+      ))
+      return
     }
 
-    draggingBallRef.current = ballId
-    e.currentTarget.setPointerCapture(e.pointerId)
-
-    setBalls(prev => prev.map(b =>
-      b.id === ballId ? { ...b, isDragging: true, vx: 0, vy: 0 } : b
-    ))
+    // Then check obstacles (desktop only)
+    if (isMobile) return
+    const obsId = findObstacleAtPosition(relX, relY)
+    if (obsId !== null) {
+      draggingObstacleRef.current = obsId
+      e.currentTarget.setPointerCapture(e.pointerId)
+    }
   }
 
   const handlePointerMove = (e: React.PointerEvent) => {
-    if (!containerRef.current || draggingBallRef.current === null) return
+    if (!containerRef.current) return
 
-    const ballId = draggingBallRef.current
     const rect = containerRef.current.getBoundingClientRect()
     const centerX = rect.left + rect.width / 2
     const centerY = rect.top + rect.height / 2
+
+    // Dragging an obstacle along its orbit ring
+    if (draggingObstacleRef.current !== null) {
+      const obsId = draggingObstacleRef.current
+      const relX = e.clientX - centerX
+      const relY = e.clientY - centerY
+
+      setObstacles(prev => prev.map(obs => {
+        if (obs.id !== obsId) return obs
+        const newAngle = Math.atan2(relY, relX)
+        return {
+          ...obs,
+          angle: newAngle,
+          x: Math.cos(newAngle) * obs.ringRadius,
+          y: Math.sin(newAngle) * obs.ringRadius,
+        }
+      }))
+      return
+    }
+
+    // Dragging a ball
+    if (draggingBallRef.current === null) return
+
+    const ballId = draggingBallRef.current
 
     // Convert screen coords to relative coords (relative to container center)
     // Add back the offset so we drag from where we grabbed
@@ -405,14 +572,31 @@ function HeroSpringDemo() {
     const newY = e.clientY - centerY + dragOffsetRef.current.y
 
     // Clamp to bounds
-    const clampedX = Math.max(bounds.left, Math.min(bounds.right, newX))
-    const clampedY = Math.max(bounds.top, Math.min(bounds.bottom, newY))
+    let finalX = Math.max(bounds.left, Math.min(bounds.right, newX))
+    let finalY = Math.max(bounds.top, Math.min(bounds.bottom, newY))
+
+    // Push dragged ball out of obstacles (desktop only)
+    if (!isMobile) {
+    const ballRadius = BALL_CONFIGS[ballId]?.radius ?? 24
+    for (const obs of obstacles) {
+      const odx = finalX - obs.x
+      const ody = finalY - obs.y
+      const oDist = Math.sqrt(odx * odx + ody * ody)
+      const oMinDist = ballRadius + obs.radius
+      if (oDist < oMinDist && oDist > 0) {
+        const onx = odx / oDist
+        const ony = ody / oDist
+        finalX = obs.x + onx * oMinDist
+        finalY = obs.y + ony * oMinDist
+      }
+    }
+    }
 
     setBalls(prev => prev.map(b =>
       b.id === ballId ? {
         ...b,
-        x: clampedX,
-        y: clampedY,
+        x: finalX,
+        y: finalY,
         vx: e.movementX * 2,
         vy: e.movementY * 2,
       } : b
@@ -420,6 +604,12 @@ function HeroSpringDemo() {
   }
 
   const handlePointerUp = (e: React.PointerEvent) => {
+    if (draggingObstacleRef.current !== null) {
+      e.currentTarget.releasePointerCapture(e.pointerId)
+      draggingObstacleRef.current = null
+      return
+    }
+
     const ballId = draggingBallRef.current
     if (ballId === null) return
 
@@ -434,7 +624,7 @@ function HeroSpringDemo() {
   return (
     <div
       ref={containerRef}
-      className="relative w-full h-[500px] flex items-center justify-center overflow-visible cursor-grab active:cursor-grabbing touch-none select-none"
+      className="relative w-full h-[280px] sm:h-[350px] lg:h-[500px] flex items-center justify-center overflow-hidden cursor-grab active:cursor-grabbing touch-none select-none"
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
       onPointerUp={handlePointerUp}
@@ -473,6 +663,36 @@ function HeroSpringDemo() {
             )
           })
         )}
+
+        {/* Obstacles - desktop only, rendered between trails and balls, draggable along orbit */}
+        {!isMobile && obstacles.map((obs) => (
+          <div
+            key={`obstacle-${obs.id}`}
+            className="absolute cursor-grab active:cursor-grabbing"
+            style={{
+              left: '50%',
+              top: '50%',
+              width: (obs.radius + 4) * 2,
+              height: (obs.radius + 4) * 2,
+              transform: `translate(calc(-50% + ${obs.x}px), calc(-50% + ${obs.y}px))`,
+              zIndex: 8,
+              pointerEvents: 'auto',
+            }}
+          >
+            <div
+              className="rounded-full border border-white/20 transition-shadow"
+              style={{
+                width: obs.radius * 2,
+                height: obs.radius * 2,
+                margin: 4,
+                backgroundColor: obs.color,
+                boxShadow: draggingObstacleRef.current === obs.id
+                  ? `0 0 12px ${obs.color}80, inset 0 2px 4px rgba(255,255,255,0.15), inset 0 -2px 4px rgba(0,0,0,0.3)`
+                  : 'inset 0 2px 4px rgba(255,255,255,0.1), inset 0 -2px 4px rgba(0,0,0,0.3)',
+              }}
+            />
+          </div>
+        ))}
 
         {/* Balls - positioned relative to center */}
         {balls.map((ball) => (
@@ -524,7 +744,7 @@ function HeroSpringDemo() {
 
       {/* Concentric rings - using CSS animation for continuous rotation */}
       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-        {[...Array(5)].map((_, i) => (
+        {[...Array(isMobile ? 3 : 5)].map((_, i) => (
           <div
             key={i}
             className="absolute rounded-full border border-orange-500/10"
@@ -538,12 +758,12 @@ function HeroSpringDemo() {
       </div>
 
       {/* Preset selector */}
-      <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex gap-2 z-30">
+      <div className="absolute bottom-2 sm:bottom-4 lg:bottom-8 left-1/2 -translate-x-1/2 flex gap-1.5 sm:gap-2 z-30">
         {(Object.keys(presetConfigs) as Array<keyof typeof presetConfigs>).map((p) => (
           <button
             key={p}
             onClick={() => setPreset(p)}
-            className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
+            className={`px-2.5 py-1.5 sm:px-4 sm:py-2 rounded-full text-xs sm:text-sm font-medium transition-all ${
               preset === p
                 ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/30'
                 : 'bg-white/5 text-white/60 hover:bg-white/10 hover:text-white'
@@ -556,12 +776,13 @@ function HeroSpringDemo() {
 
       {/* Drag hint */}
       <AnimatedDiv
-        className="absolute top-4 left-1/2 -translate-x-1/2 text-sm text-white/40 z-30"
+        className="absolute top-2 lg:top-4 left-1/2 -translate-x-1/2 text-xs sm:text-sm text-white/40 z-30 whitespace-nowrap"
         initial={{ opacity: 0, y: -10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 1 }}
       >
-        <p>Drag the balls and watch them collide with spring physics</p>
+        <p className="hidden sm:block">Drag the balls and watch them collide with spring physics</p>
+        <p className="sm:hidden">Drag the balls!</p>
       </AnimatedDiv>
     </div>
   )
@@ -1744,7 +1965,7 @@ const drag = createDragSpring(element, {
                 </AnimatedDiv>
               </div>
 
-              {/* Right: Interactive Demo */}
+              {/* Right: Interactive Demo - desktop only (inside grid) */}
               <AnimatedDiv
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
@@ -1754,6 +1975,16 @@ const drag = createDragSpring(element, {
                 <HeroSpringDemo />
               </AnimatedDiv>
             </div>
+
+            {/* Mobile: Interactive Demo - full width, outside grid constraints */}
+            <AnimatedDiv
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ duration: 1, delay: 0.2, ease: [0.21, 0.47, 0.32, 0.98] }}
+              className="lg:hidden -mx-4 mt-4"
+            >
+              <HeroSpringDemo />
+            </AnimatedDiv>
 
             {/* Scroll indicator */}
             <AnimatedDiv

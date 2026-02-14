@@ -3468,7 +3468,7 @@ function MotionValueDemo() {
     })
 
     const unsubBg = backgroundColor.subscribe((color) => {
-      el.style.backgroundColor = color
+      el.style.backgroundColor = String(color)
     })
 
     return () => {
@@ -3521,8 +3521,8 @@ function MotionValueDemo() {
         </div>
 
         <div className="absolute bottom-3 left-3 right-3 flex justify-between text-xs font-mono">
-          <span className="text-white/40">x: {xValue.toFixed(0)}</span>
-          <span className="text-white/40">rotate: {rotateValue.toFixed(1)}°</span>
+          <span className="text-white/40">x: {(xValue ?? 0).toFixed(0)}</span>
+          <span className="text-white/40">rotate: {(rotateValue ?? 0).toFixed(1)}°</span>
         </div>
       </div>
 
@@ -3571,7 +3571,7 @@ function ScrollProgressDemo() {
       )
       unsubscribers.push(
         backgroundColor.subscribe((color) => {
-          progressBar.style.backgroundColor = color
+          progressBar.style.backgroundColor = String(color)
         })
       )
     }
@@ -3607,7 +3607,7 @@ function ScrollProgressDemo() {
         <div>
           <div className="flex justify-between text-xs text-white/40 mb-2">
             <span>Scroll Progress</span>
-            <span>{(progressValue * 100).toFixed(0)}%</span>
+            <span>{((progressValue ?? 0) * 100).toFixed(0)}%</span>
           </div>
           <div className="h-3 bg-black/30 rounded-full overflow-hidden">
             <div
@@ -3616,7 +3616,7 @@ function ScrollProgressDemo() {
               style={{
                 transform: `scaleX(${scaleX.get()})`,
                 transformOrigin: 'left',
-                backgroundColor: backgroundColor.get(),
+                backgroundColor: String(backgroundColor.get()),
               }}
             />
           </div>
@@ -3626,8 +3626,8 @@ function ScrollProgressDemo() {
         <div>
           <div className="flex justify-between text-xs text-white/40 mb-2">
             <span>Scroll Velocity</span>
-            <span className={velocityValue > 0 ? 'text-green-400' : velocityValue < 0 ? 'text-red-400' : ''}>
-              {velocityValue.toFixed(0)} px/s
+            <span className={(velocityValue ?? 0) > 0 ? 'text-green-400' : (velocityValue ?? 0) < 0 ? 'text-red-400' : ''}>
+              {(velocityValue ?? 0).toFixed(0)} px/s
             </span>
           </div>
           <div className="h-8 bg-black/30 rounded-lg flex items-center justify-center relative overflow-hidden">
@@ -3726,7 +3726,7 @@ function GestureHooksDemo() {
   const gestureAnim = useGestureAnimation({
     default: { scale: 1, y: 0 },
     hover: { scale: 1.05, y: -2 },
-    tap: { scale: 0.95, y: 0 },
+    press: { scale: 0.95, y: 0 },
   })
 
   return (
@@ -3744,7 +3744,7 @@ function GestureHooksDemo() {
       <div className="grid grid-cols-2 gap-4">
         {/* Hover Demo */}
         <div
-          ref={hover1.ref}
+          ref={hover1.ref as React.Ref<HTMLDivElement>}
           {...hover1.handlers}
           className={`
             p-4 rounded-xl border-2 transition-all cursor-pointer
@@ -3762,7 +3762,7 @@ function GestureHooksDemo() {
 
         {/* Tap Demo */}
         <div
-          ref={tap.ref}
+          ref={tap.ref as React.Ref<HTMLDivElement>}
           {...tap.handlers}
           className={`
             p-4 rounded-xl border-2 transition-all cursor-pointer select-none
@@ -3780,7 +3780,7 @@ function GestureHooksDemo() {
 
         {/* Focus Demo */}
         <button
-          ref={focus.ref}
+          ref={focus.ref as React.Ref<HTMLButtonElement>}
           {...focus.handlers}
           className={`
             p-4 rounded-xl border-2 transition-all outline-none
@@ -3798,7 +3798,7 @@ function GestureHooksDemo() {
 
         {/* Combined Animated */}
         <div
-          ref={hover2.ref}
+          ref={hover2.ref as React.Ref<HTMLDivElement>}
           {...hover2.handlers}
           className="p-4 rounded-xl border-2 bg-gradient-to-br from-green-500/10 to-emerald-500/10 border-green-500/30 cursor-pointer"
           style={{
@@ -4076,8 +4076,7 @@ function SVGMorphDemo() {
 
   // Use morph hook - pass initial path and get morphTo function
   const { path: morphedPath, morphTo } = useMorph(shapePaths.circle, {
-    stiffness: 150,
-    damping: 15,
+    spring: { stiffness: 150, damping: 15 },
   })
 
   // When shape changes, call morphTo
@@ -4957,7 +4956,7 @@ function PointerTrackerDemo() {
   const [posX, setPosX] = useState(0)
   const [posY, setPosY] = useState(0)
   const { x, y, isHovering } = usePointer({
-    target: containerRef,
+    target: containerRef as React.RefObject<HTMLElement>,
     smooth: 0.15,
     hoverOnly: true,
   })

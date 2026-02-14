@@ -90,8 +90,7 @@ function TimelineDemo() {
     const timeline = createTimeline({
       defaults: { stiffness: 200, damping: 20 },
       onUpdate: (p) => setProgress(p),
-      onPlay: () => setIsPlaying(true),
-      onPause: () => setIsPlaying(false),
+      onStart: () => setIsPlaying(true),
       onComplete: () => setIsPlaying(false),
     })
 
@@ -114,7 +113,7 @@ function TimelineDemo() {
       .to(circleRef.current, { rotate: 360 }, '0.9')
 
     timelineRef.current = timeline
-    setDuration(timeline.duration || 2)
+    setDuration(timeline.duration() || 2)
 
     return () => {
       try {
@@ -125,9 +124,18 @@ function TimelineDemo() {
     }
   }, [])
 
-  const play = () => timelineRef.current?.play()
-  const pause = () => timelineRef.current?.pause()
-  const reverse = () => timelineRef.current?.reverse()
+  const play = () => {
+    timelineRef.current?.play()
+    setIsPlaying(true)
+  }
+  const pause = () => {
+    timelineRef.current?.pause()
+    setIsPlaying(false)
+  }
+  const reverse = () => {
+    timelineRef.current?.reverse()
+    setIsPlaying(true)
+  }
   const reset = () => {
     timelineRef.current?.seek(0)
     setIsPlaying(false)
