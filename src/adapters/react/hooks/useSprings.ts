@@ -104,8 +104,27 @@ export function useSprings<T extends Record<string, number>>(
       const unsubscribe = spring.subscribe((values) => {
         if (isMountedRef.current) {
           setCurrentValues(prev => {
+            // Only update if value actually changed to prevent unnecessary re-renders
+            const prevValues = prev[index]
+            const newValues = values as { [K in keyof T]: number }
+
+            // Check if any value changed
+            let hasChanged = false
+            if (prevValues) {
+              for (const key in newValues) {
+                if (newValues[key] !== prevValues[key]) {
+                  hasChanged = true
+                  break
+                }
+              }
+            } else {
+              hasChanged = true
+            }
+
+            if (!hasChanged) return prev
+
             const next = [...prev]
-            next[index] = values as { [K in keyof T]: number }
+            next[index] = newValues
             return next
           })
         }

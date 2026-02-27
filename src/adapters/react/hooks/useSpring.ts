@@ -64,7 +64,8 @@ export function useSpring<T extends Record<string, number>>(
   configRef.current = config
 
   // Initialize spring group with ACTUAL initial values (not 0)
-  if (!springRef.current) {
+  // Check isDestroyed() for React StrictMode compatibility
+  if (!springRef.current || springRef.current.isDestroyed()) {
     springRef.current = createSpringGroup(values, config)
   }
 
@@ -86,7 +87,7 @@ export function useSpring<T extends Record<string, number>>(
     }
   }, [])
 
-  // Update when values change (skip first render since we initialized with values)
+  // Update when values or config change (skip first render since we initialized with values)
   useEffect(() => {
     if (isFirstRender.current) {
       isFirstRender.current = false
@@ -95,20 +96,22 @@ export function useSpring<T extends Record<string, number>>(
 
     // Check if any value actually changed
     const prev = prevValuesRef.current
-    const hasChanged = Object.keys(values).some(
+    const hasValueChanged = Object.keys(values).some(
       key => values[key] !== prev[key]
     )
 
-    if (hasChanged) {
+    if (hasValueChanged) {
       springRef.current?.set(values, configRef.current)
       prevValuesRef.current = values
     }
   }, [valuesKey, values])
 
-  // Cleanup on unmount: stop animations but don't destroy
-  // (Springs are reused across React StrictMode remounts)
+  // Cleanup on unmount: destroy spring to prevent memory leaks
   useEffect(() => {
-    return () => springRef.current?.stop()
+    return () => {
+      springRef.current?.destroy()
+      springRef.current = null
+    }
   }, [])
 
   return currentValues as AnimatedValues<T>

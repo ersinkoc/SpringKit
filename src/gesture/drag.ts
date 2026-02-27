@@ -189,7 +189,13 @@ class DragSpringImpl implements DragSpring {
 
   constructor(element: HTMLElement, config: DragSpringConfig = {}) {
     this.element = element
-    this.config = { ...defaultDragConfig, ...config }
+    // Deep clone config to prevent mutation of external objects
+    this.config = {
+      ...defaultDragConfig,
+      ...config,
+      // Deep clone bounds if provided
+      bounds: config.bounds ? { ...config.bounds } : undefined,
+    }
 
     // Extract only spring physics config for createSpringValue
     const springConfig = {

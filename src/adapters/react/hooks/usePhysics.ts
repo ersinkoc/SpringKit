@@ -83,10 +83,11 @@ export function useSpringState(
     return () => unsub?.()
   }, [])
 
-  // Cleanup: stop animations but don't destroy (reused across StrictMode remounts)
+  // Cleanup: destroy spring to prevent memory leaks
   useEffect(() => {
     return () => {
-      springRef.current?.stop()
+      springRef.current?.destroy()
+      springRef.current = null
     }
   }, [])
 
@@ -740,11 +741,10 @@ export function useChain(
       }
     })
 
-    // Cleanup: stop springs but don't destroy MotionValues
-    // (They are reused across React StrictMode remounts)
+    // Cleanup: destroy springs to prevent memory leaks
     const springs = springsRef.current
     return () => {
-      Object.values(springs).forEach((s) => s.stop())
+      Object.values(springs).forEach((s) => s.destroy())
       if (timeoutRef.current) clearTimeout(timeoutRef.current)
     }
     // Mount only - steps and initialValues used for initialization

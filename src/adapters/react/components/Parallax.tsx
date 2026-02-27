@@ -608,8 +608,11 @@ export const ParallaxContainer = memo(function ParallaxContainer({
     if (!container) return
 
     const handleScroll = () => {
-      const scrollTop = container.scrollTop
-      const maxScroll = container.scrollHeight - container.clientHeight
+      // Read container from ref to avoid stale closure
+      const el = containerRef.current
+      if (!el) return
+      const scrollTop = el.scrollTop
+      const maxScroll = el.scrollHeight - el.clientHeight
       setScrollProgress(maxScroll > 0 ? scrollTop / maxScroll : 0)
     }
 
@@ -683,7 +686,7 @@ export const ParallaxLayer = memo(function ParallaxLayer({
     if (sticky) {
       // Sticky positioning
       const stickyRange = sticky.end - sticky.start
-      if (progress >= sticky.start && progress <= sticky.end) {
+      if (progress >= sticky.start && progress <= sticky.end && stickyRange > 0) {
         // stickyProgress is calculated but not used yet (reserved for sticky animations)
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
         const _stickyProgress = (progress - sticky.start) / stickyRange

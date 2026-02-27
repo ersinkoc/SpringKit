@@ -2,6 +2,16 @@ import type { SpringValue } from '../core/spring-value.js'
 import type { InterpolateOptions } from './interpolate.js'
 
 /**
+ * Global color parsing cache to avoid repeated regex operations
+ * Maps color strings to their RGB values
+ *
+ * LRU (Least Recently Used) cache with max size to prevent memory bloat
+ * in long-running applications with many unique colors
+ */
+const MAX_COLOR_CACHE_SIZE = 1000
+const colorCache = new Map<string, [number, number, number]>()
+
+/**
  * Color interpolation interface
  */
 export interface ColorInterpolation {
@@ -26,8 +36,38 @@ class ColorInterpolationImpl implements ColorInterpolation {
   ) {
     this.source = source
     this.input = input
-    this.colors = colorStrings.map((c) => this.parseColor(c))
+    this.colors = colorStrings.map((c) => this.parseColorCached(c))
     this.options = options
+  }
+
+  /**
+   * Parse color with caching for performance
+   * Avoids repeated regex operations for the same color strings
+   * Implements LRU eviction to prevent memory bloat
+   */
+  private parseColorCached(color: string): [number, number, number] {
+    // Check cache first
+    const cached = colorCache.get(color)
+    if (cached) {
+      // Move to end to mark as recently used
+      colorCache.delete(color)
+      colorCache.set(color, cached)
+      return cached
+    }
+
+    // Parse and cache result
+    const result = this.parseColorInternal(color)
+
+    // Evict oldest entry if cache is full (LRU strategy)
+    if (colorCache.size >= MAX_COLOR_CACHE_SIZE) {
+      const firstKey = colorCache.keys().next().value
+      if (firstKey !== undefined) {
+        colorCache.delete(firstKey)
+      }
+    }
+
+    colorCache.set(color, result)
+    return result
   }
 
   get(): string {
@@ -65,8 +105,9 @@ class ColorInterpolationImpl implements ColorInterpolation {
       i++
     }
 
-    // Calculate interpolation ratio
-    const ratio = (value - this.input[i - 1]!) / (this.input[i]! - this.input[i - 1]!)
+    // Calculate interpolation ratio with division by zero protection
+    const inputRange = this.input[i]! - this.input[i - 1]!
+    const ratio = inputRange !== 0 ? (value - this.input[i - 1]!) / inputRange : 0
 
     // Interpolate each color channel
     const r = this.lerp(this.colors[i - 1]![0], this.colors[i]![0], ratio)
@@ -76,7 +117,7 @@ class ColorInterpolationImpl implements ColorInterpolation {
     return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`
   }
 
-  private parseColor(color: string): [number, number, number] {
+  private parseColorInternal(color: string): [number, number, number] {
     // Try to parse hex
     const hexMatch = color.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i)
     if (hexMatch) {

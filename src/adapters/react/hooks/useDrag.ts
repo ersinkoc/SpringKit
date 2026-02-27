@@ -58,6 +58,9 @@ export function useDrag(config: DragSpringConfig = {}): [
   const [isDragging, setIsDragging] = useState(false)
   const [, forceUpdate] = useState({})
   const configRef = useRef(config)
+  // RAF throttling for position updates
+  const rafIdRef = useRef<number | null>(null)
+  const pendingUpdateRef = useRef(false)
 
   // Keep config ref updated
   configRef.current = config
@@ -67,12 +70,33 @@ export function useDrag(config: DragSpringConfig = {}): [
     setElement(el)
   }
 
+  // RAF-throttled update function
+  const throttledUpdate = () => {
+    if (rafIdRef.current === null) {
+      rafIdRef.current = requestAnimationFrame(() => {
+        rafIdRef.current = null
+        if (pendingUpdateRef.current) {
+          pendingUpdateRef.current = false
+          forceUpdate({})
+        }
+      })
+    }
+  }
+
   // Setup/cleanup drag spring when element changes
   useEffect(() => {
+    let isActive = true
+
     // Cleanup previous instance
     if (dragSpringRef.current) {
       dragSpringRef.current.destroy()
       dragSpringRef.current = null
+    }
+
+    // Cancel any pending RAF
+    if (rafIdRef.current !== null) {
+      cancelAnimationFrame(rafIdRef.current)
+      rafIdRef.current = null
     }
 
     if (element) {
@@ -80,24 +104,33 @@ export function useDrag(config: DragSpringConfig = {}): [
       dragSpringRef.current = createDragSpring(element, {
         ...configRef.current,
         onDragStart: (e) => {
+          if (!isActive) return
           setIsDragging(true)
           configRef.current.onDragStart?.(e)
         },
         onDragEnd: (x, y, velocity) => {
+          if (!isActive) return
           setIsDragging(false)
           configRef.current.onDragEnd?.(x, y, velocity)
         },
         onUpdate: (x, y) => {
+          if (!isActive) return
           positionRef.current = { x, y }
-          forceUpdate({})
+          pendingUpdateRef.current = true
+          throttledUpdate()
           configRef.current.onUpdate?.(x, y)
         },
       })
     }
 
     return () => {
+      isActive = false
       dragSpringRef.current?.destroy()
       dragSpringRef.current = null
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current)
+        rafIdRef.current = null
+      }
     }
   }, [element])
 

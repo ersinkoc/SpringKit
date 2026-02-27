@@ -42,6 +42,7 @@ class SpringValueImpl implements SpringValue {
   private resolveComplete: (() => void) | null = null
   private finishedPromise: Promise<void>
   private destroyed: boolean = false
+  private isNotifying: boolean = false
 
   constructor(initial: number, config: SpringConfig = {}) {
     // Validate initial value
@@ -68,10 +69,12 @@ class SpringValueImpl implements SpringValue {
     // Validate target value
     const validTo = validateAnimationValue(to, 'SpringValue.set')
 
-    // Cancel existing animation
+    // Cancel existing animation and resolve previous promise
     if (this.currentAnimation) {
       this.currentAnimation.destroy()
       this.currentAnimation = null
+      // Resolve previous animation's promise to prevent memory leak
+      this.resolveComplete?.()
     }
 
     // Capture resolver in local scope to prevent race condition
@@ -111,6 +114,9 @@ class SpringValueImpl implements SpringValue {
   jump(to: number): void {
     // Guard against use after destroy
     if (this.destroyed) return
+
+    // Prevent infinite loop if subscriber calls jump()
+    if (this.isNotifying) return
 
     // Validate target value
     const validTo = validateAnimationValue(to, 'SpringValue.jump')
@@ -161,6 +167,10 @@ class SpringValueImpl implements SpringValue {
   }
 
   private notify(): void {
+    // Prevent re-entrant calls that could cause infinite loops
+    if (this.isNotifying) return
+    this.isNotifying = true
+
     for (const subscriber of this.subscribers) {
       try {
         subscriber(this.value)
@@ -168,6 +178,8 @@ class SpringValueImpl implements SpringValue {
         console.error('[SpringKit] Subscriber error:', e)
       }
     }
+
+    this.isNotifying = false
   }
 
   isDestroyed(): boolean {

@@ -126,14 +126,23 @@ export function useParallax(
     if (!ref.current) return
 
     const parallax = createParallax(ref.current, options)
+    let rafId: number | null = null
+    let isActive = true
 
-    // Update offset periodically
-    const intervalId = setInterval(() => {
+    // Update offset using RAF for better performance
+    const update = () => {
+      if (!isActive) return
       setOffset(parallax.getOffset())
-    }, 16) // ~60fps
+      rafId = requestAnimationFrame(update)
+    }
+
+    rafId = requestAnimationFrame(update)
 
     return () => {
-      clearInterval(intervalId)
+      isActive = false
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId)
+      }
       parallax.destroy()
     }
   }, [options.speed, options.direction, options.rootMargin])

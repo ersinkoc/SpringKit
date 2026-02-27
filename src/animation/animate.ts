@@ -281,25 +281,33 @@ export function animate(
           await new Promise<void>((resolve) => {
             spring.set(numValue)
 
+            let checkId: number | null = null
             const checkDone = () => {
+              // Clear previous ID from tracking
+              if (checkId !== null) {
+                rafIds.delete(checkId)
+                timeoutIds.delete(checkId as unknown as ReturnType<typeof setTimeout>)
+              }
+
               // If stopped or animation complete, resolve and cleanup
               if (!isRunning || !spring.isAnimating()) {
                 resolve()
               } else if (!isPaused) {
-                const rafId = requestAnimationFrame(checkDone)
-                rafIds.add(rafId)
+                checkId = requestAnimationFrame(checkDone)
+                rafIds.add(checkId)
               } else {
                 // If paused, schedule check later instead of RAF loop
                 const timeoutId = setTimeout(() => {
                   timeoutIds.delete(timeoutId)
                   checkDone()
                 }, 100)
+                checkId = timeoutId as unknown as number
                 timeoutIds.add(timeoutId)
               }
             }
             // Initial check after one frame
-            const initialRafId = requestAnimationFrame(checkDone)
-            rafIds.add(initialRafId)
+            checkId = requestAnimationFrame(checkDone)
+            rafIds.add(checkId)
           })
         }
 

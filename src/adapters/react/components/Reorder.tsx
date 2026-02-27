@@ -300,6 +300,8 @@ function ReorderItemComponent<T>(
 
     if (node) {
       context.registerItem(value, node)
+    } else {
+      context.unregisterItem(value)
     }
   }, [ref, context, value])
 

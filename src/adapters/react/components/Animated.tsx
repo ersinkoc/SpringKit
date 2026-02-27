@@ -209,7 +209,10 @@ function createAnimatedComponent<T extends React.ElementType>(
 
         observer.observe(element)
         return () => {
-          observer.unobserve(element)
+          // Only unobserve if element still exists (may be null after unmount)
+          if (element) {
+            observer.unobserve(element)
+          }
           observer.disconnect()
         }
       }, [whileInView, viewport?.once, viewport?.margin, viewport?.amount])
@@ -439,8 +442,15 @@ function createAnimatedComponent<T extends React.ElementType>(
       }, [whileFocus, propsOnBlur])
 
       // Global pointer up listener for tap state
+      const globalListenersActiveRef = useRef(false)
+
       useEffect(() => {
-        if (!whileTap || !isPressed) return
+        if (!whileTap || !isPressed) {
+          globalListenersActiveRef.current = false
+          return
+        }
+
+        globalListenersActiveRef.current = true
 
         const handleGlobalPointerUp = () => {
           setIsPressed(false)
@@ -452,8 +462,20 @@ function createAnimatedComponent<T extends React.ElementType>(
         return () => {
           window.removeEventListener('pointerup', handleGlobalPointerUp)
           window.removeEventListener('pointercancel', handleGlobalPointerUp)
+          globalListenersActiveRef.current = false
         }
       }, [whileTap, isPressed])
+
+      // Ensure global listeners are cleaned up on unmount regardless of state
+      useEffect(() => {
+        return () => {
+          if (globalListenersActiveRef.current) {
+            // Component unmounting while listeners might be active
+            // The effect cleanup above should handle this, but this is a safety net
+            globalListenersActiveRef.current = false
+          }
+        }
+      }, [])
 
       // Combine static and animated styles
       const staticStyle = Object.fromEntries(

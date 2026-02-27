@@ -35,7 +35,8 @@ export function useMotionValue<T = number>(
   const motionValueRef = useRef<MotionValue<T> | null>(null)
 
   // Create on first render only
-  if (motionValueRef.current === null) {
+  // Check isDestroyed() for React StrictMode compatibility
+  if (motionValueRef.current === null || motionValueRef.current.isDestroyed()) {
     motionValueRef.current = createMotionValue(initialValue, options)
   }
 
@@ -136,7 +137,11 @@ export function useMotionValues<T extends Record<string, number>>(
   type ResultType = { [K in keyof T]: MotionValue<number> }
   const motionValuesRef = useRef<ResultType | null>(null)
 
-  if (motionValuesRef.current === null) {
+  // Check for React StrictMode compatibility - recreate if any value is destroyed
+  const needsRecreate = motionValuesRef.current === null ||
+    Object.values(motionValuesRef.current).some(mv => mv.isDestroyed())
+
+  if (needsRecreate) {
     const values: Record<string, MotionValue<number>> = {}
 
     for (const key in initialValues) {
@@ -162,5 +167,7 @@ export function useMotionValues<T extends Record<string, number>>(
     }
   }, [])
 
-  return motionValuesRef.current
+  // At this point, motionValuesRef.current is guaranteed to be non-null
+  // because we recreate it in the if block above when it's null
+  return motionValuesRef.current!
 }

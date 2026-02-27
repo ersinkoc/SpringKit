@@ -208,10 +208,13 @@ export function useScroll(options: UseScrollOptions = {}): UseScrollReturn {
 
     // Use RAF for smooth updates
     let rafId: number | null = null
+    let isActive = true
+
     const handleScroll = () => {
       if (rafId !== null) return
 
       rafId = requestAnimationFrame(() => {
+        if (!isActive) return
         if (target?.current) {
           calculateTargetProgress()
         } else {
@@ -232,6 +235,7 @@ export function useScroll(options: UseScrollOptions = {}): UseScrollReturn {
     window.addEventListener('resize', handleScroll, { passive: true })
 
     return () => {
+      isActive = false
       scrollTarget.removeEventListener('scroll', handleScroll)
       window.removeEventListener('resize', handleScroll)
       if (rafId !== null) {

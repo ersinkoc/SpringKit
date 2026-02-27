@@ -24,6 +24,8 @@ export interface SpringGroup<T extends Record<string, number>> {
   finished: Promise<void>
   /** Clean up resources */
   destroy(): void
+  /** Check if this SpringGroup has been destroyed */
+  isDestroyed(): boolean
 }
 
 /**
@@ -188,6 +190,10 @@ class SpringGroupImpl<T extends Record<string, number>> implements SpringGroup<T
     this.resolveComplete = null
 
     this.subscribers.clear()
+  }
+
+  isDestroyed(): boolean {
+    return this.destroyed
   }
 }
 

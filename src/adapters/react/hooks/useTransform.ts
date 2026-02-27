@@ -29,27 +29,54 @@ export function useVelocity(source: MotionValue<number>): MotionValue<number> {
   const velocityRef = useRef<MotionValue<number> | null>(null)
   const frameRef = useRef<number | null>(null)
   const lastVelocityRef = useRef(0)
+  const isRunningRef = useRef(false)
 
-  if (velocityRef.current === null) {
+  if (velocityRef.current === null || velocityRef.current.isDestroyed()) {
     velocityRef.current = createMotionValue(source.getVelocity())
   }
 
   useEffect(() => {
-    const update = () => {
-      const velocity = source.getVelocity()
-      // Only update if velocity changed significantly
-      if (Math.abs(velocity - lastVelocityRef.current) > 0.001) {
-        velocityRef.current?.jump(velocity)
-        lastVelocityRef.current = velocity
+    // Start RAF loop when source starts animating
+    const startLoop = () => {
+      if (isRunningRef.current) return
+      isRunningRef.current = true
+
+      const update = () => {
+        if (!isRunningRef.current) return
+
+        const velocity = source.getVelocity()
+        // Only update if velocity changed significantly
+        if (Math.abs(velocity - lastVelocityRef.current) > 0.001) {
+          velocityRef.current?.jump(velocity)
+          lastVelocityRef.current = velocity
+        }
+
+        // Continue loop only if source is still animating or velocity is significant
+        if (source.isAnimating() || Math.abs(velocity) > 0.001) {
+          frameRef.current = requestAnimationFrame(update)
+        } else {
+          isRunningRef.current = false
+          frameRef.current = null
+        }
       }
+
       frameRef.current = requestAnimationFrame(update)
     }
 
-    frameRef.current = requestAnimationFrame(update)
+    // Subscribe to animation start events
+    const unsubscribe = source.on('animationStart', startLoop)
+
+    // Start immediately if already animating
+    if (source.isAnimating()) {
+      startLoop()
+    }
 
     return () => {
+      unsubscribe()
+      isRunningRef.current = false
       if (frameRef.current) {
         cancelAnimationFrame(frameRef.current)
+        frameRef.current = null
       }
     }
   }, [source])
@@ -316,22 +343,50 @@ export function useVelocityTransform(
 ): MotionValue<number> {
   const derivedRef = useRef<MotionValue<number> | null>(null)
   const frameRef = useRef<number | null>(null)
+  const isRunningRef = useRef(false)
 
-  if (derivedRef.current === null) {
+  if (derivedRef.current === null || derivedRef.current.isDestroyed()) {
     derivedRef.current = createMotionValue(transform(source.getVelocity()))
   }
 
   useEffect(() => {
-    const update = () => {
-      derivedRef.current?.jump(transform(source.getVelocity()))
+    // Start RAF loop when source starts animating
+    const startLoop = () => {
+      if (isRunningRef.current) return
+      isRunningRef.current = true
+
+      const update = () => {
+        if (!isRunningRef.current) return
+
+        const velocity = source.getVelocity()
+        derivedRef.current?.jump(transform(velocity))
+
+        // Continue loop only if source is still animating or velocity is significant
+        if (source.isAnimating() || Math.abs(velocity) > 0.001) {
+          frameRef.current = requestAnimationFrame(update)
+        } else {
+          isRunningRef.current = false
+          frameRef.current = null
+        }
+      }
+
       frameRef.current = requestAnimationFrame(update)
     }
 
-    frameRef.current = requestAnimationFrame(update)
+    // Subscribe to animation start events
+    const unsubscribe = source.on('animationStart', startLoop)
+
+    // Start immediately if already animating
+    if (source.isAnimating()) {
+      startLoop()
+    }
 
     return () => {
+      unsubscribe()
+      isRunningRef.current = false
       if (frameRef.current) {
         cancelAnimationFrame(frameRef.current)
+        frameRef.current = null
       }
     }
   }, [source, transform])
@@ -536,7 +591,11 @@ export function useTime(): MotionValue<number> {
   }
 
   useEffect(() => {
+    let isActive = true
+
     const update = (timestamp: number) => {
+      if (!isActive) return
+
       if (startTimeRef.current === null) {
         startTimeRef.current = timestamp
       }
@@ -548,6 +607,7 @@ export function useTime(): MotionValue<number> {
     frameRef.current = requestAnimationFrame(update)
 
     return () => {
+      isActive = false
       if (frameRef.current) {
         cancelAnimationFrame(frameRef.current)
       }

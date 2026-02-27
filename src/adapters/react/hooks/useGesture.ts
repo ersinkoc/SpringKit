@@ -14,6 +14,7 @@ export interface GestureState {
  * Gesture handlers
  */
 export interface GestureHandlers {
+  onDragStart?: (e: React.PointerEvent) => void
   onDrag?: (state: GestureState) => void
   onPinch?: (state: GestureState) => void
   onRotate?: (state: GestureState) => void
@@ -84,6 +85,13 @@ export function useGesture(handlers: GestureHandlers): GestureBind {
       currentX: e.clientX,
       currentY: e.clientY,
     }
+
+    // Wrap user callback in try-catch
+    try {
+      handlers.onDragStart?.(e)
+    } catch (error) {
+      console.error('[SpringKit] Gesture onDragStart error:', error)
+    }
   }
 
   const onPointerMove = (e: React.PointerEvent) => {
@@ -92,7 +100,12 @@ export function useGesture(handlers: GestureHandlers): GestureBind {
     const deltaX = e.clientX - stateRef.current.startX
     const deltaY = e.clientY - stateRef.current.startY
 
-    handlers.onDrag?.({ x: deltaX, y: deltaY })
+    // Wrap user callback in try-catch to prevent gesture state corruption
+    try {
+      handlers.onDrag?.({ x: deltaX, y: deltaY })
+    } catch (error) {
+      console.error('[SpringKit] Gesture onDrag error:', error)
+    }
 
     stateRef.current.currentX = e.clientX
     stateRef.current.currentY = e.clientY

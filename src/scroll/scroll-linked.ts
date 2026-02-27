@@ -200,8 +200,11 @@ export function createScrollProgress(
 
       const scrollStart = startPoint - windowHeight
       const scrollEnd = startPoint - endPoint
+      const scrollRange = scrollEnd - scrollStart
 
-      newProgress = clamp((scrollY - scrollStart) / (scrollEnd - scrollStart), 0, 1)
+      newProgress = scrollRange !== 0
+        ? clamp((scrollY - scrollStart) / scrollRange, 0, 1)
+        : scrollY >= scrollEnd ? 1 : 0
 
       // Check if in view
       isInView = rect.top < windowHeight && rect.bottom > 0
@@ -417,11 +420,15 @@ export function createScrollTrigger(
     // Calculate progress based on viewport position
     const triggerStart = windowHeight
     const triggerEnd = 0
+    const triggerRange = triggerStart - triggerEnd
 
-    const startProgress = (triggerStart - startPos) / (triggerStart - triggerEnd)
-    const endProgress = (triggerStart - endPos) / (triggerStart - triggerEnd)
+    const startProgress = triggerRange !== 0 ? (triggerStart - startPos) / triggerRange : 0
+    const endProgress = triggerRange !== 0 ? (triggerStart - endPos) / triggerRange : 1
 
-    const rawProgress = clamp(startProgress / (endProgress || 1), 0, 1)
+    const progressRange = endProgress - startProgress
+    const rawProgress = progressRange !== 0
+      ? clamp((startProgress - 0) / progressRange, 0, 1)
+      : startProgress >= 0 ? 1 : 0
 
     // Apply scrub smoothing
     if (typeof scrub === 'number' && scrub > 0) {

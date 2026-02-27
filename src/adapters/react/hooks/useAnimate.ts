@@ -230,21 +230,28 @@ export function useAnimate(): UseAnimateReturn {
                 spring.set(targetValue)
 
                 // Wait for animation to complete with tracked RAF
+                let rafId: number | null = null
                 const checkComplete = () => {
+                  // Clear previous RAF ID from tracking
+                  if (rafId !== null) {
+                    rafIdsRef.current.delete(rafId)
+                  }
+
                   // If destroyed or animation complete, resolve
                   if (isDestroyedRef.current || !spring || !spring.isAnimating()) {
                     resolve()
                   } else {
-                    const rafId = requestAnimationFrame(checkComplete)
+                    rafId = requestAnimationFrame(checkComplete)
                     rafIdsRef.current.add(rafId)
                   }
                 }
 
                 // Initial check after one frame
-                const initialRafId = requestAnimationFrame(checkComplete)
-                rafIdsRef.current.add(initialRafId)
-              } catch {
-                // If animation fails, resolve anyway to prevent hanging
+                rafId = requestAnimationFrame(checkComplete)
+                rafIdsRef.current.add(rafId)
+              } catch (error) {
+                // If animation fails, log error and resolve anyway to prevent hanging
+                console.error('[SpringKit] Animation failed:', error)
                 resolve()
               }
             })
@@ -260,8 +267,9 @@ export function useAnimate(): UseAnimateReturn {
         isAnimatingRef.current = false
         onComplete?.()
       }
-    } catch {
-      // Ensure animating flag is reset on error
+    } catch (error) {
+      // Log error and ensure animating flag is reset
+      console.error('[SpringKit] animate() error:', error)
       isAnimatingRef.current = false
     }
   }, [applyStyles])
@@ -283,8 +291,7 @@ export function useAnimate(): UseAnimateReturn {
     }, []),
   }
 
-  // Cleanup on unmount: stop animations but don't destroy springs
-  // (Springs are reused across React StrictMode remounts)
+  // Cleanup on unmount: destroy springs to prevent memory leaks
   useEffect(() => {
     const rafIds = rafIdsRef.current
     const timeoutIds = timeoutIdsRef.current
@@ -306,8 +313,9 @@ export function useAnimate(): UseAnimateReturn {
       // Run cleanup functions
       cleanup.forEach((c) => c())
 
-      // Stop springs instead of destroying them
-      springs.forEach((spring) => spring.stop())
+      // Destroy springs to prevent memory leaks
+      springs.forEach((spring) => spring.destroy())
+      springs.clear()
     }
   }, [])
 

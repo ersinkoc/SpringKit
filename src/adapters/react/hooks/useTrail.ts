@@ -59,11 +59,18 @@ export function useTrail<T extends Record<string, number>>(
     const springs = new Map<string, SpringValue[]>()
 
     // Create springs for each property and each item
+    // Check for existing springs that may have been destroyed (StrictMode compatibility)
+    const existingSprings = springsRef.current
     keys.forEach(key => {
       const propSprings: SpringValue[] = []
       const initialValue = values[key] as number
+      const existingPropSprings = existingSprings?.get(key)
       for (let i = 0; i < count; i++) {
-        const spring = createSpringValue(initialValue, config)
+        // Reuse spring if it exists and is not destroyed, otherwise create new
+        const existingSpring = existingPropSprings?.[i]
+        const spring = (existingSpring && !existingSpring.isDestroyed())
+          ? existingSpring
+          : createSpringValue(initialValue, config)
         propSprings.push(spring)
       }
       springs.set(key, propSprings)
@@ -99,11 +106,12 @@ export function useTrail<T extends Record<string, number>>(
     return () => {
       isMountedRef.current = false
       unsubscribers.forEach(unsub => unsub())
-      // Stop animations but don't destroy springs
-      // (Springs are reused across React StrictMode remounts)
+      // Destroy springs to prevent memory leaks
       springs.forEach(propSprings => {
-        propSprings.forEach(spring => spring.stop())
+        propSprings.forEach(spring => spring.destroy())
       })
+      springs.clear()
+      springsRef.current = null
     }
   }, [count]) // eslint-disable-line react-hooks/exhaustive-deps
 

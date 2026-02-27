@@ -158,6 +158,10 @@ let timelineIdCounter = 0
  * ```
  */
 export function createTimeline(config: TimelineConfig = {}): Timeline {
+  // Unique ID for this timeline instance to prevent segment ID collisions
+  const timelineInstanceId = ++timelineIdCounter
+  let segmentIdCounter = 0
+
   const {
     defaults = {},
     autoplay = false,
@@ -201,7 +205,11 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
     // Relative to previous animation
     if (position === '<') {
       const lastSegment = segments[segments.length - 1]
-      return lastSegment ? lastSegment.startTime : 0
+      if (!lastSegment) {
+        console.warn('[SpringKit] Timeline: "<" position used with no previous segments')
+        return 0
+      }
+      return lastSegment.startTime
     }
 
     if (position === '>') {
@@ -225,9 +233,13 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
     // Label with offset
     const labelMatch = position.match(/^([a-zA-Z_]\w*)([+-]=?\d*\.?\d+)?$/)
     if (labelMatch) {
-      const labelName = labelMatch[1]
-      const offset = labelMatch[2]
-      const labelTime = labelName ? (labels.get(labelName) ?? 0) : 0
+      const labelName = labelMatch[1] // First capture group is always defined due to regex structure
+      const offset = labelMatch[2] // Second capture group may be undefined
+      if (!labelName) {
+        console.warn(`[SpringKit] Timeline: Invalid label reference in position "${position}"`)
+        return insertTime
+      }
+      const labelTime = labels.get(labelName) ?? 0
       if (offset) {
         const offsetValue = parseFloat(offset.replace('=', ''))
         return labelTime + offsetValue
@@ -395,11 +407,11 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
 
     // Update segments
     for (const segment of segments) {
-      const segmentProgress = clamp(
-        (currentTime - segment.startTime) / (segment.endTime - segment.startTime),
-        0,
-        1
-      )
+      // Guard against division by zero
+      const segmentDuration = segment.endTime - segment.startTime
+      const segmentProgress = segmentDuration > 0
+        ? clamp((currentTime - segment.startTime) / segmentDuration, 0, 1)
+        : currentTime >= segment.endTime ? 1 : 0
 
       const shouldBeActive = currentTime >= segment.startTime && currentTime <= segment.endTime
 
@@ -465,7 +477,7 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
       const numericProps = extractNumericProps(props)
 
       const segment: TimelineSegment = {
-        id: `segment_${timelineIdCounter++}`,
+        id: `segment_${timelineInstanceId}_${segmentIdCounter++}`,
         target,
         props,
         startTime,
@@ -509,7 +521,7 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
       const numericProps = extractNumericProps(props)
 
       const segment: TimelineSegment = {
-        id: `segment_${timelineIdCounter++}`,
+        id: `segment_${timelineInstanceId}_${segmentIdCounter++}`,
         target,
         props,
         startTime,
@@ -555,7 +567,7 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
       const toNumeric = extractNumericProps(toProps)
 
       const segment: TimelineSegment = {
-        id: `segment_${timelineIdCounter++}`,
+        id: `segment_${timelineInstanceId}_${segmentIdCounter++}`,
         target,
         props: toProps,
         startTime,

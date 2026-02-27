@@ -38,7 +38,8 @@ export function useSpringValue(
 ): SpringValue {
   const springRef = useRef<SpringValue | null>(null)
 
-  if (!springRef.current) {
+  // Check for React StrictMode compatibility - recreate if destroyed
+  if (!springRef.current || springRef.current.isDestroyed()) {
     springRef.current = createSpringValue(initial, config)
   }
 

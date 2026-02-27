@@ -90,11 +90,19 @@ export const Trail = <T, V extends Record<string, number>>({
 
   return (
     <>
-      {items.map((item, index) => (
-        <React.Fragment key={keys(item, index)}>
-          {children(values[index]!, item, reverse ? items.length - 1 - index : index)}
-        </React.Fragment>
-      ))}
+      {items.map((item, index) => {
+        // Type-safe access with bounds checking
+        const itemValues = values[index]
+        if (!itemValues) {
+          console.warn(`[SpringKit] Trail: No values found for item at index ${index}`)
+          return null
+        }
+        return (
+          <React.Fragment key={keys(item, index)}>
+            {children(itemValues, item, reverse ? items.length - 1 - index : index)}
+          </React.Fragment>
+        )
+      })}
     </>
   )
 }

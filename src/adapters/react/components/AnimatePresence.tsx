@@ -184,12 +184,18 @@ export function AnimatePresence({
   // Handle exit completion
   const handleExitComplete = (key: string) => {
     setExitingChildren((prev) => {
+      // Only process if key still exists (prevent double calls)
+      if (!(key in prev)) return prev
+
       const next = { ...prev }
       delete next[key]
       return next
     })
 
-    pendingExitCount.current--
+    // Guard against negative count from double callbacks
+    if (pendingExitCount.current > 0) {
+      pendingExitCount.current--
+    }
 
     // Fire callback when all exits are complete
     if (pendingExitCount.current === 0 && onExitComplete) {

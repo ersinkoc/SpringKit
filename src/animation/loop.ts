@@ -32,8 +32,16 @@ export type CleanupCallback = (id: number) => void
 /**
  * Maximum allowed delta time (ms) to prevent physics explosions after tab suspension
  * If more time has passed, we clamp to this value for stable simulation
+ *
+ * Why 64ms?
+ * - At 60fps, each frame is ~16.67ms
+ * - At 30fps, each frame is ~33.33ms
+ * - At 15fps, each frame is ~66.67ms
+ * - 64ms represents slightly better than 15fps (15.6fps)
+ * - This prevents huge physics jumps when tab is suspended or during debugger pauses
+ * - Values larger than this would cause springs to overshoot dramatically
  */
-const MAX_DELTA_TIME = 64 // ~15fps minimum, prevents huge jumps
+const MAX_DELTA_TIME = 64 // ~15.6fps minimum, prevents huge jumps
 
 /**
  * Global animation loop manager
@@ -56,9 +64,13 @@ class AnimationLoop {
   private frameListeners = new Set<(deltaTime: number) => void>()
 
   // FinalizationRegistry for automatic cleanup notifications
-  private registry = new FinalizationRegistry<number>((id) => {
-    this.cleanupCallbacks.forEach((cb) => cb(id))
-  })
+  // Feature detection for older browsers (Safari < 14.1, IE11)
+  private registry: FinalizationRegistry<number> | null =
+    typeof FinalizationRegistry !== 'undefined'
+      ? new FinalizationRegistry<number>((id) => {
+          this.cleanupCallbacks.forEach((cb) => cb(id))
+        })
+      : null
   private cleanupCallbacks = new Set<CleanupCallback>()
 
   /**
@@ -71,6 +83,12 @@ class AnimationLoop {
     const existingId = this.idMap.get(animation)
     if (existingId !== undefined) return existingId
 
+    // Periodic cleanup of dead WeakRefs to prevent memory bloat
+    // Every 100 additions, clean up dead refs
+    if (this.animations.size > 0 && this.animations.size % 100 === 0) {
+      this.cleanupDeadRefs()
+    }
+
     const id = this.nextId++
     const ref = new WeakRef(animation)
     this.animations.add(ref)
@@ -78,10 +96,23 @@ class AnimationLoop {
     this.idMap.set(animation, id)
 
     // Register for finalization callback
-    this.registry.register(animation, id)
+    // Register for finalization callback only if supported
+    this.registry?.register(animation, id)
 
     this.start()
     return id
+  }
+
+  /**
+   * Clean up dead WeakRefs from the animations set
+   * Prevents memory bloat from accumulated dead references
+   */
+  private cleanupDeadRefs(): void {
+    for (const ref of this.animations) {
+      if (ref.deref() === undefined) {
+        this.animations.delete(ref)
+      }
+    }
   }
 
   /**

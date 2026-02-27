@@ -75,7 +75,9 @@ export function simulateSpring(
   const dampingForce = absVelocity > 0.0001 ? damping * velocity : 0
 
   // Calculate total force and acceleration (Newton's second law: a = F/m)
-  const acceleration = (springForce - dampingForce) / mass
+  // Protect against division by zero - use minimum mass of 0.001
+  const safeMass = mass === 0 ? 0.001 : mass
+  const acceleration = (springForce - dampingForce) / safeMass
 
   // Semi-implicit Euler integration
   // Update velocity first, then use new velocity to update position
@@ -107,7 +109,9 @@ export function simulateSpring(
  * @returns Period in seconds
  */
 export function calculatePeriod(stiffness: number, mass: number): number {
-  return 2 * Math.PI * Math.sqrt(mass / stiffness)
+  // Protect against division by zero and negative stiffness
+  const safeStiffness = stiffness <= 0 ? 0.001 : stiffness
+  return 2 * Math.PI * Math.sqrt(mass / safeStiffness)
 }
 
 /**
@@ -122,7 +126,10 @@ export function calculateDampingRatio(
   stiffness: number,
   mass: number
 ): number {
-  return damping / (2 * Math.sqrt(stiffness * mass))
+  // Protect against division by zero and invalid inputs
+  const safeStiffness = stiffness <= 0 ? 0.001 : stiffness
+  const safeMass = mass <= 0 ? 0.001 : mass
+  return damping / (2 * Math.sqrt(safeStiffness * safeMass))
 }
 
 /**

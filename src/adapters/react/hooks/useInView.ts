@@ -311,6 +311,12 @@ export function useInViewMultiple(options: UseInViewOptions = {}) {
       if (existing) {
         observerRef.current?.unobserve(existing)
         elementsRef.current.delete(id)
+        // Also remove from inViewMap to prevent memory leak
+        setInViewMap((prev) => {
+          const next = new Map(prev)
+          next.delete(id)
+          return next
+        })
       }
     }
   }
