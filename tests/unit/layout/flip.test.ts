@@ -223,6 +223,79 @@ describe('FLIP Layout Animations', () => {
 
       consoleSpy.mockRestore()
     }, 5000)
+
+    it('should handle cancel during spring subscription callback (lines 175-179)', async () => {
+      const first = { x: 0, y: 0, width: 100, height: 100 }
+      const last = { x: 50, y: 0, width: 100, height: 100 }
+
+      const anim = createFlip(element, first, last, {
+        config: { stiffness: 100, damping: 10 }, // Slow animation
+      })
+
+      const playPromise = anim.play()
+
+      // Wait a bit for animation to start
+      await new Promise((r) => setTimeout(r, 50))
+
+      // Cancel during animation - this triggers the cancelled check in subscribe callback
+      anim.cancel()
+
+      // Promise should resolve
+      await playPromise
+
+      expect(anim.isAnimating()).toBe(false)
+    })
+
+    it('should handle cancel during checkComplete (lines 190-195)', async () => {
+      const first = { x: 0, y: 0, width: 100, height: 100 }
+      const last = { x: 50, y: 0, width: 100, height: 100 }
+
+      const anim = createFlip(element, first, last, {
+        config: { stiffness: 1000, damping: 100 },
+      })
+
+      const playPromise = anim.play()
+
+      // Cancel immediately to hit the checkComplete cancelled branch
+      anim.cancel()
+
+      // Promise should resolve
+      await playPromise
+
+      expect(anim.isAnimating()).toBe(false)
+    })
+
+    it('should handle size option with no size change (deltaWidth/deltaHeight = 1)', async () => {
+      const first = { x: 0, y: 0, width: 100, height: 100 }
+      const last = { x: 50, y: 50, width: 100, height: 100 } // Same size, different position
+
+      const anim = createFlip(element, first, last, {
+        config: { stiffness: 1000, damping: 100 },
+        size: true,
+        position: true,
+      })
+
+      // Should apply transform without scale since size hasn't changed
+      expect(element.style.transform).toContain('translate')
+
+      await anim.play()
+    }, 5000)
+
+    it('should handle both position and size false', async () => {
+      const first = { x: 0, y: 0, width: 100, height: 100 }
+      const last = { x: 50, y: 50, width: 200, height: 200 }
+
+      const anim = createFlip(element, first, last, {
+        config: { stiffness: 1000, damping: 100 },
+        size: false,
+        position: false,
+      })
+
+      // Should have empty transform (no position, no size)
+      expect(element.style.transform).toBe('')
+
+      await anim.play()
+    }, 5000)
   })
 
   describe('flip helper', () => {

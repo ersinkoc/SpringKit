@@ -113,7 +113,6 @@ function BounceSection() {
 
   const reset = () => {
     stop()
-    value?.jump(0)
     setYPos(0)
     setIsBouncing(false)
   }
@@ -179,8 +178,9 @@ function ElasticSection() {
     return unsubscribe
   }, [value])
 
-  // For elastic, value starts at 0, so we convert to scale
-  const scale = 1 + elasticValue / 100 // Convert stretch amount to scale
+  // For elastic, value is the elastic displacement, convert to scale
+  // When compressed (negative), scale < 1; when stretched (positive), scale > 1
+  const scale = Math.max(0.5, 1 + elasticValue / 100)
 
   return (
     <div className="space-y-4">
@@ -247,7 +247,7 @@ function GravitySection() {
   const handleDrop = () => {
     setIsDropping(true)
     setPosition({ x: 0, y: 0 })
-    launch({ x: 0, y: 0 }) // Let gravity do the work
+    launch({ x: 0, y: 0.1 }) // Small initial velocity to start gravity
     timeoutRef.current = setTimeout(() => setIsDropping(false), 2000)
   }
 

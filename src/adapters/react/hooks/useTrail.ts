@@ -113,7 +113,7 @@ export function useTrail<T extends Record<string, number>>(
       springs.clear()
       springsRef.current = null
     }
-  }, [count]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [count, config.stiffness, config.damping, config.mass])
 
   // Update springs when values change with staggered delay
   useEffect(() => {

@@ -166,6 +166,7 @@ export function createScrollProgress(
   let velocity = 0
   let direction: -1 | 0 | 1 = 0
   let rafId: number | null = null
+  let destroyed = false
   const subscribers = new Set<(info: ScrollInfo) => void>()
 
   const calculateProgress = (): ScrollInfo => {
@@ -235,13 +236,20 @@ export function createScrollProgress(
   }
 
   const notify = (info: ScrollInfo) => {
-    subscribers.forEach(cb => cb(info))
+    subscribers.forEach(cb => {
+      try {
+        cb(info)
+      } catch (e) {
+        console.error('[SpringKit] ScrollProgress subscriber error:', e)
+      }
+    })
   }
 
   const onScroll = () => {
-    if (rafId) return
+    if (rafId || destroyed) return
     rafId = requestAnimationFrame(() => {
       rafId = null
+      if (destroyed) return
       const info = calculateProgress()
       notify(info)
     })
@@ -262,6 +270,8 @@ export function createScrollProgress(
       return () => subscribers.delete(callback)
     },
     destroy: () => {
+      if (destroyed) return
+      destroyed = true
       if (rafId) cancelAnimationFrame(rafId)
       window.removeEventListener('scroll', onScroll)
       window.removeEventListener('resize', onScroll)
@@ -462,15 +472,27 @@ export function createScrollTrigger(
 
       if (!wasActive && isActive && (!once || !hasEntered)) {
         hasEntered = true
-        onEnter?.(info)
+        try {
+          onEnter?.(info)
+        } catch (e) {
+          console.error('[SpringKit] ScrollTrigger onEnter error:', e)
+        }
       }
 
       if (wasActive && !isActive) {
-        onLeave?.(info)
+        try {
+          onLeave?.(info)
+        } catch (e) {
+          console.error('[SpringKit] ScrollTrigger onLeave error:', e)
+        }
       }
 
       if (isActive || scrub) {
-        onProgress?.(info)
+        try {
+          onProgress?.(info)
+        } catch (e) {
+          console.error('[SpringKit] ScrollTrigger onProgress error:', e)
+        }
       }
     })
   }

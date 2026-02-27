@@ -241,6 +241,16 @@ class ScrollSpringImpl implements ScrollSpring {
 
   disable(): void {
     this.isEnabled = false
+    // Cancel any pending RAF to prevent callbacks after disable
+    if (this.pendingRafId !== null) {
+      cancelAnimationFrame(this.pendingRafId)
+      this.pendingRafId = null
+    }
+    // Call onScrollEnd if we were scrolling
+    if (this.isScrolling) {
+      this.isScrolling = false
+      this.config.onScrollEnd?.()
+    }
   }
 
   destroy(): void {

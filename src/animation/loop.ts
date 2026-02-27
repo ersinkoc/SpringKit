@@ -187,6 +187,9 @@ class AnimationLoop {
     const clampedDelta = Math.min(rawDelta, MAX_DELTA_TIME)
     this.lastTime = now
 
+    // Store frame duration for FPS calculation
+    this.lastFrameDuration = clampedDelta
+
     // Notify frame listeners (with error isolation)
     for (const listener of this.frameListeners) {
       try {
@@ -248,12 +251,13 @@ class AnimationLoop {
     return count
   }
 
+  private lastFrameDuration: number = 16.67 // Default to ~60fps
+
   /**
-   * Get current frame rate (based on last delta)
+   * Get current frame rate (based on actual frame duration)
    */
   getFPS(): number {
-    const delta = performance.now() - this.lastTime
-    return delta > 0 ? Math.round(1000 / delta) : 60
+    return Math.round(1000 / this.lastFrameDuration)
   }
 }
 

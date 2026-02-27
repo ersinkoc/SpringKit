@@ -53,6 +53,7 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
   private to: number
   private clampedFrom: number
   private clampedTo: number
+  private lastUpdateTime: number = 0
 
   finished: Promise<void>
 
@@ -91,6 +92,7 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
     if (this.state === AnimationState.Running) return this
 
     this.state = AnimationState.Running
+    this.lastUpdateTime = 0 // Reset timing on start
     this.config.onStart?.()
     globalLoop.add(this)
     return this
@@ -111,6 +113,7 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
   resume(): void {
     if (this.state === AnimationState.Paused) {
       this.state = AnimationState.Running
+      this.lastUpdateTime = 0 // Reset timing on resume
       globalLoop.add(this)
     }
   }
@@ -153,24 +156,60 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
     if (velocity !== undefined) {
       this.velocity = validateAnimationValue(velocity, 'spring.setWithVelocity.velocity')
     }
+
+    // Reset state if complete to allow re-animation from current position
+    if (this.state === AnimationState.Complete) {
+      this.state = AnimationState.Idle
+    }
+
     // If not running, start the animation
     if (this.state !== AnimationState.Running) {
       this.start()
     }
   }
 
-  update(_now: number): void {
+  update(now: number): void {
     if (this.state !== AnimationState.Running) return
 
-    const result = simulateSpring(
-      this.position,
-      this.velocity,
-      this.target,
-      this.config
-    )
+    // Initialize last update time on first frame
+    if (this.lastUpdateTime === 0) {
+      this.lastUpdateTime = now
+    }
 
-    this.position = result.position
-    this.velocity = result.velocity
+    // Calculate elapsed time since last update
+    const elapsed = (now - this.lastUpdateTime) / 1000 // Convert to seconds
+    this.lastUpdateTime = now
+
+    // Use sub-stepping for consistent physics regardless of frame rate
+    // This ensures the spring simulation is stable even with variable frame rates
+    const MAX_DELTA_TIME = 1 / 15 // Maximum 15fps worth of simulation per frame
+    const FIXED_TIME_STEP = 1 / 60 // Fixed 60fps physics step
+
+    // Clamp elapsed time to prevent physics explosions after tab suspension
+    const safeElapsed = Math.min(elapsed, MAX_DELTA_TIME)
+
+    // Calculate number of sub-steps needed
+    const steps = Math.max(1, Math.ceil(safeElapsed / FIXED_TIME_STEP))
+
+    // Run physics simulation with fixed time steps
+    let currentPosition = this.position
+    let currentVelocity = this.velocity
+    let isRest = false
+
+    for (let i = 0; i < steps && !isRest; i++) {
+      const result = simulateSpring(
+        currentPosition,
+        currentVelocity,
+        this.target,
+        this.config
+      )
+      currentPosition = result.position
+      currentVelocity = result.velocity
+      isRest = result.isRest
+    }
+
+    this.position = currentPosition
+    this.velocity = currentVelocity
 
     // Handle clamping
     if (this.config.clamp) {
@@ -183,10 +222,11 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
     this.config.onUpdate?.(this.position)
 
     // Check rest state
-    if (result.isRest) {
+    if (isRest) {
       this.state = AnimationState.Complete
       globalLoop.remove(this)
       this.position = this.target // Ensure we end exactly at target
+      this.velocity = 0
       this.config.onUpdate?.(this.position)
       this.config.onComplete?.()
       this.config.onRest?.()

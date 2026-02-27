@@ -3,7 +3,7 @@ import {
   MotionValue,
   createMotionValue,
   transformValue,
-  motionMapRange,
+  transformMapRange,
 } from '@oxog/springkit'
 
 describe('MotionValue', () => {
@@ -404,38 +404,38 @@ describe('MotionValue', () => {
     })
   })
 
-  describe('motionMapRange', () => {
+  describe('transformMapRange', () => {
     it('should map value from input range to output range', () => {
       const source = createMotionValue(50)
-      const mapped = motionMapRange(source, [0, 100], [0, 1])
+      const mapped = transformMapRange(source, [0, 100], [0, 1])
 
       expect(mapped.get()).toBe(0.5)
     })
 
     it('should handle extrapolation by default', () => {
       const source = createMotionValue(150)
-      const mapped = motionMapRange(source, [0, 100], [0, 1])
+      const mapped = transformMapRange(source, [0, 100], [0, 1])
 
       expect(mapped.get()).toBe(1.5)
     })
 
     it('should clamp when option is set', () => {
       const source = createMotionValue(150)
-      const mapped = motionMapRange(source, [0, 100], [0, 1], { clamp: true })
+      const mapped = transformMapRange(source, [0, 100], [0, 1], { clamp: true })
 
       expect(mapped.get()).toBe(1)
     })
 
     it('should handle negative ranges', () => {
       const source = createMotionValue(0)
-      const mapped = motionMapRange(source, [-100, 100], [0, 1])
+      const mapped = transformMapRange(source, [-100, 100], [0, 1])
 
       expect(mapped.get()).toBe(0.5)
     })
 
     it('should update when source changes', () => {
       const source = createMotionValue(0)
-      const mapped = motionMapRange(source, [0, 100], [0, 1])
+      const mapped = transformMapRange(source, [0, 100], [0, 1])
 
       expect(mapped.get()).toBe(0)
       source.jump(100)
@@ -444,7 +444,7 @@ describe('MotionValue', () => {
 
     it('should handle inverted ranges', () => {
       const source = createMotionValue(0)
-      const mapped = motionMapRange(source, [0, 100], [1, 0])
+      const mapped = transformMapRange(source, [0, 100], [1, 0])
 
       expect(mapped.get()).toBe(1)
       source.jump(100)

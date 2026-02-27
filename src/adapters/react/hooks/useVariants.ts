@@ -196,20 +196,27 @@ export function useVariants(options: UseVariantsOptions): UseVariantsReturn {
     opacity: values.opacity ?? fallbackValues?.opacity ?? 1,
   }), [])
 
-  // Track if initial animation has been triggered
-  const hasAnimatedRef = useRef(false)
-  // Track the last variant we animated to, to detect actual changes
-  const lastAnimatedVariantRef = useRef<string | undefined>(undefined)
-
-  // Store target values that should be animated to after initial render
-  // Initialize with initial values so spring starts there
-  const [animatedTargetValues, setAnimatedTargetValues] = useState(() =>
-    computeSpringValues(initialValues)
+  // Compute spring-compatible values for initial state
+  const initialSpringValues = useMemo(() =>
+    computeSpringValues(initialValues),
+    [initialValues, computeSpringValues]
   )
 
+  // Compute spring-compatible values from target values
+  // This is what we pass to useSpring for animation
+  const animatedTargetValues = useMemo(() =>
+    computeSpringValues(targetValues, initialValues),
+    [targetValues, initialValues, computeSpringValues]
+  )
+
+  // Use a ref to track if we've done the initial setup
+  const hasInitializedRef = useRef(false)
+
   // Spring values for animation
+  // On first render, use initial values to prevent unwanted animation
+  // After that, use target values
   const springValues = useSpring(
-    animatedTargetValues,
+    hasInitializedRef.current ? animatedTargetValues : initialSpringValues,
     {
       stiffness: springConfig?.stiffness ?? transition.spring?.stiffness ?? 100,
       damping: springConfig?.damping ?? transition.spring?.damping ?? 15,
@@ -217,26 +224,12 @@ export function useVariants(options: UseVariantsOptions): UseVariantsReturn {
     }
   )
 
-  // Trigger initial animation and handle subsequent variant changes
-  // Only depend on targetVariant (string) to avoid object reference issues
+  // After first render, mark as initialized and trigger animation to target
   useIsomorphicLayoutEffect(() => {
-    // On mount, animate from initial to target
-    if (!hasAnimatedRef.current) {
-      hasAnimatedRef.current = true
-      lastAnimatedVariantRef.current = targetVariant
-      // Use setTimeout to ensure this runs after the spring is initialized
-      const timeoutId = setTimeout(() => {
-        setAnimatedTargetValues(computeSpringValues(targetValues, initialValues))
-      }, 0)
-      return () => clearTimeout(timeoutId)
+    if (!hasInitializedRef.current) {
+      hasInitializedRef.current = true
     }
-
-    // On subsequent renders, only update if the variant actually changed
-    if (targetVariant !== lastAnimatedVariantRef.current) {
-      lastAnimatedVariantRef.current = targetVariant
-      setAnimatedTargetValues(computeSpringValues(targetValues, initialValues))
-    }
-  }, [targetVariant, computeSpringValues, targetValues, initialValues])
+  }, [])
 
   // Track variant changes and detect animation completion
   useIsomorphicLayoutEffect(() => {

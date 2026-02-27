@@ -115,6 +115,7 @@ export class MotionValue<T = number> {
       this._springValue.set(newValue as number)
 
       // Check for animation end with proper cleanup
+      const targetValue = newValue as number
       const checkEnd = () => {
         // Bail out if destroyed during animation
         if (this._destroyed) {
@@ -122,7 +123,13 @@ export class MotionValue<T = number> {
           return
         }
 
-        if (this._springValue && Math.abs(this._springValue.getVelocity()) < 0.01) {
+        const velocity = Math.abs(this._springValue?.getVelocity() ?? 0)
+        const currentValue = this._springValue?.get() ?? 0
+        const isAtRest = velocity < 0.01
+        // Also check if we're close to target to handle edge case
+        const isNearTarget = Math.abs(currentValue - targetValue) < 0.01
+
+        if (isAtRest || isNearTarget) {
           this._isAnimating = false
           this._checkEndRafId = null
           this._emit('animationEnd')

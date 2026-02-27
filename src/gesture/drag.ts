@@ -181,6 +181,7 @@ class DragSpringImpl implements DragSpring {
   private velocity = { x: 0, y: 0 }
   private currentSnap: SnapPoint | null = null
   private snapTimeoutId: ReturnType<typeof setTimeout> | null = null
+  private snapGeneration = 0
   private destroyed = false
 
   // Springs for each axis
@@ -261,17 +262,17 @@ class DragSpringImpl implements DragSpring {
     const now = performance.now()
     const dt = now - this.lastTime
 
-    // Calculate instant velocity with minimum dt to prevent spikes
-    // Use at least 16ms (one frame) to avoid unrealistic velocity on first move
-    const safeDt = Math.max(dt, 16)
+    // Calculate instant velocity with clamped dt to prevent spikes
+    // Clamp between 16ms (one frame) and 100ms to avoid unrealistic velocities
+    const safeDt = Math.min(Math.max(dt, 16), 100)
     const instantVelocity = {
       x: (e.clientX - this.lastPosition.x) / safeDt,
       y: (e.clientY - this.lastPosition.y) / safeDt,
     }
 
     // Smooth velocity using exponential moving average to prevent jarring animations
-    // This prevents velocity spikes on quick movements or first move events
-    const smoothingFactor = 0.2
+    // Higher factor (0.5) makes drags feel more responsive while still smoothing spikes
+    const smoothingFactor = 0.5
     this.velocity = {
       x: this.velocity.x * (1 - smoothingFactor) + instantVelocity.x * smoothingFactor,
       y: this.velocity.y * (1 - smoothingFactor) + instantVelocity.y * smoothingFactor,
@@ -642,9 +643,11 @@ class DragSpringImpl implements DragSpring {
     }
 
     // Simple completion detection with tracked timeout
+    const generation = ++this.snapGeneration
     this.snapTimeoutId = setTimeout(() => {
       this.snapTimeoutId = null
-      if (!this.destroyed && this.currentSnap === point && this.config.onSnapComplete) {
+      // Check generation to prevent stale callbacks
+      if (!this.destroyed && generation === this.snapGeneration && this.currentSnap === point && this.config.onSnapComplete) {
         this.config.onSnapComplete(point)
       }
     }, 500)
@@ -667,7 +670,12 @@ class DragSpringImpl implements DragSpring {
       this.snapTimeoutId = null
     }
 
+    // Remove all event listeners
     this.element.removeEventListener('pointerdown', this.onPointerDown)
+    this.element.removeEventListener('pointermove', this.onPointerMove)
+    this.element.removeEventListener('pointerup', this.onPointerUp)
+    this.element.removeEventListener('pointercancel', this.onPointerUp)
+
     this.springX.destroy()
     this.springY.destroy()
   }

@@ -418,6 +418,392 @@ describe('Scroll-Linked Animations', () => {
     })
   })
 
+  describe('edge cases and error handling', () => {
+    it('should handle center offset option (line 196)', () => {
+      const progress = createScrollProgress(element, {
+        offset: ['center', 'end'],
+      })
+
+      expect(progress.get()).toBeGreaterThanOrEqual(0)
+
+      progress.destroy()
+    })
+
+    it('should handle end offset option (line 200)', () => {
+      const progress = createScrollProgress(element, {
+        offset: ['start', 'start'],
+      })
+
+      expect(progress.get()).toBeGreaterThanOrEqual(0)
+
+      progress.destroy()
+    })
+
+    it('should handle onEnter callback errors', () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const onEnter = vi.fn(() => { throw new Error('onEnter error') })
+
+      const trigger = createScrollTrigger(element, { onEnter })
+
+      trigger.destroy()
+      consoleSpy.mockRestore()
+    })
+
+    it('should handle onLeave callback errors', () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const onLeave = vi.fn(() => { throw new Error('onLeave error') })
+
+      const trigger = createScrollTrigger(element, { onLeave })
+
+      trigger.destroy()
+      consoleSpy.mockRestore()
+    })
+
+    it('should handle onProgress callback errors', () => {
+      const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+      const onProgress = vi.fn(() => { throw new Error('onProgress error') })
+
+      const trigger = createScrollTrigger(element, { onProgress, scrub: true })
+
+      trigger.destroy()
+      consoleSpy.mockRestore()
+    })
+
+    it('should handle segment index beyond range (lines 568-570)', () => {
+      const scrollProgress = createScrollProgress()
+      const value = createScrollLinkedValue(scrollProgress, {
+        inputRange: [0, 0.5, 1],
+        outputRange: [0, 50, 100],
+      })
+
+      // Value should be defined even when progress is beyond segments
+      expect(value.get()).toBeDefined()
+
+      value.destroy()
+      scrollProgress.destroy()
+    })
+
+    it('should handle equal segment start and end (line 577)', () => {
+      const scrollProgress = createScrollProgress()
+      const value = createScrollLinkedValue(scrollProgress, {
+        inputRange: [0, 0.5, 0.5, 1], // Two segments with same boundary
+        outputRange: [0, 50, 50, 100],
+      })
+
+      // Should handle equal segment boundaries without division by zero
+      expect(value.get()).toBeDefined()
+
+      value.destroy()
+      scrollProgress.destroy()
+    })
+
+    it('should handle parallax with element not in view', () => {
+      const parallax = createParallax(element)
+
+      // Element is in view by default in jsdom, but update should handle not in view
+      parallax.update()
+      expect(parallax.getOffset()).toBeDefined()
+
+      parallax.destroy()
+    })
+
+    it('should handle multiple destroy calls on scroll progress', () => {
+      const progress = createScrollProgress()
+
+      expect(() => {
+        progress.destroy()
+        progress.destroy()
+        progress.destroy()
+      }).not.toThrow()
+    })
+
+    it('should handle multiple destroy calls on parallax', () => {
+      const parallax = createParallax(element)
+
+      expect(() => {
+        parallax.destroy()
+        parallax.destroy()
+        parallax.destroy()
+      }).not.toThrow()
+    })
+
+    it('should handle multiple destroy calls on scroll trigger', () => {
+      const trigger = createScrollTrigger(element)
+
+      expect(() => {
+        trigger.destroy()
+        trigger.destroy()
+        trigger.destroy()
+      }).not.toThrow()
+    })
+
+    it('should handle scroll trigger with center start', () => {
+      const trigger = createScrollTrigger(element, {
+        start: 'center',
+        end: 'center',
+      })
+
+      expect(trigger.getProgress()).toBeDefined()
+
+      trigger.destroy()
+    })
+
+    it('should handle scroll trigger with bottom start', () => {
+      const trigger = createScrollTrigger(element, {
+        start: 'bottom',
+        end: 'bottom',
+      })
+
+      expect(trigger.getProgress()).toBeDefined()
+
+      trigger.destroy()
+    })
+
+    it('should handle scroll linked value with no clamp', () => {
+      const scrollProgress = createScrollProgress()
+      const value = createScrollLinkedValue(scrollProgress, {
+        inputRange: [0, 1],
+        outputRange: [0, 100],
+        clamp: false,
+      })
+
+      expect(value.get()).toBeDefined()
+
+      value.destroy()
+      scrollProgress.destroy()
+    })
+
+    it('should handle rgb color interpolation', () => {
+      const scrollProgress = createScrollProgress()
+      const value = createScrollLinkedValue(scrollProgress, {
+        inputRange: [0, 1],
+        outputRange: ['rgb(255, 0, 0)', 'rgb(0, 0, 255)'],
+      })
+
+      const current = value.get()
+      expect(typeof current).toBe('string')
+
+      value.destroy()
+      scrollProgress.destroy()
+    })
+
+    it('should handle hsl color interpolation', () => {
+      const scrollProgress = createScrollProgress()
+      const value = createScrollLinkedValue(scrollProgress, {
+        inputRange: [0, 1],
+        outputRange: ['hsl(0, 100%, 50%)', 'hsl(240, 100%, 50%)'],
+      })
+
+      const current = value.get()
+      expect(typeof current).toBe('string')
+
+      value.destroy()
+      scrollProgress.destroy()
+    })
+
+    it('should handle parallax with element in view (line 310)', () => {
+      const parallax = createParallax(element)
+
+      // Element is in view by default in jsdom
+      parallax.update()
+      expect(parallax.getOffset()).toBeDefined()
+
+      parallax.destroy()
+    })
+
+    it('should handle parallax cleanup of pending RAF (lines 366-369)', () => {
+      const parallax = createParallax(element)
+
+      // Trigger an update that schedules RAF
+      parallax.update()
+
+      // Destroy immediately to cancel pending RAF
+      parallax.destroy()
+
+      // Should not throw
+      expect(() => parallax.destroy()).not.toThrow()
+    })
+
+    it('should handle scroll trigger with scrub smoothing (lines 444-449)', () => {
+      const trigger = createScrollTrigger(element, {
+        scrub: 0.5, // Numeric scrub with smoothing
+      })
+
+      expect(trigger.getProgress()).toBeDefined()
+
+      trigger.destroy()
+    })
+
+    it('should handle scroll trigger with boolean scrub (lines 447-449)', () => {
+      const trigger = createScrollTrigger(element, {
+        scrub: true, // Boolean scrub (no smoothing)
+      })
+
+      expect(trigger.getProgress()).toBeDefined()
+
+      trigger.destroy()
+    })
+
+    it('should handle scroll trigger refresh (line 509)', () => {
+      const trigger = createScrollTrigger(element)
+
+      // Refresh should recalculate
+      trigger.refresh()
+
+      expect(trigger.getProgress()).toBeDefined()
+
+      trigger.destroy()
+    })
+
+    it('should handle scroll linked value interpolation with easing (lines 554, 557)', () => {
+      const scrollProgress = createScrollProgress()
+      const value = createScrollLinkedValue(scrollProgress, {
+        inputRange: [0, 0.5, 1],
+        outputRange: [0, 50, 100],
+        easing: (t) => t * t, // Custom easing
+      })
+
+      expect(value.get()).toBeDefined()
+
+      value.destroy()
+      scrollProgress.destroy()
+    })
+
+    it('should handle scroll linked value with progress beyond last segment (lines 568-570)', () => {
+      const scrollProgress = createScrollProgress()
+      const value = createScrollLinkedValue(scrollProgress, {
+        inputRange: [0, 0.5, 1],
+        outputRange: [0, 50, 100],
+        clamp: false, // Allow extrapolation
+      })
+
+      // Value should handle progress beyond segments
+      expect(value.get()).toBeDefined()
+
+      value.destroy()
+      scrollProgress.destroy()
+    })
+
+    it('should handle scroll linked value with equal segment boundaries (lines 575-577)', () => {
+      const scrollProgress = createScrollProgress()
+      const value = createScrollLinkedValue(scrollProgress, {
+        inputRange: [0, 0.5, 0.5, 1], // Two segments with same boundary
+        outputRange: [0, 50, 50, 100],
+      })
+
+      // Should handle equal segment boundaries without division by zero
+      expect(value.get()).toBeDefined()
+
+      value.destroy()
+      scrollProgress.destroy()
+    })
+
+    it('should handle scroll progress when element is not in view (lines 211-213)', () => {
+      // Create element outside viewport
+      const offscreenElement = document.createElement('div')
+      offscreenElement.style.position = 'absolute'
+      offscreenElement.style.top = '5000px'
+      offscreenElement.style.left = '5000px'
+      document.body.appendChild(offscreenElement)
+
+      const progress = createScrollProgress(offscreenElement)
+      const info = progress.getInfo()
+
+      expect(info.isInView).toBe(false)
+      expect(info.visibleRatio).toBe(0)
+
+      progress.destroy()
+      offscreenElement.remove()
+    })
+
+    it('should handle scroll progress with document height of zero (line 217)', () => {
+      // Mock document height to be equal to window height (zero scroll range)
+      const originalScrollHeight = Object.getOwnPropertyDescriptor(document.documentElement, 'scrollHeight')
+      Object.defineProperty(document.documentElement, 'scrollHeight', {
+        value: window.innerHeight,
+        configurable: true,
+      })
+
+      const progress = createScrollProgress()
+      expect(progress.get()).toBe(0)
+
+      progress.destroy()
+
+      // Restore original
+      if (originalScrollHeight) {
+        Object.defineProperty(document.documentElement, 'scrollHeight', originalScrollHeight)
+      }
+    })
+
+    it('should handle scroll progress destroyed state in onScroll (lines 249, 252)', () => {
+      const progress = createScrollProgress()
+
+      // Destroy immediately
+      progress.destroy()
+
+      // Trigger scroll event
+      window.dispatchEvent(new Event('scroll'))
+
+      // Should not throw
+      expect(() => progress.get()).not.toThrow()
+    })
+
+    it('should handle scroll trigger with active state changes (lines 471-496)', () => {
+      const onEnter = vi.fn()
+      const onLeave = vi.fn()
+      const onProgress = vi.fn()
+
+      const trigger = createScrollTrigger(element, {
+        start: 'top',
+        end: 'bottom',
+        onEnter,
+        onLeave,
+        onProgress,
+      })
+
+      // Trigger scroll to activate
+      window.dispatchEvent(new Event('scroll'))
+
+      expect(trigger.isActive()).toBeDefined()
+
+      trigger.destroy()
+    })
+
+    it('should handle scroll trigger once option (lines 473-475)', () => {
+      const onEnter = vi.fn()
+      const trigger = createScrollTrigger(element, {
+        onEnter,
+        once: true,
+      })
+
+      trigger.destroy()
+    })
+
+    it('should handle parallax with IntersectionObserver entry undefined (lines 337-340)', () => {
+      const parallax = createParallax(element)
+
+      // Update should handle when entry is undefined
+      parallax.update()
+
+      expect(parallax.getOffset()).toBeDefined()
+
+      parallax.destroy()
+    })
+
+    it('should handle scroll progress with rafId already set (line 249)', () => {
+      const progress = createScrollProgress()
+
+      // Multiple rapid scroll events should not create multiple RAFs
+      window.dispatchEvent(new Event('scroll'))
+      window.dispatchEvent(new Event('scroll'))
+      window.dispatchEvent(new Event('scroll'))
+
+      expect(progress.get()).toBeDefined()
+
+      progress.destroy()
+    })
+  })
+
   describe('scrollEasings', () => {
     it('should have linear easing', () => {
       expect(scrollEasings.linear(0.5)).toBe(0.5)

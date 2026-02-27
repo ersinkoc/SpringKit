@@ -129,11 +129,7 @@ function HoverSection() {
           <div
             {...handlers}
             onMouseEnter={(e) => {
-              try {
-                handlers.onMouseEnter?.()
-              } catch (error) {
-                console.error('[GesturesDemo] Mouse enter handler error:', error)
-              }
+              handlers.onMouseEnter?.(e)
               setHoverCount((c) => c + 1)
             }}
             className="w-28 h-28 rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-500 shadow-lg flex flex-col items-center justify-center text-white transition-all duration-300 cursor-pointer"

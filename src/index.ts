@@ -63,6 +63,8 @@ export { interpolateColor } from './interpolation/color.js'
 
 export { createDragSpring } from './gesture/drag.js'
 export { createScrollSpring } from './gesture/scroll.js'
+export type { DragSpring, DragSpringConfig } from './gesture/drag.js'
+export type { ScrollSpring, ScrollSpringConfig } from './gesture/scroll.js'
 
 // ============ Advanced Gestures ============
 
@@ -198,7 +200,7 @@ export {
   MotionValue,
   createMotionValue,
   transformValue,
-  mapRange as motionMapRange,
+  mapRange as transformMapRange,
 } from './core/MotionValue.js'
 export type {
   MotionValueSubscriber,

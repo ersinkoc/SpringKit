@@ -124,8 +124,8 @@ function applyTransform(
   // Calculate deltas
   const dx = current.x !== undefined ? from.x - to.x + (current.x - from.x) : 0
   const dy = current.y !== undefined ? from.y - to.y + (current.y - from.y) : 0
-  const scaleX = current.width !== undefined ? current.width / to.width : 1
-  const scaleY = current.height !== undefined ? current.height / to.height : 1
+  const scaleX = current.width !== undefined && to.width !== 0 ? current.width / to.width : 1
+  const scaleY = current.height !== undefined && to.height !== 0 ? current.height / to.height : 1
 
   // Apply transform
   element.style.transform = `translate(${dx}px, ${dy}px) scale(${scaleX}, ${scaleY})`

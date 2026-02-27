@@ -106,7 +106,7 @@ export function useScroll(options: UseScrollOptions = {}): UseScrollReturn {
   const scrollXProgressRef = useRef<MotionValue<number> | null>(null)
   const scrollYProgressRef = useRef<MotionValue<number> | null>(null)
 
-  if (scrollXRef.current === null) {
+  if (scrollXRef.current === null || scrollXRef.current.isDestroyed()) {
     scrollXRef.current = createMotionValue(0)
     scrollYRef.current = createMotionValue(0)
     scrollXProgressRef.current = createMotionValue(0)
@@ -334,7 +334,7 @@ export function useScrollVelocity(axis: 'x' | 'y' = 'y'): MotionValue<number> {
   const lastScrollRef = useRef(0)
   const lastTimeRef = useRef(Date.now())
 
-  if (velocityRef.current === null) {
+  if (velocityRef.current === null || velocityRef.current.isDestroyed()) {
     velocityRef.current = createMotionValue(0)
   }
 

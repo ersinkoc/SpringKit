@@ -59,7 +59,8 @@ export function useSpringState(
   const motionValueRef = useRef<MotionValue<number> | null>(null)
 
   // Initialize spring
-  if (springRef.current === null) {
+  // Recreate if destroyed (happens with React StrictMode double-mount)
+  if (springRef.current === null || springRef.current.isDestroyed()) {
     springRef.current = createSpringValue(initial, {
       ...springConfig,
       onUpdate: (value) => {
@@ -292,7 +293,7 @@ export function useElastic(options: UseElasticOptions = {}) {
   if (motionValueRef.current === null || motionValueRef.current.isDestroyed()) {
     motionValueRef.current = createMotionValue(0)
   }
-  if (springRef.current === null) {
+  if (springRef.current === null || springRef.current.isDestroyed()) {
     springRef.current = createSpringValue(0, {
       ...spring,
       onUpdate: (v) => motionValueRef.current?.jump(v),
@@ -608,9 +609,14 @@ export function useGravity(options: UseGravityOptions = {}) {
     xMotion.jump(newX)
     yMotion.jump(newY)
 
-    // Continue if there's still movement
+    // Continue if there's still movement or if gravity is active
     const totalVelocity = Math.abs(velocityRef.current.x) + Math.abs(velocityRef.current.y)
-    if (totalVelocity > 0.01 || gravity.x !== 0 || gravity.y !== 0) {
+    // Keep animating if there's significant velocity OR if we're not at rest on the ground
+    const isAtRestOnGround = bounds?.bottom !== undefined &&
+      Math.abs(newY - bounds.bottom) < 0.5 &&
+      totalVelocity < 0.01
+
+    if (totalVelocity > 0.01 || !isAtRestOnGround) {
       frameRef.current = requestAnimationFrame(tick)
     } else {
       isActiveRef.current = false

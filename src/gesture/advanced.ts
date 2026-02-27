@@ -361,10 +361,10 @@ export function createPinchGesture(
         newScale = clamp(newScale, minScale, maxScale)
       }
 
-      // Calculate velocity
-      velocity = dt > 0 ? ((newScale - lastScale) / dt) * 1000 : 0
+      // Calculate velocity - update lastScale BEFORE calculating to avoid race condition
       lastScale = currentScale
       currentScale = newScale
+      velocity = dt > 0 ? ((currentScale - lastScale) / dt) * 1000 : 0
       lastTime = now
 
       onPinch?.(createState(e, false, false))
@@ -407,14 +407,22 @@ export function createPinchGesture(
 
   return {
     enable: () => { enabled = true },
-    disable: () => { enabled = false },
+    disable: () => {
+      enabled = false
+      // Cancel any active spring animation when disabled
+      scaleSpring?.destroy()
+      scaleSpring = null
+    },
     isEnabled: () => enabled,
     destroy: () => {
+      // Remove listeners - note: passive option not needed for removal
       element.removeEventListener('touchstart', handleTouchStart)
       element.removeEventListener('touchmove', handleTouchMove)
       element.removeEventListener('touchend', handleTouchEnd)
       element.removeEventListener('touchcancel', handleTouchEnd)
       scaleSpring?.destroy()
+      scaleSpring = null
+      touches.clear()
     },
   }
 }
@@ -560,10 +568,12 @@ export function createRotateGesture(
     disable: () => { enabled = false },
     isEnabled: () => enabled,
     destroy: () => {
+      // Remove listeners - note: passive option not needed for removal
       element.removeEventListener('touchstart', handleTouchStart)
       element.removeEventListener('touchmove', handleTouchMove)
       element.removeEventListener('touchend', handleTouchEnd)
       element.removeEventListener('touchcancel', handleTouchEnd)
+      touches.clear()
     },
   }
 }
@@ -861,7 +871,14 @@ export function createLongPressGesture(
 
   return {
     enable: () => { enabled = true },
-    disable: () => { enabled = false },
+    disable: () => {
+      enabled = false
+      // Clear timer when disabled to prevent callbacks after disable
+      if (timerId) {
+        clearTimeout(timerId)
+        timerId = null
+      }
+    },
     isEnabled: () => enabled,
     destroy: () => {
       if (timerId) clearTimeout(timerId)

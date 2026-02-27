@@ -150,9 +150,23 @@ function toAbsolute(commands: PathCommand[]): PathCommand[] {
         currentY = values[6] ?? 0
         break
 
+      case 'S': // Smooth cubic Bezier
+        currentX = values[2] ?? 0
+        currentY = values[3] ?? 0
+        break
+
+      case 'T': // Smooth quadratic Bezier
+        currentX = values[0] ?? 0
+        currentY = values[1] ?? 0
+        break
+
       case 'Z':
         currentX = startX
         currentY = startY
+        break
+
+      default:
+        // Unknown command - keep current position
         break
     }
 

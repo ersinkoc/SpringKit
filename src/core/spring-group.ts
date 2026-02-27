@@ -38,6 +38,7 @@ class SpringGroupImpl<T extends Record<string, number>> implements SpringGroup<T
   private resolveComplete: (() => void) | null = null
   private finishedPromise: Promise<void>
   private notifyRafId: number | null = null
+  private notifyScheduled = false
   private destroyed = false
 
   constructor(initialValues: T, config: SpringConfig = {}) {
@@ -144,17 +145,18 @@ class SpringGroupImpl<T extends Record<string, number>> implements SpringGroup<T
   }
 
   /**
-   * Schedule notification for next animation frame to prevent excessive updates.
+   * Schedule notification using microtask to prevent excessive updates.
    * When animating multiple properties, this debounces notifications to once per frame
-   * instead of once per property update.
+   * instead of once per property update, while avoiding RAF cascade issues.
    */
   private scheduleNotify(): void {
     // Skip if destroyed or already scheduled
-    if (this.destroyed || this.notifyRafId !== null) return
+    if (this.destroyed || this.notifyScheduled) return
 
-    this.notifyRafId = requestAnimationFrame(() => {
-      this.notifyRafId = null
-      // Double-check destroyed state after RAF
+    this.notifyScheduled = true
+    queueMicrotask(() => {
+      this.notifyScheduled = false
+      // Double-check destroyed state after microtask
       if (!this.destroyed) {
         this.notify()
       }
@@ -175,11 +177,8 @@ class SpringGroupImpl<T extends Record<string, number>> implements SpringGroup<T
   destroy(): void {
     this.destroyed = true
 
-    // Cancel pending RAF to prevent memory leak
-    if (this.notifyRafId !== null) {
-      cancelAnimationFrame(this.notifyRafId)
-      this.notifyRafId = null
-    }
+    // Note: queueMicrotask cannot be cancelled, but notifyScheduled flag
+    // prevents notification from being sent after destroy
 
     for (const springValue of this.values.values()) {
       springValue.destroy()

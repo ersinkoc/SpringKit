@@ -123,7 +123,6 @@ function SVGMorphDemo() {
   const [cycleSpeed, setCycleSpeed] = useState(1500)
   const [morphCount, setMorphCount] = useState(0)
   const autoCycleRef = useRef<NodeJS.Timeout | null>(null)
-  const mountedRef = useRef(true)
 
   useEffect(() => {
     // Create morph controller with spring physics
@@ -216,9 +215,7 @@ function SVGMorphDemo() {
 
   // Cleanup auto-cycle on unmount
   useEffect(() => {
-    mountedRef.current = true
     return () => {
-      mountedRef.current = false
       if (autoCycleRef.current) {
         clearInterval(autoCycleRef.current)
         autoCycleRef.current = null

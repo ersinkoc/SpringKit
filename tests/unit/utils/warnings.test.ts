@@ -4,6 +4,8 @@ import {
   validateDragConfig,
   validateDecayConfig,
   clearWarnings,
+  validateNumber,
+  validateAnimationValue,
 } from '../../../src/utils/warnings.js'
 
 describe('warnings', () => {
@@ -114,6 +116,88 @@ describe('warnings', () => {
 
       validateSpringConfig({ stiffness: 500, damping: 5 })
       expect(consoleWarnSpy).toHaveBeenCalledTimes(2)
+    })
+  })
+
+  describe('validateNumber', () => {
+    it('should return value for valid number', () => {
+      const result = validateNumber(42, 'testValue')
+      expect(result).toBe(42)
+    })
+
+    it('should return default value for NaN', () => {
+      const result = validateNumber(NaN, 'testValue', 10)
+      expect(result).toBe(10)
+    })
+
+    it('should return default value for non-number', () => {
+      const result = validateNumber('not a number' as unknown as number, 'testValue', 5)
+      expect(result).toBe(5)
+    })
+
+    it('should return default value for Infinity', () => {
+      const result = validateNumber(Infinity, 'testValue', 0)
+      expect(result).toBe(0)
+    })
+
+    it('should return default value for negative Infinity', () => {
+      const result = validateNumber(-Infinity, 'testValue', 0)
+      expect(result).toBe(0)
+    })
+
+    it('should warn about NaN in development', () => {
+      validateNumber(NaN, 'testProp', 0)
+      expect(consoleWarnSpy).toHaveBeenCalled()
+      expect(consoleWarnSpy.mock.calls[0]?.[0]).toContain('NaN')
+    })
+
+    it('should warn about Infinity in development', () => {
+      validateNumber(Infinity, 'testProp', 0)
+      expect(consoleWarnSpy).toHaveBeenCalled()
+      expect(consoleWarnSpy.mock.calls[0]?.[0]).toContain('Infinity')
+    })
+  })
+
+  describe('validateAnimationValue', () => {
+    let consoleErrorSpy: ReturnType<typeof vi.spyOn>
+
+    beforeEach(() => {
+      consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    })
+
+    afterEach(() => {
+      consoleErrorSpy.mockRestore()
+    })
+
+    it('should return value for valid number', () => {
+      const result = validateAnimationValue(42, 'testContext')
+      expect(result).toBe(42)
+    })
+
+    it('should return 0 and error for NaN', () => {
+      const result = validateAnimationValue(NaN, 'SpringValue.set')
+      expect(result).toBe(0)
+      expect(consoleErrorSpy).toHaveBeenCalled()
+      expect(consoleErrorSpy.mock.calls[0]?.[0]).toContain('Invalid animation value')
+    })
+
+    it('should return 0 and error for non-number', () => {
+      const result = validateAnimationValue('invalid' as unknown as number, 'SpringValue.set')
+      expect(result).toBe(0)
+      expect(consoleErrorSpy).toHaveBeenCalled()
+    })
+
+    it('should return 0 and error for Infinity', () => {
+      const result = validateAnimationValue(Infinity, 'SpringValue.set')
+      expect(result).toBe(0)
+      expect(consoleErrorSpy).toHaveBeenCalled()
+      expect(consoleErrorSpy.mock.calls[0]?.[0]).toContain('Infinity')
+    })
+
+    it('should return 0 and error for negative Infinity', () => {
+      const result = validateAnimationValue(-Infinity, 'SpringValue.set')
+      expect(result).toBe(0)
+      expect(consoleErrorSpy).toHaveBeenCalled()
     })
   })
 })

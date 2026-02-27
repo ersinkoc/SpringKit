@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useMemo } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { createSpringGroup } from '../../../index.js'
 import type { SpringConfig, SpringGroup } from '../../../types.js'
 
@@ -7,6 +7,19 @@ import type { SpringConfig, SpringGroup } from '../../../types.js'
  */
 export type AnimatedValues<T extends Record<string, number>> = {
   [K in keyof T]: number
+}
+
+/**
+ * Deep equality check for objects
+ */
+function shallowEqual<T extends Record<string, number>>(a: T, b: T): boolean {
+  const keysA = Object.keys(a)
+  const keysB = Object.keys(b)
+  if (keysA.length !== keysB.length) return false
+  for (const key of keysA) {
+    if (a[key] !== b[key]) return false
+  }
+  return true
 }
 
 /**
@@ -48,17 +61,9 @@ export function useSpring<T extends Record<string, number>>(
   config: Partial<SpringConfig> = {}
 ): AnimatedValues<T> {
   const springRef = useRef<SpringGroup<T> | null>(null)
-  const [currentValues, setCurrentValues] = useState<T>(values)
-  const isFirstRender = useRef(true)
   const isMounted = useRef(false)
-  const prevValuesRef = useRef<T>(values)
   const configRef = useRef(config)
-
-  // Memoize values to detect actual changes without JSON.stringify on every render
-  const valuesKey = useMemo(() => {
-    const keys = Object.keys(values).sort()
-    return keys.map(k => `${k}:${values[k]}`).join('|')
-  }, [values])
+  const prevValuesRef = useRef<T>(values)
 
   // Keep config ref updated
   configRef.current = config
@@ -67,14 +72,29 @@ export function useSpring<T extends Record<string, number>>(
   // Check isDestroyed() for React StrictMode compatibility
   if (!springRef.current || springRef.current.isDestroyed()) {
     springRef.current = createSpringGroup(values, config)
+    prevValuesRef.current = values
   }
 
-  // Subscribe to spring updates after mount
+  // Get initial values from spring (not from props)
+  // This ensures we sync with spring's actual current state
+  const getSpringValues = useCallback(() => {
+    const spring = springRef.current
+    if (!spring) return values
+
+    // Get all current values from spring
+    return spring.get()
+  }, [])
+
+  // Initialize state from spring's actual values
+  const [currentValues, setCurrentValues] = useState<T>(getSpringValues)
+
+  // Subscribe to spring updates and sync with React state
   useEffect(() => {
     isMounted.current = true
     const spring = springRef.current
     if (!spring) return
 
+    // Subscribe to spring updates
     const unsubscribe = spring.subscribe((newValues) => {
       if (isMounted.current) {
         setCurrentValues(newValues)
@@ -87,24 +107,17 @@ export function useSpring<T extends Record<string, number>>(
     }
   }, [])
 
-  // Update when values or config change (skip first render since we initialized with values)
+  // Update spring when values actually change (not just reference)
   useEffect(() => {
-    if (isFirstRender.current) {
-      isFirstRender.current = false
-      return
-    }
+    const spring = springRef.current
+    if (!spring) return
 
-    // Check if any value actually changed
-    const prev = prevValuesRef.current
-    const hasValueChanged = Object.keys(values).some(
-      key => values[key] !== prev[key]
-    )
-
-    if (hasValueChanged) {
-      springRef.current?.set(values, configRef.current)
+    // Only update if values actually changed
+    if (!shallowEqual(values, prevValuesRef.current)) {
       prevValuesRef.current = values
+      spring.set(values, configRef.current)
     }
-  }, [valuesKey, values])
+  })
 
   // Cleanup on unmount: destroy spring to prevent memory leaks
   useEffect(() => {

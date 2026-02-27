@@ -12,6 +12,9 @@ export interface SimulationResult {
   isRest: boolean
 }
 
+/** Fixed sub-step for consistent physics (60fps) */
+const FIXED_TIME_STEP = 1 / 60
+
 /**
  * Simulate one step of spring physics using semi-implicit Euler integration
  *
@@ -63,9 +66,9 @@ export function simulateSpring(
     }
   }
 
-  // Time step for 60fps animation
+  // Use fixed time step for consistent physics across different frame rates
   // This ensures the spring simulation is stable with typical stiffness values
-  const dt = 1 / 60
+  const dt = FIXED_TIME_STEP
 
   // Calculate spring force (Hooke's law: F = -k * x)
   const springForce = stiffness * displacement
