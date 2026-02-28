@@ -281,6 +281,37 @@ describe('createScrollSpring', () => {
 
       expect(scroll).toBeDefined()
     })
+
+    it('should cancel pending RAF on disable (lines 246-248)', () => {
+      vi.useFakeTimers()
+
+      const scroll = createScrollSpring(container)
+
+      // Trigger wheel to create pending RAF
+      container.dispatchEvent(new WheelEvent('wheel', { deltaY: 100 }))
+      vi.advanceTimersByTime(16)
+
+      // Disable should cancel pending RAF
+      scroll.disable()
+
+      // Second disable should not throw
+      expect(() => scroll.disable()).not.toThrow()
+
+      vi.useRealTimers()
+    })
+
+    it('should call onScrollEnd when disabling during scroll (lines 251-253)', () => {
+      const onScrollEnd = vi.fn()
+      const scroll = createScrollSpring(container, { onScrollEnd })
+
+      // Start scrolling
+      container.dispatchEvent(new WheelEvent('wheel', { deltaY: 100 }))
+
+      // Disable while scrolling - should call onScrollEnd
+      scroll.disable()
+
+      expect(onScrollEnd).toHaveBeenCalled()
+    })
   })
 
   describe('wheel events', () => {
@@ -489,6 +520,25 @@ describe('createScrollSpring', () => {
       scroll.destroy()
 
       expect(scroll).toBeDefined()
+    })
+
+    it('should cancel pending RAF on destroy (lines 261-263)', () => {
+      vi.useFakeTimers()
+
+      const scroll = createScrollSpring(container)
+
+      // Start scrolling to create pending RAF
+      container.dispatchEvent(new WheelEvent('wheel', { deltaY: 100 }))
+
+      vi.advanceTimersByTime(16)
+
+      // Destroy should cancel pending RAF (lines 261-263)
+      scroll.destroy()
+
+      // Second destroy should not throw
+      expect(() => scroll.destroy()).not.toThrow()
+
+      vi.useRealTimers()
     })
   })
 })

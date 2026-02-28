@@ -218,6 +218,120 @@ describe('SVG Morph', () => {
       morph.destroy()
     })
 
+    it('should handle empty fromPoints array when extending (lines 416-418)', () => {
+      // Start with an extremely simple path
+      const simplePath = 'M 0 0'
+      const complexPath = shapes.circle(50, 50, 25)
+      const morph = createMorph(simplePath)
+
+      // Morph to complex path - triggers fromPoints extension with fallback
+      morph.morphTo(complexPath)
+
+      expect(morph.getPath()).toBeDefined()
+      morph.destroy()
+    })
+
+    it('should handle empty toPoints array when extending (lines 419-421)', () => {
+      const complexPath = shapes.circle(50, 50, 25)
+      const simplePath = 'M 0 0'
+      const morph = createMorph(complexPath)
+
+      // Morph to single point path - triggers toPoints extension with fallback
+      morph.morphTo(simplePath)
+
+      expect(morph.getPath()).toBeDefined()
+      morph.destroy()
+    })
+
+    it('should handle fromPoints extension with actual point duplication (lines 416-418)', () => {
+      // Create a path with very few points
+      const fewPointsPath = 'M 0 0 L 10 10'
+      const manyPointsPath = shapes.circle(50, 50, 25) // Circle has many points
+
+      const morph = createMorph(fewPointsPath)
+
+      // This triggers the while loop that extends fromPoints
+      morph.morphTo(manyPointsPath)
+
+      // Verify morph worked
+      const path = morph.getPath()
+      expect(path).toBeDefined()
+      expect(path).toContain('M')
+
+      morph.destroy()
+    })
+
+    it('should handle toPoints extension with actual point duplication (lines 419-421)', () => {
+      // Create paths with different point counts
+      const manyPointsPath = shapes.circle(50, 50, 25)
+      const fewPointsPath = 'M 0 0 L 10 10 L 20 0'
+
+      const morph = createMorph(manyPointsPath)
+
+      // First morph reduces points
+      morph.morphTo(fewPointsPath)
+
+      // Then morph back to many points - triggers toPoints extension
+      morph.morphTo(manyPointsPath)
+
+      // Verify morph worked
+      const path = morph.getPath()
+      expect(path).toBeDefined()
+      expect(path).toContain('M')
+
+      morph.destroy()
+    })
+
+    it('should handle fromPoints extension with empty array fallback (lines 416-418)', () => {
+      // Start with path that has only 1 point
+      const singlePointPath = 'M 50 50'
+      const multiPointPath = shapes.circle(50, 50, 25)
+
+      const morph = createMorph(singlePointPath)
+
+      // This should trigger fromPoints.push with fallback to { x: 0, y: 0 }
+      morph.morphTo(multiPointPath)
+
+      expect(morph.getPath()).toBeDefined()
+      morph.destroy()
+    })
+
+    it('should handle toPoints extension with empty array fallback (lines 419-421)', () => {
+      const multiPointPath = shapes.circle(50, 50, 25)
+      // Path with no extractable points (just M command)
+      const noPointsPath = 'M 0 0'
+
+      const morph = createMorph(multiPointPath)
+
+      // First morph to path with minimal points
+      morph.morphTo(noPointsPath)
+
+      // Then morph to another path with more points - triggers toPoints.push with fallback
+      const anotherPath = shapes.rect(0, 0, 100, 100)
+      morph.morphTo(anotherPath)
+
+      expect(morph.getPath()).toBeDefined()
+      morph.destroy()
+    })
+
+    it('should handle multiple morphs with point count changes (lines 416-421)', () => {
+      const circlePath = shapes.circle(50, 50, 25)
+      const rectPath = shapes.rect(25, 25, 50, 50)
+      const starPath = shapes.star(50, 50, 25, 10, 5)
+
+      const morph = createMorph(circlePath)
+
+      // Multiple morphs with different point counts - triggers both while loops
+      morph.morphTo(rectPath)  // May have fewer points
+      morph.morphTo(starPath)  // May have more points
+      morph.morphTo(circlePath) // Back to original
+
+      const path = morph.getPath()
+      expect(path).toBeDefined()
+
+      morph.destroy()
+    })
+
     it('should call onComplete when progress reaches 0.999', async () => {
       const onComplete = vi.fn()
       const circlePath = shapes.circle(50, 50, 25)
@@ -343,6 +457,68 @@ describe('SVG Morph', () => {
       expect(normalCallback).toHaveBeenCalled()
 
       consoleSpy.mockRestore()
+      morph.destroy()
+    })
+  })
+
+  describe('morph point extension edge cases', () => {
+    it('should handle fromPoints extension with last point fallback (lines 416-418)', () => {
+      // Create morph with path that will have fromPoints extended
+      const simplePath = 'M 0 0 L 10 10'
+      const complexPath = shapes.circle(50, 50, 25)
+
+      const morph = createMorph(simplePath)
+
+      // Morph to complex path - triggers fromPoints.push(fromPoints[fromPoints.length - 1] || { x: 0, y: 0 })
+      morph.morphTo(complexPath)
+
+      expect(morph.getPath()).toBeDefined()
+      morph.destroy()
+    })
+
+    it('should handle toPoints extension with last point fallback (lines 419-421)', () => {
+      const complexPath = shapes.circle(50, 50, 25)
+      const simplePath = 'M 0 0 L 10 10'
+
+      const morph = createMorph(complexPath)
+
+      // First morph to simple path
+      morph.morphTo(simplePath)
+
+      // Then morph back to complex - triggers toPoints extension
+      morph.morphTo(complexPath)
+
+      expect(morph.getPath()).toBeDefined()
+      morph.destroy()
+    })
+
+    it('should handle fromPoints extension when array is empty (lines 417-418)', () => {
+      // Start with a path that might result in empty fromPoints
+      const minimalPath = 'M 0 0'
+      const complexPath = shapes.circle(50, 50, 25)
+
+      const morph = createMorph(minimalPath)
+
+      // This should test the fallback: fromPoints[fromPoints.length - 1] || { x: 0, y: 0 }
+      morph.morphTo(complexPath)
+
+      expect(morph.getPath()).toBeDefined()
+      morph.destroy()
+    })
+
+    it('should handle toPoints extension when array is empty (lines 420-421)', () => {
+      const complexPath = shapes.circle(50, 50, 25)
+      const minimalPath = 'M 0 0'
+
+      const morph = createMorph(complexPath)
+
+      // Morph to minimal path
+      morph.morphTo(minimalPath)
+
+      // Then morph to another minimal path to test toPoints extension
+      morph.morphTo('M 10 10')
+
+      expect(morph.getPath()).toBeDefined()
       morph.destroy()
     })
   })

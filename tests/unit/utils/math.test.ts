@@ -78,6 +78,13 @@ describe('math utils', () => {
       expect(mapRange(0, 0, 100, 0, 1000)).toBe(0)
       expect(mapRange(100, 0, 100, 0, 1000)).toBe(1000)
     })
+
+    it('should handle zero input range (lines 44-46)', () => {
+      // When inMax === inMin, should return outMin to avoid division by zero
+      expect(mapRange(50, 100, 100, 0, 100)).toBe(0)
+      expect(mapRange(0, 50, 50, 0, 100)).toBe(0)
+      expect(mapRange(100, 50, 50, 0, 100)).toBe(0)
+    })
   })
 
   describe('degToRad', () => {

@@ -402,6 +402,20 @@ describe('MotionValue', () => {
       source.jump(50)
       expect(derived.get()).toEqual({ x: 50, y: 100 })
     })
+
+    it('should clean up subscription on destroy (lines 309-315)', () => {
+      const source = createMotionValue(50)
+      const derived = transformValue(source, (v) => v * 2)
+
+      expect(derived.get()).toBe(100)
+
+      // Destroy should unsubscribe from source
+      derived.destroy()
+
+      // After destroy, source should still work
+      source.jump(100)
+      expect(source.get()).toBe(100)
+    })
   })
 
   describe('transformMapRange', () => {
@@ -431,6 +445,15 @@ describe('MotionValue', () => {
       const mapped = transformMapRange(source, [-100, 100], [0, 1])
 
       expect(mapped.get()).toBe(0.5)
+    })
+
+    it('should handle same input range values (division by zero, lines 344-346)', () => {
+      const source = createMotionValue(50)
+      // Same min and max - triggers division by zero protection
+      const mapped = transformMapRange(source, [50, 50], [0, 100])
+
+      // Should return outMin (0) instead of NaN
+      expect(mapped.get()).toBe(0)
     })
 
     it('should update when source changes', () => {

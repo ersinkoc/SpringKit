@@ -51,6 +51,20 @@ describe('physics', () => {
       expect(result).toBeDefined()
     })
 
+    it('should handle mass = 0 with safeMass protection (line 82)', () => {
+      // This tests the safeMass = mass === 0 ? 0.001 : mass line
+      const result = simulateSpring(0, 0, 100, {
+        stiffness: 100,
+        damping: 10,
+        mass: 0, // Zero mass triggers line 82
+      })
+
+      // Should not throw and return valid result
+      expect(result).toBeDefined()
+      expect(result.position).toBeDefined()
+      expect(result.velocity).toBeDefined()
+    })
+
     it('should handle high stiffness', () => {
       const result = simulateSpring(0, 0, 100, {
         stiffness: 1000,
@@ -92,6 +106,19 @@ describe('physics', () => {
 
       expect(period2).toBeGreaterThan(period1)
     })
+
+    it('should handle zero stiffness (line 116)', () => {
+      // Test the safeStiffness = stiffness <= 0 ? 0.001 : stiffness line
+      const period = calculatePeriod(0, 1)
+      expect(period).toBeDefined()
+      expect(period).toBeGreaterThan(0)
+    })
+
+    it('should handle negative stiffness (line 116)', () => {
+      const period = calculatePeriod(-100, 1)
+      expect(period).toBeDefined()
+      expect(period).toBeGreaterThan(0)
+    })
   })
 
   describe('calculateDampingRatio', () => {
@@ -103,6 +130,32 @@ describe('physics', () => {
     it('should handle zero damping', () => {
       const ratio = calculateDampingRatio(0, 100, 1)
       expect(ratio).toBe(0)
+    })
+
+    it('should handle zero stiffness (lines 133-134)', () => {
+      // Test safeStiffness = stiffness <= 0 ? 0.001 : stiffness
+      const ratio = calculateDampingRatio(10, 0, 1)
+      expect(ratio).toBeDefined()
+      expect(ratio).toBeGreaterThan(0)
+    })
+
+    it('should handle zero mass (lines 133-134)', () => {
+      // Test safeMass = mass <= 0 ? 0.001 : mass
+      const ratio = calculateDampingRatio(10, 100, 0)
+      expect(ratio).toBeDefined()
+      expect(ratio).toBeGreaterThan(0)
+    })
+
+    it('should handle negative stiffness (lines 133-134)', () => {
+      const ratio = calculateDampingRatio(10, -100, 1)
+      expect(ratio).toBeDefined()
+      expect(ratio).toBeGreaterThan(0)
+    })
+
+    it('should handle negative mass (lines 133-134)', () => {
+      const ratio = calculateDampingRatio(10, 100, -1)
+      expect(ratio).toBeDefined()
+      expect(ratio).toBeGreaterThan(0)
     })
   })
 

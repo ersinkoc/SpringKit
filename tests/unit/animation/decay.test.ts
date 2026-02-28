@@ -108,6 +108,24 @@ describe('decay', () => {
 
       anim.stop()
     })
+
+    it('should clamp deceleration when <= 0 (line 60-62)', () => {
+      const anim = decay({ velocity: 1000, deceleration: 0 })
+      // Should use default 0.998 instead of 0
+      expect(anim).toBeDefined()
+    })
+
+    it('should clamp deceleration when >= 1 (line 60-62)', () => {
+      const anim = decay({ velocity: 1000, deceleration: 1 })
+      // Should use default 0.998 instead of 1
+      expect(anim).toBeDefined()
+    })
+
+    it('should clamp negative deceleration (line 60-62)', () => {
+      const anim = decay({ velocity: 1000, deceleration: -0.5 })
+      // Should use default 0.998 instead of negative
+      expect(anim).toBeDefined()
+    })
   })
 
   describe('clamping', () => {

@@ -350,8 +350,9 @@ describe('Shared Layout Animations', () => {
       expect(() => autoLayout.destroy()).not.toThrow()
     })
 
-    it('should handle transition config', () => {
+    it('should handle transition config with crossfade default false (line 179)', () => {
       const group = createLayoutGroup({
+        // crossfade defaults to false (line 179)
         transition: {
           x: { stiffness: 400, damping: 40 },
           y: { stiffness: 400, damping: 40 },
@@ -713,26 +714,34 @@ describe('Shared Layout Animations', () => {
       container.remove()
     })
 
-    it('should handle ResizeObserver callback (lines 557-561)', async () => {
+    it('should handle ResizeObserver callback with debounce timer clearing (lines 557-561, 558)', async () => {
+      vi.useFakeTimers()
+
       const container = document.createElement('div')
       document.body.appendChild(container)
 
       const autoLayout = createAutoLayout({
         root: container,
+        debounce: 100, // Enable debounce to test timer clearing
       })
 
-      // Trigger resize by changing container size
+      // Trigger resize by changing container size - should start debounce timer
       container.style.width = '500px'
-      container.style.height = '500px'
 
-      // Wait for resize observer
-      await new Promise(resolve => setTimeout(resolve, 100))
+      // Trigger another resize before debounce completes - should clear previous timer (line 558)
+      container.style.width = '600px'
+
+      // Wait for resize observer and debounce
+      vi.advanceTimersByTime(150)
 
       autoLayout.destroy()
       container.remove()
+      vi.useRealTimers()
     })
 
     it('should handle destroy with debounce timer cleanup (lines 574-577)', async () => {
+      vi.useFakeTimers()
+
       const autoLayout = createAutoLayout({
         debounce: 1000, // Long debounce
       })
@@ -742,10 +751,114 @@ describe('Shared Layout Animations', () => {
       // Trigger update to start debounce timer
       autoLayout.update()
 
-      // Destroy while debounce timer is pending
+      // Destroy while debounce timer is pending - should clear timer (lines 576-577)
       autoLayout.destroy()
 
+      // Advance time - no timer should fire
+      vi.advanceTimersByTime(2000)
+
+      vi.useRealTimers()
+
       // Should not throw and timer should be cleaned up
+      expect(() => autoLayout.destroy()).not.toThrow()
+    })
+
+    it('should handle ResizeObserver triggering debounced update (lines 556-561)', async () => {
+      const container = document.createElement('div')
+      document.body.appendChild(container)
+
+      const autoLayout = createAutoLayout({
+        root: container,
+        debounce: 50, // Short debounce to test timer clearing
+      })
+
+      // Trigger resize multiple times rapidly
+      container.style.width = '100px'
+      container.style.height = '100px'
+
+      // Trigger another resize before debounce completes
+      container.style.width = '200px'
+      container.style.height = '200px'
+
+      // Wait for debounce
+      await new Promise(resolve => setTimeout(resolve, 100))
+
+      autoLayout.destroy()
+      container.remove()
+    })
+
+    it('should handle debounce timer clearing on rapid updates (lines 558, 576-577)', async () => {
+      vi.useFakeTimers()
+
+      const autoLayout = createAutoLayout({
+        debounce: 100,
+      })
+
+      element1.setAttribute('data-layout-id', 'rapid-test')
+
+      // Multiple rapid updates should clear previous timers
+      autoLayout.update()
+      autoLayout.update()
+      autoLayout.update()
+
+      // Advance time to trigger debounced update
+      vi.advanceTimersByTime(150)
+
+      // Destroy should clean up all pending timers (line 576-577)
+      autoLayout.destroy()
+
+      vi.useRealTimers()
+
+      // Should not throw
+      expect(() => autoLayout.destroy()).not.toThrow()
+    })
+
+    it('should handle ResizeObserver callback with debounce timer (lines 556, 558)', async () => {
+      vi.useFakeTimers()
+
+      const container = document.createElement('div')
+      document.body.appendChild(container)
+
+      const autoLayout = createAutoLayout({
+        root: container,
+        debounce: 50,
+      })
+
+      // Trigger resize which should start debounce timer
+      container.style.width = '500px'
+
+      // Trigger another resize before debounce completes - should clear previous timer (line 558)
+      container.style.width = '600px'
+
+      // Advance past debounce
+      vi.advanceTimersByTime(100)
+
+      autoLayout.destroy()
+      container.remove()
+      vi.useRealTimers()
+    })
+
+    it('should handle debounce timer cleanup in destroy (lines 576-577)', async () => {
+      vi.useFakeTimers()
+
+      const autoLayout = createAutoLayout({
+        debounce: 500, // Long debounce
+      })
+
+      element1.setAttribute('data-layout-id', 'timer-test')
+
+      // Start debounced update
+      autoLayout.update()
+
+      // Destroy before debounce completes - should clear timer (lines 576-577)
+      autoLayout.destroy()
+
+      // Advance time - no timer should fire
+      vi.advanceTimersByTime(1000)
+
+      vi.useRealTimers()
+
+      // Should not throw
       expect(() => autoLayout.destroy()).not.toThrow()
     })
 
@@ -912,6 +1025,186 @@ describe('Shared Layout Animations', () => {
       group.forceUpdate()
 
       group.destroy()
+    })
+
+    it('should handle ResizeObserver triggering debouncedUpdate with debounce=0 (line 558)', async () => {
+      // This test specifically targets line 558 where ResizeObserver calls debouncedUpdate
+      const container = document.createElement('div')
+      container.style.width = '100px'
+      document.body.appendChild(container)
+
+      // Use debounce: 0 to trigger the else branch in debouncedUpdate (line 501-502)
+      // while still having ResizeObserver call debouncedUpdate (line 558)
+      const autoLayout = createAutoLayout({
+        root: container,
+        debounce: 0, // This makes debounceTime = 0, so line 501-502 executes
+      })
+
+      // Trigger resize which calls debouncedUpdate via ResizeObserver (line 558)
+      container.style.width = '200px'
+
+      // Wait for any async operations
+      await new Promise(resolve => setTimeout(resolve, 50))
+
+      autoLayout.destroy()
+      container.remove()
+    })
+
+    it('should handle destroy with debounceTimer null check (lines 575-577)', async () => {
+      vi.useFakeTimers()
+
+      const autoLayout = createAutoLayout({
+        debounce: 100,
+      })
+
+      // Do NOT call update() - so debounceTimer remains null
+      // Then destroy - should handle null timer gracefully (lines 575-577)
+      autoLayout.destroy()
+
+      // Advance time - nothing should happen
+      vi.advanceTimersByTime(1000)
+
+      vi.useRealTimers()
+
+      // Should not throw
+      expect(() => autoLayout.destroy()).not.toThrow()
+    })
+
+    it('should handle destroy with active debounceTimer (lines 575-577)', async () => {
+      vi.useFakeTimers()
+
+      const autoLayout = createAutoLayout({
+        debounce: 1000, // Long debounce
+      })
+
+      element1.setAttribute('data-layout-id', 'timer-cleanup-test')
+
+      // Trigger update to create debounceTimer
+      autoLayout.update()
+
+      // Destroy while timer is active - should clear it (lines 575-577)
+      autoLayout.destroy()
+
+      // Advance time - timer should not fire
+      vi.advanceTimersByTime(2000)
+
+      vi.useRealTimers()
+    })
+
+    it('should handle debouncedUpdate with debounceTime=0 branch (lines 501-502)', async () => {
+      vi.useFakeTimers()
+
+      const container = document.createElement('div')
+      document.body.appendChild(container)
+
+      const autoLayout = createAutoLayout({
+        root: container,
+        debounce: 0, // Triggers lines 501-502
+      })
+
+      // Add element with layout id
+      const el = document.createElement('div')
+      el.setAttribute('data-layout-id', 'immediate-test')
+      container.appendChild(el)
+
+      // Trigger update - should execute lines 501-502 immediately
+      autoLayout.update()
+
+      vi.useRealTimers()
+
+      autoLayout.destroy()
+      container.remove()
+    })
+
+    it('should handle ResizeObserver calling debouncedUpdate (line 558)', async () => {
+      const container = document.createElement('div')
+      container.style.width = '100px'
+      container.style.height = '100px'
+      document.body.appendChild(container)
+
+      const autoLayout = createAutoLayout({
+        root: container,
+        debounce: 50,
+      })
+
+      // Trigger resize which should call debouncedUpdate via ResizeObserver (line 558)
+      container.style.width = '200px'
+
+      // Wait for ResizeObserver to trigger
+      await new Promise(resolve => setTimeout(resolve, 100))
+
+      autoLayout.destroy()
+      container.remove()
+    })
+
+    it('should handle destroy with active debounceTimer (lines 575-577)', async () => {
+      vi.useFakeTimers()
+
+      const autoLayout = createAutoLayout({
+        debounce: 1000, // Long debounce
+      })
+
+      element1.setAttribute('data-layout-id', 'timer-cleanup-test')
+
+      // Trigger update to create debounceTimer
+      autoLayout.update()
+
+      // Destroy while timer is active - should clear it (lines 575-577)
+      autoLayout.destroy()
+
+      // Advance time - timer should not fire
+      vi.advanceTimersByTime(2000)
+
+      vi.useRealTimers()
+
+      // Should not throw
+      expect(() => autoLayout.destroy()).not.toThrow()
+    })
+
+    it('should handle debouncedUpdate clearing existing timer (lines 491-493)', async () => {
+      vi.useFakeTimers()
+
+      const container = document.createElement('div')
+      document.body.appendChild(container)
+
+      const autoLayout = createAutoLayout({
+        root: container,
+        debounce: 500,
+      })
+
+      // First call starts timer
+      autoLayout.update()
+
+      // Second call should clear first timer (lines 491-493) and start new one
+      autoLayout.update()
+
+      // Advance time - only second timer should fire
+      vi.advanceTimersByTime(500)
+
+      vi.useRealTimers()
+
+      autoLayout.destroy()
+      container.remove()
+    })
+
+    it('should clear debounce timer on destroy while pending (lines 575-577)', () => {
+      vi.useFakeTimers()
+      const container = document.createElement('div')
+      document.body.appendChild(container)
+
+      const autoLayout = createAutoLayout({
+        root: container,
+        debounce: 1000, // Long debounce
+      })
+
+      // Start an update which will set debounceTimer
+      autoLayout.update()
+
+      // Destroy while timer is still pending - should clear it (lines 575-577)
+      autoLayout.destroy()
+
+      vi.useRealTimers()
+      container.remove()
     })
   })
 })

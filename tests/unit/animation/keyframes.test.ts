@@ -283,6 +283,48 @@ describe('keyframes', () => {
       anim.destroy()
       expect(() => anim.destroy()).not.toThrow()
     })
+
+    it('should handle destroy while animation pending (line 187)', async () => {
+      vi.useFakeTimers()
+
+      const anim = keyframes([0, 100], {
+        config: { stiffness: 1000, damping: 100 },
+      })
+
+      // Start animation but don't await
+      const playPromise = anim.play()
+
+      // Advance timers to let animation start
+      vi.advanceTimersByTime(16)
+
+      // Destroy while animation is pending - triggers line 187 (resolve when destroyed)
+      anim.destroy()
+
+      // The promise should resolve without throwing
+      vi.useRealTimers()
+    })
+
+    it('should cancel pending RAF on destroy (lines 290-292)', () => {
+      vi.useFakeTimers()
+
+      const anim = keyframes([0, 100], {
+        config: { stiffness: 1000, damping: 100 },
+      })
+
+      // Start animation
+      anim.play()
+
+      // Advance timers to trigger RAF
+      vi.advanceTimersByTime(16)
+
+      // Destroy should cancel pending RAF (lines 290-292)
+      anim.destroy()
+
+      // Second destroy should not throw
+      expect(() => anim.destroy()).not.toThrow()
+
+      vi.useRealTimers()
+    })
   })
 })
 

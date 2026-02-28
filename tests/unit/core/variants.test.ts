@@ -168,12 +168,30 @@ describe('Variants System', () => {
     it('should handle invalid values', () => {
       expect(parseValueWithUnit('invalid')).toEqual({ value: 0, unit: '' })
     })
+
+    it('should handle string number without unit', () => {
+      expect(parseValueWithUnit('100')).toEqual({ value: 100, unit: '' })
+    })
+
+    it('should handle negative number string without unit', () => {
+      expect(parseValueWithUnit('-50')).toEqual({ value: -50, unit: '' })
+    })
   })
 
   describe('buildTransformString', () => {
     it('should build translate transform', () => {
       const result = buildTransformString({ x: 100, y: 50 })
       expect(result).toBe('translate(100px, 50px)')
+    })
+
+    it('should build translate with x only', () => {
+      const result = buildTransformString({ x: 100 })
+      expect(result).toBe('translate(100px, 0px)')
+    })
+
+    it('should build translate with y only', () => {
+      const result = buildTransformString({ y: 50 })
+      expect(result).toBe('translate(0px, 50px)')
     })
 
     it('should build scale transform', () => {
@@ -190,6 +208,21 @@ describe('Variants System', () => {
     it('should build rotate transform', () => {
       const result = buildTransformString({ rotate: 45 })
       expect(result).toBe('rotate(45deg)')
+    })
+
+    it('should build rotateX transform', () => {
+      const result = buildTransformString({ rotateX: 45 })
+      expect(result).toBe('rotateX(45deg)')
+    })
+
+    it('should build rotateY transform', () => {
+      const result = buildTransformString({ rotateY: 45 })
+      expect(result).toBe('rotateY(45deg)')
+    })
+
+    it('should build rotateZ transform', () => {
+      const result = buildTransformString({ rotateZ: 45 })
+      expect(result).toBe('rotateZ(45deg)')
     })
 
     it('should build skew transform', () => {
@@ -229,15 +262,45 @@ describe('Variants System', () => {
       expect(element.style.backgroundColor).toMatch(/#ff0000|rgb\(255,\s*0,\s*0\)/)
     })
 
+    it('should apply borderColor', () => {
+      applyValuesToElement(element, { borderColor: '#00ff00' })
+      expect(element.style.borderColor).toMatch(/#00ff00|rgb\(0,\s*255,\s*0\)/)
+    })
+
+    it('should apply boxShadow', () => {
+      applyValuesToElement(element, { boxShadow: '0 2px 4px rgba(0,0,0,0.5)' })
+      expect(element.style.boxShadow).toBe('0 2px 4px rgba(0,0,0,0.5)')
+    })
+
+    it('should apply color', () => {
+      applyValuesToElement(element, { color: '#0000ff' })
+      expect(element.style.color).toMatch(/#0000ff|rgb\(0,\s*0,\s*255\)/)
+    })
+
     it('should apply borderRadius', () => {
       applyValuesToElement(element, { borderRadius: 10 })
       expect(element.style.borderRadius).toBe('10px')
+    })
+
+    it('should apply borderRadius as string', () => {
+      applyValuesToElement(element, { borderRadius: '50%' })
+      expect(element.style.borderRadius).toBe('50%')
     })
 
     it('should apply width and height', () => {
       applyValuesToElement(element, { width: 200, height: 100 })
       expect(element.style.width).toBe('200px')
       expect(element.style.height).toBe('100px')
+    })
+
+    it('should apply width as string', () => {
+      applyValuesToElement(element, { width: '50%' })
+      expect(element.style.width).toBe('50%')
+    })
+
+    it('should apply height as string', () => {
+      applyValuesToElement(element, { height: 'auto' })
+      expect(element.style.height).toBe('auto')
     })
   })
 

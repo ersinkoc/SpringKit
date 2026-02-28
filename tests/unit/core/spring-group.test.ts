@@ -44,6 +44,17 @@ describe('createSpringGroup', () => {
       expect(group.isAnimating()).toBe(true)
     })
 
+    it('should stop animation', () => {
+      const group = createSpringGroup({ x: 0, y: 0 })
+      group.set({ x: 100, y: 50 })
+
+      expect(group.isAnimating()).toBe(true)
+
+      group.stop()
+
+      expect(group.isAnimating()).toBe(false)
+    })
+
     it('should animate partial values', () => {
       const group = createSpringGroup({ x: 0, y: 0, scale: 1 })
       group.set({ x: 100 })
@@ -158,6 +169,24 @@ describe('createSpringGroup', () => {
           resolve(undefined)
         }, 50)
       })
+    })
+
+    it('should report isDestroyed after destroy', () => {
+      const group = createSpringGroup({ x: 0, y: 0 })
+
+      expect(group.isDestroyed()).toBe(false)
+
+      group.destroy()
+
+      expect(group.isDestroyed()).toBe(true)
+    })
+
+    it('should report isDestroyed before destroy', () => {
+      const group = createSpringGroup({ x: 0, y: 0 })
+
+      expect(group.isDestroyed()).toBe(false)
+
+      group.destroy()
     })
   })
 
