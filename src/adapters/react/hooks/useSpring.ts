@@ -83,6 +83,8 @@ export function useSpring<T extends Record<string, number>>(
 
     // Get all current values from spring
     return spring.get()
+    // Intentionally excludes 'values' from deps - we want to capture initial value only
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   // Initialize state from spring's actual values

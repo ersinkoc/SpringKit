@@ -113,6 +113,7 @@ export function useTrail<T extends Record<string, number>>(
       springs.clear()
       springsRef.current = null
     }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [count, config.stiffness, config.damping, config.mass])
 
   // Update springs when values change with staggered delay
@@ -154,7 +155,8 @@ export function useTrail<T extends Record<string, number>>(
       timeoutsRef.current.forEach(clearTimeout)
       timeoutsRef.current = []
     }
-  }, [JSON.stringify(values), config.stiffness, config.damping]) // eslint-disable-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(values), config.stiffness, config.damping])
 
   return currentValues
 }

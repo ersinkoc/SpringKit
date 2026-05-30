@@ -1,7 +1,7 @@
 /**
  * React hooks for Variants System
  */
-import { useRef, useCallback, useMemo, useState, createContext, useContext, type ReactNode } from 'react'
+import { useRef, useCallback, useMemo, createContext, useContext, type ReactNode } from 'react'
 import React from 'react'
 import {
   getVariant,
