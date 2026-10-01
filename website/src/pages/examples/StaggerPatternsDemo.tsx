@@ -124,7 +124,21 @@ function StaggerDemo() {
   const [runCount, setRunCount] = useState(0)
   const itemRefs = useRef<HTMLDivElement[]>([])
   const gridRefs = useRef<HTMLDivElement[]>([])
-  const autoRunRef = useRef<NodeJS.Timeout | null>(null)
+  const autoRunRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const timeoutsRef = useRef(new Set<ReturnType<typeof setTimeout>>())
+
+  const schedule = useCallback((fn: () => void, ms: number) => {
+    const id = setTimeout(() => {
+      timeoutsRef.current.delete(id)
+      fn()
+    }, ms)
+    timeoutsRef.current.add(id)
+  }, [])
+
+  const clearScheduled = useCallback(() => {
+    timeoutsRef.current.forEach((id) => clearTimeout(id))
+    timeoutsRef.current.clear()
+  }, [])
 
   const isGridPattern = pattern === 'grid' || pattern === 'spiral'
   const cols = 5
@@ -155,6 +169,7 @@ function StaggerDemo() {
 
   const runStagger = useCallback(() => {
     if (isAnimating) return
+    clearScheduled()
     setIsAnimating(true)
     setRunCount(c => c + 1)
 
@@ -162,6 +177,10 @@ function StaggerDemo() {
     const gridItems = gridRefs.current.filter(Boolean)
     const listItems = itemRefs.current.filter(Boolean)
     const items = isGridPattern ? gridItems : listItems
+    if (items.length === 0) {
+      setIsAnimating(false)
+      return
+    }
     const count = items.length
     const delays = getDelays(count)
 
@@ -174,10 +193,10 @@ function StaggerDemo() {
     // Animate with stagger
     let maxDelay = 0
     items.forEach((item, i) => {
-      const delay = delays[i] * 1000
+      const delay = (delays[i] ?? 0) * 1000
       if (delay > maxDelay) maxDelay = delay
 
-      setTimeout(() => {
+      schedule(() => {
         animate(
           item,
           { scale: 1, opacity: 1 },
@@ -187,10 +206,11 @@ function StaggerDemo() {
     })
 
     // Reset animating state after all animations complete
-    setTimeout(() => setIsAnimating(false), maxDelay + 500)
-  }, [isAnimating, isGridPattern, pattern])
+    schedule(() => setIsAnimating(false), maxDelay + 500)
+  }, [isAnimating, isGridPattern, pattern, schedule, clearScheduled])
 
   const reset = useCallback(() => {
+    clearScheduled()
     // Filter items once
     const gridItems = gridRefs.current.filter(Boolean)
     const listItems = itemRefs.current.filter(Boolean)
@@ -201,7 +221,7 @@ function StaggerDemo() {
       item.style.opacity = '1'
     })
     setIsAnimating(false)
-  }, [isGridPattern])
+  }, [isGridPattern, clearScheduled])
 
   const toggleAutoRun = useCallback(() => {
     if (isAutoRunning) {
@@ -220,10 +240,10 @@ function StaggerDemo() {
           const currentIndex = patterns.indexOf(current)
           return patterns[(currentIndex + 1) % patterns.length]
         })
-        setTimeout(runStagger, 100)
+        schedule(runStagger, 100)
       }, 2000)
     }
-  }, [isAutoRunning, runStagger])
+  }, [isAutoRunning, runStagger, schedule])
 
   // Cleanup on unmount
   useEffect(() => {
@@ -231,12 +251,17 @@ function StaggerDemo() {
       if (autoRunRef.current) {
         clearInterval(autoRunRef.current)
       }
+      clearScheduled()
     }
-  }, [])
+  }, [clearScheduled])
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts (skip when typing or interacting with form controls)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      if (target && (/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName) || target.isContentEditable)) {
+        return
+      }
       if (e.key === ' ' || e.code === 'Space') {
         e.preventDefault()
         if (!isAnimating) runStagger()

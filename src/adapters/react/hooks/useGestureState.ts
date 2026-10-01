@@ -1,4 +1,13 @@
-import { useState, useRef, useEffect, type RefObject } from 'react'
+import {
+  useState,
+  useRef,
+  useEffect,
+  type RefObject,
+  type MouseEventHandler,
+  type TouchEventHandler,
+  type FocusEventHandler,
+  type DragEventHandler,
+} from 'react'
 import { isBrowser } from '../utils/ssr.js'
 
 export interface GestureState {
@@ -23,22 +32,29 @@ export interface UseGestureStateOptions {
   drag?: boolean
 }
 
+/**
+ * Spreadable DOM event handlers for gesture tracking.
+ * Typed with React's native handler types so they can be spread directly
+ * onto JSX elements and also invoked manually with the event.
+ */
+export interface GestureHandlers {
+  onMouseEnter?: MouseEventHandler<HTMLElement>
+  onMouseLeave?: MouseEventHandler<HTMLElement>
+  onMouseDown?: MouseEventHandler<HTMLElement>
+  onMouseUp?: MouseEventHandler<HTMLElement>
+  onTouchStart?: TouchEventHandler<HTMLElement>
+  onTouchEnd?: TouchEventHandler<HTMLElement>
+  onFocus?: FocusEventHandler<HTMLElement>
+  onBlur?: FocusEventHandler<HTMLElement>
+  onDragStart?: DragEventHandler<HTMLElement>
+  onDragEnd?: DragEventHandler<HTMLElement>
+}
+
 export interface UseGestureStateReturn extends GestureState {
   /** Ref to attach to the target element */
   ref: RefObject<HTMLElement | null>
   /** Handlers to spread on the element */
-  handlers: {
-    onMouseEnter?: () => void
-    onMouseLeave?: () => void
-    onMouseDown?: () => void
-    onMouseUp?: () => void
-    onTouchStart?: () => void
-    onTouchEnd?: () => void
-    onFocus?: () => void
-    onBlur?: () => void
-    onDragStart?: () => void
-    onDragEnd?: () => void
-  }
+  handlers: GestureHandlers
 }
 
 /**
@@ -85,7 +101,7 @@ export function useGestureState(
   })
 
   // Memoized handlers
-  const handlers = {
+  const handlers: GestureHandlers = {
     ...(hover && {
       onMouseEnter: () => setState((s) => ({ ...s, isHovered: true })),
       onMouseLeave: () => setState((s) => ({ ...s, isHovered: false, isPressed: false })),
@@ -154,7 +170,7 @@ export function useHover() {
   const ref = useRef<HTMLElement | null>(null)
   const [isHovered, setIsHovered] = useState(false)
 
-  const handlers = {
+  const handlers: GestureHandlers = {
     onMouseEnter: () => setIsHovered(true),
     onMouseLeave: () => setIsHovered(false),
   }
@@ -186,7 +202,7 @@ export function useTap() {
   const ref = useRef<HTMLElement | null>(null)
   const [isPressed, setIsPressed] = useState(false)
 
-  const handlers = {
+  const handlers: GestureHandlers = {
     onMouseDown: () => setIsPressed(true),
     onMouseUp: () => setIsPressed(false),
     onMouseLeave: () => setIsPressed(false),
@@ -233,7 +249,7 @@ export function useFocus() {
   const ref = useRef<HTMLElement | null>(null)
   const [isFocused, setIsFocused] = useState(false)
 
-  const handlers = {
+  const handlers: GestureHandlers = {
     onFocus: () => setIsFocused(true),
     onBlur: () => setIsFocused(false),
   }

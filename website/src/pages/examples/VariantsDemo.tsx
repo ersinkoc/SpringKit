@@ -96,7 +96,7 @@ function VariantsDemo() {
   const [isAutoCycling, setIsAutoCycling] = useState(false)
   const [cycleSpeed, setCycleSpeed] = useState(1200)
   const [transitionCount, setTransitionCount] = useState(0)
-  const autoCycleRef = useRef<NodeJS.Timeout | null>(null)
+  const autoCycleRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // useVariants animates automatically when 'animate' prop changes
   const { values } = useVariants({
@@ -142,9 +142,13 @@ function VariantsDemo() {
     }
   }, [cycleSpeed, isAutoCycling, cycleToNext])
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts (skip when typing or interacting with form controls)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      if (target && (/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName) || target.isContentEditable)) {
+        return
+      }
       if (e.key === ' ' || e.code === 'Space') {
         e.preventDefault()
         toggleAutoCycle()

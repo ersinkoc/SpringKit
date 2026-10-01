@@ -122,7 +122,7 @@ function SVGMorphDemo() {
   const [isAutoCycling, setIsAutoCycling] = useState(false)
   const [cycleSpeed, setCycleSpeed] = useState(1500)
   const [morphCount, setMorphCount] = useState(0)
-  const autoCycleRef = useRef<NodeJS.Timeout | null>(null)
+  const autoCycleRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   useEffect(() => {
     // Create morph controller with spring physics
@@ -164,8 +164,9 @@ function SVGMorphDemo() {
   const randomMorph = useCallback(() => {
     const shapes = Object.keys(shapePaths) as Array<keyof typeof shapePaths>
     const otherShapes = shapes.filter((s) => s !== currentShape)
+    if (otherShapes.length === 0) return
     const randomShape = otherShapes[Math.floor(Math.random() * otherShapes.length)]
-    morphTo(randomShape)
+    if (randomShape !== undefined) morphTo(randomShape)
   }, [currentShape, morphTo])
 
   const cycleToNext = useCallback(() => {
@@ -197,9 +198,13 @@ function SVGMorphDemo() {
     }
   }, [cycleSpeed, isAutoCycling, cycleToNext])
 
-  // Keyboard shortcuts
+  // Keyboard shortcuts (skip when typing or interacting with form controls)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null
+      if (target && (/^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName) || target.isContentEditable)) {
+        return
+      }
       if (e.key === ' ' || e.code === 'Space') {
         e.preventDefault()
         toggleAutoCycle()
@@ -223,7 +228,7 @@ function SVGMorphDemo() {
     }
   }, [])
 
-  const colors = shapeColors[currentShape]
+  const colors = shapeColors[currentShape] ?? shapeColors.circle ?? { from: '#3b82f6', to: '#2563eb' }
 
   return (
     <div className="space-y-6">

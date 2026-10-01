@@ -430,7 +430,7 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
       }
     }
 
-    onUpdate?.(currentTime / totalDuration)
+    onUpdate?.(totalDuration > 0 ? currentTime / totalDuration : 1)
 
     // Check for completion
     if ((isReversed && currentTime <= 0) || (!isReversed && currentTime >= totalDuration)) {

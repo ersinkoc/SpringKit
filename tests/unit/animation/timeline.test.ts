@@ -1452,4 +1452,24 @@ describe('timeline additional coverage', () => {
 
     tl.kill()
   })
+
+  it('should not emit NaN progress onUpdate for an empty timeline', () => {
+    const onUpdate = vi.fn()
+    const tl = createTimeline({ onUpdate })
+
+    // No segments were added — totalDuration is 0
+    expect(tl.duration()).toBe(0)
+
+    tl.play()
+    vi.advanceTimersByTime(100)
+
+    for (const call of onUpdate.mock.calls) {
+      const value = call[0] as number
+      expect(Number.isFinite(value)).toBe(true)
+      expect(value).toBeGreaterThanOrEqual(0)
+      expect(value).toBeLessThanOrEqual(1)
+    }
+
+    tl.kill()
+  })
 })

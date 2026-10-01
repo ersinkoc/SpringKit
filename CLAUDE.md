@@ -44,9 +44,9 @@ SpringKit is a zero-dependency physics-based spring animation library with optio
 
 ```
 src/
-├── index.ts           → dist/index.{mjs,cjs}     # Core library (no React)
+├── index.ts           → dist/index.{js,cjs}      # Core library (no React)
 └── adapters/react/
-    └── index.ts       → dist/react/index.{mjs,cjs}  # React adapter
+    └── index.ts       → dist/react/index.{js,cjs}   # React adapter
 ```
 
 - **Core** (`@oxog/springkit`): Framework-agnostic animation primitives

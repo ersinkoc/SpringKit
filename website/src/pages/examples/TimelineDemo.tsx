@@ -141,8 +141,12 @@ function TimelineDemo() {
     setIsPlaying(false)
   }
 
-  const seekTo = (value: number) => {
-    timelineRef.current?.seek(value)
+  const seekTo = (fraction: number) => {
+    const tl = timelineRef.current
+    if (!tl) return
+    const total = tl.duration()
+    // seek() expects a time position, not a 0-1 fraction
+    tl.seek(total > 0 ? Math.min(Math.max(fraction, 0), 1) * total : 0)
   }
 
   return (

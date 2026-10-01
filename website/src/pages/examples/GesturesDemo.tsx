@@ -132,7 +132,17 @@ function HoverSection() {
               handlers.onMouseEnter?.(e)
               setHoverCount((c) => c + 1)
             }}
-            className="w-28 h-28 rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-500 shadow-lg flex flex-col items-center justify-center text-white transition-all duration-300 cursor-pointer"
+            role="button"
+            tabIndex={0}
+            aria-label="Hover demo card"
+            onFocus={() => setHoverCount((c) => c)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                setHoverCount((c) => c + 1)
+              }
+            }}
+            className="w-28 h-28 rounded-2xl bg-gradient-to-br from-emerald-400 to-teal-500 shadow-lg flex flex-col items-center justify-center text-white transition-all duration-300 cursor-pointer focus:outline-none focus:ring-2 focus:ring-emerald-400/60"
             style={{
               transform: isHovered ? 'scale(1.1) translateY(-8px)' : 'scale(1)',
               boxShadow: isHovered

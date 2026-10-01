@@ -4,6 +4,34 @@ Generated: 2025-01-08
 Scan: Complete website folder review
 Focus: Examples and demo pages
 
+> **Status update (2026-10-01): All reported issues have been verified and resolved.**
+>
+> - §1.1 GesturesDemo: library handler types widened to React's native handler
+>   types (`GestureHandlers`), so `handlers.onMouseEnter?.(e)` typechecks and is
+>   spread-safe. Library handlers never throw (setState-only), so try/catch noise
+>   was not added to demos.
+> - §1.2, §5.1, §10.1 SVGMorphDemo: try/catch around `setAttribute`, full
+>   interval cleanup on unmount already in place; additionally guarded
+>   `randomMorph` against empty/undefined selection.
+> - §2.1, §5.2 BounceElasticDemo: dep arrays and tracked timeout cleanup in place.
+> - §2.2 TimelineDemo: cleanup wrapped in try/catch; additionally fixed a real
+>   scrub bug (`seek()` expects time, demo passed a 0-1 fraction — now
+>   `seek(fraction * duration)`), and the library's empty-timeline `onUpdate`
+>   NaN progress was fixed (`totalDuration > 0 ? ... : 1`) with a regression test.
+> - §3.1 PhysicsPresetsDemo: `presets[preset] ?? presets.bouncy` fallback in place.
+> - §3.2 / §12.1 VariantsDemo: typed variant records + callback refs in place.
+> - §4.1 / §4.2 / §5 SVGMorphDemo & StaggerPatternsDemo: stagger timeouts are now
+>   tracked in a `Set` and cleared on unmount/reset; empty-item guard added.
+> - §6 GesturesDemo/StaggerPatternsDemo/SVGMorphDemo/VariantsDemo: aria-labels,
+>   `role`/`tabIndex`/keyboard activation added; global keydown handlers now skip
+>   form controls and contentEditable targets.
+> - §7.1 GettingStarted: verified — `springPresets` (default, gentle, wobbly,
+>   stiff, slow, molasses, bounce, noWobble) and `physicsPresets` are exported
+>   from `@oxog/springkit` and the documented keys exist.
+> - §8.1 TimelineDemo: duplicate function naming resolved.
+> - §9.1 / §11: bounds are handled by the library's validation clamps; demos use
+>   MotionValue-based hooks with `isDestroyed()` guards per CLAUDE.md.
+
 ---
 
 ## Executive Summary
@@ -558,14 +586,14 @@ const morphTo = useCallback((shape: keyof typeof shapePaths) => {
 
 ## File Checklist
 
-- [ ] `GesturesDemo.tsx` - Error handling, accessibility
-- [ ] `SVGMorphDemo.tsx` - Error handling, cleanup, performance
-- [ ] `BounceElasticDemo.tsx` - Hook dependencies, timeout cleanup
-- [ ] `TimelineDemo.tsx` - Cleanup safety, naming
-- [ ] `PhysicsPresetsDemo.tsx` - Type safety
-- [ ] `VariantsDemo.tsx` - Type consistency, stale closures
-- [ ] `StaggerPatternsDemo.tsx` - Performance optimization
-- [ ] `GettingStarted.tsx` - API verification
+- [x] `GesturesDemo.tsx` - Error handling, accessibility
+- [x] `SVGMorphDemo.tsx` - Error handling, cleanup, performance
+- [x] `BounceElasticDemo.tsx` - Hook dependencies, timeout cleanup
+- [x] `TimelineDemo.tsx` - Cleanup safety, naming
+- [x] `PhysicsPresetsDemo.tsx` - Type safety
+- [x] `VariantsDemo.tsx` - Type consistency, stale closures
+- [x] `StaggerPatternsDemo.tsx` - Performance optimization
+- [x] `GettingStarted.tsx` - API verification
 
 ---
 

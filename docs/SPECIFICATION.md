@@ -500,12 +500,12 @@ tests/
 {
   "exports": {
     ".": {
-      "import": "./dist/index.mjs",
+      "import": "./dist/index.js",
       "require": "./dist/index.cjs",
       "types": "./dist/index.d.ts"
     },
     "./react": {
-      "import": "./dist/react/index.mjs",
+      "import": "./dist/react/index.js",
       "require": "./dist/react/index.cjs",
       "types": "./dist/react/index.d.ts"
     }
@@ -516,14 +516,14 @@ tests/
 ### 7.2 Build Output
 ```
 dist/
-├── index.mjs           # ESM core
+├── index.js            # ESM core
 ├── index.cjs           # CJS core
 ├── index.d.ts          # TS declarations
 ├── react/
-│   ├── index.mjs
+│   ├── index.js
 │   ├── index.cjs
 │   └── index.d.ts
-└── presets.mjs         # Tree-shakeable
+└── presets.js          # Tree-shakeable
 ```
 
 ## 8. Documentation Website
