@@ -1168,6 +1168,13 @@ function CardStackDemo() {
   const likeOpacity = Math.min(1, Math.max(0, dragPos.x / 100))
   const nopeOpacity = Math.min(1, Math.max(0, -dragPos.x / 100))
 
+  // Rotate the deck: move the front card to the back (no-op for <2 cards)
+  const rotateCards = () =>
+    setCards((prev) => {
+      const front = prev[0]
+      return front !== undefined && prev.length > 1 ? [...prev.slice(1), front] : prev
+    })
+
   // Handle swipe on drag end
   useEffect(() => {
     if (!dragApi.isDragging && !isExiting) {
@@ -1177,7 +1184,7 @@ function CardStackDemo() {
         exitDirectionRef.current = 'right'
         setIsExiting(true)
         setTimeout(() => {
-          setCards(prev => [...prev.slice(1), prev[0]])
+          rotateCards()
           setIsExiting(false)
           setCardKey(k => k + 1)
           exitDirectionRef.current = null
@@ -1187,7 +1194,7 @@ function CardStackDemo() {
         exitDirectionRef.current = 'left'
         setIsExiting(true)
         setTimeout(() => {
-          setCards(prev => [...prev.slice(1), prev[0]])
+          rotateCards()
           setIsExiting(false)
           setCardKey(k => k + 1)
           exitDirectionRef.current = null
@@ -1201,7 +1208,7 @@ function CardStackDemo() {
     exitDirectionRef.current = direction
     setIsExiting(true)
     setTimeout(() => {
-      setCards(prev => [...prev.slice(1), prev[0]])
+      rotateCards()
       setIsExiting(false)
       setCardKey(k => k + 1)
       exitDirectionRef.current = null
@@ -4274,6 +4281,23 @@ function StaggerPatternsDemo() {
   const [pattern, setPattern] = useState<'linear' | 'center' | 'wave'>('linear')
   const [isAnimating, setIsAnimating] = useState(false)
   const itemRefs = useRef<HTMLDivElement[]>([])
+  const timeoutsRef = useRef(new Set<ReturnType<typeof setTimeout>>())
+
+  const schedule = (fn: () => void, ms: number) => {
+    const id = setTimeout(() => {
+      timeoutsRef.current.delete(id)
+      fn()
+    }, ms)
+    timeoutsRef.current.add(id)
+  }
+
+  useEffect(() => {
+    const pending = timeoutsRef.current
+    return () => {
+      pending.forEach((id) => clearTimeout(id))
+      pending.clear()
+    }
+  }, [])
 
   // Each item has unique properties for variety
   const itemConfigs = [
@@ -4316,16 +4340,16 @@ function StaggerPatternsDemo() {
 
     // Animate with stagger - each item has unique physics
     items.forEach((item, i) => {
-      const config = itemConfigs[i]
-      setTimeout(() => {
+      const config = itemConfigs[i] ?? itemConfigs[0]!
+      schedule(() => {
         animate(item, { scale: 1, rotate: 0, opacity: 1 }, {
           stiffness: config.stiffness,
           damping: config.damping
         })
-      }, delays[i] * 1000)
+      }, (delays[i] ?? 0) * 1000)
     })
 
-    setTimeout(() => setIsAnimating(false), 1200)
+    schedule(() => setIsAnimating(false), 1200)
   }
 
   return (

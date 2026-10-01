@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+- **Build**: The tsup build silently crashed during the DTS step. tsup posts the
+  resolved config to a worker thread, and function options (`outExtension`,
+  `esbuildOptions`) cannot be structured-cloned (`DataCloneError`), so no JS
+  bundles were emitted. The config is now function-free and the build produces
+  `index.js` (ESM) + `index.cjs` (CJS) + type declarations for both entrypoints
+- **Timeline**: `onUpdate` progress emitted `NaN` for empty timelines
+  (`0 / 0` division) — now returns a guarded 0-1 value
+- **React hooks**: `useHover`/`useTap`/`useGestureState` event handlers are now
+  typed with React's native handler types (new `GestureHandlers` interface), so
+  they can be spread onto JSX elements *and* invoked manually with the event
+
+### Website Examples
+- **TimelineDemo**: scrub bar passed a 0-1 fraction to `seek()` which expects a
+  time position — scrubbing now maps fraction to `duration()`
+- **StaggerPatternsDemo**: stagger timeouts are tracked and cancelled on
+  unmount/reset; empty-item guard added
+- **SVGMorphDemo**: guarded `randomMorph` against an undefined selection;
+  color fallback for unknown shapes
+- **GesturesDemo**: hover card is keyboard accessible (`role`, `tabIndex`,
+  Enter/Space activation, `aria-label`)
+- **Keyboard shortcuts**: global keydown handlers in demos now ignore events
+  originating from form controls and contentEditable elements
+- **Home**: `AnimatedNumber` cancels its RAF loop and disconnects its observer
+  on unmount
+- **Examples catalog**: card-stack rotation hardened against empty decks;
+  inline stagger demo timeouts tracked
+- Replaced `NodeJS.Timeout` usages with `ReturnType<typeof setInterval>` and
+  removed the deprecated `baseUrl` from the website tsconfig
+
 ## [1.3.4] - 2026-01-08
 
 ### Added

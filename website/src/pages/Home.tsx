@@ -1683,11 +1683,13 @@ function AnimatedNumber({ value, suffix = '' }: { value: number; suffix?: string
   const [displayValue, setDisplayValue] = useState(0)
   const ref = useRef<HTMLSpanElement>(null)
   const hasAnimated = useRef(false)
+  const rafRef = useRef<number | null>(null)
 
   useEffect(() => {
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && !hasAnimated.current) {
+        const entry = entries[0]
+        if (entry?.isIntersecting && !hasAnimated.current) {
           hasAnimated.current = true
           const duration = 1500
           const startTime = performance.now()
@@ -1701,11 +1703,13 @@ function AnimatedNumber({ value, suffix = '' }: { value: number; suffix?: string
             setDisplayValue(Math.floor(eased * value))
 
             if (progress < 1) {
-              requestAnimationFrame(animate)
+              rafRef.current = requestAnimationFrame(animate)
+            } else {
+              rafRef.current = null
             }
           }
 
-          requestAnimationFrame(animate)
+          rafRef.current = requestAnimationFrame(animate)
         }
       },
       { threshold: 0.5 }
@@ -1715,7 +1719,13 @@ function AnimatedNumber({ value, suffix = '' }: { value: number; suffix?: string
       observer.observe(ref.current)
     }
 
-    return () => observer.disconnect()
+    return () => {
+      observer.disconnect()
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current)
+        rafRef.current = null
+      }
+    }
   }, [value])
 
   return (
