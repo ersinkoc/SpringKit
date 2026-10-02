@@ -551,7 +551,7 @@ describe('ParallaxContainer', () => {
     })
 
     it('should accept pages prop', () => {
-      const { container } = render(
+      render(
         <ParallaxContainer pages={3}>
           <span>Content</span>
         </ParallaxContainer>

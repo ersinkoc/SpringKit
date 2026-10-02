@@ -19,7 +19,24 @@
 
 ---
 
+## Why SpringKit
+
+- **Springs that run off the main thread.** `springEasing()` compiles real spring physics into a CSS `linear()` easing. CSS transitions and `element.animate()` then play it on the compositor, so a busy main thread doesn't make `transform`/`opacity` springs stutter, and no JavaScript runs per frame.
+- **Exact, seekable physics.** `solveSpring()` is a closed-form solver, so you can read the spring's position and velocity at any millisecond. That makes springs scrubbable and frame-rate independent.
+- **Exact physics everywhere.** `spring()` advances with the closed-form solution of the spring equation, so motion is identical at 30, 60, 120 or 144 Hz and never accumulates integration error. `decay()` uses the iOS momentum model in real units (px/s).
+- **Animations you can test.** `@oxog/springkit/testing` installs a virtual clock, so tests run frame-perfect and instantly with no flaky timeouts.
+- **Design in milliseconds, not stiffness.** `defineSpring({ duration: 400, bounce: 0.2 })` uses the same perceptual model as SwiftUI and Jetpack Compose.
+- **Small where it counts.** The `<Animated>` component (gestures, drag, presence, variants) is ~16 KB min+gzip including the physics core, compared with ~41 KB for Framer Motion's `motion` component (esbuild, React external, framer-motion 13.5, measured October 2026).
+- **Framework-agnostic core, first-class React.** Zero dependencies and tree-shakeable. The React entry shares the core's single animation loop and works with Server Components.
+
 ## Features
+
+### Native (Compositor) Springs
+- **`springEasing(config)`** - Compile a spring to a CSS `linear()` easing + duration
+- **`springTransition(props, config)`** - Ready-made `transition` value
+- **`animateNative(el, keyframes, config)`** - WAAPI spring animation; respects `prefers-reduced-motion` and commits final styles
+- **`solveSpring(config, from, to)`** - Analytic solver: `.at(ms)` gives value + velocity, `.duration` gives the settle time
+- **`defineSpring({ duration, bounce })`** - Perceptual spring parameters
 
 ### Core Animation
 - **Real Physics** - Spring, damping, mass with configurable parameters
@@ -27,7 +44,7 @@
 - **Spring Groups** - Animate multiple values together with `createSpringGroup()`
 - **Interruptible** - Pause, resume, reverse with velocity preservation
 - **Presets** - bounce, gentle, stiff, wobbly, slow, molasses...
-- **Physics Presets** - 40+ semantic presets: button, modal, toast, dragRelease, jelly...
+- **Physics Presets** - 38 semantic presets: button, modalEnter, toast, dragRelease, jelly...
 - **Keyframes** - Multi-value animations with per-keyframe spring configs
 - **Timeline API** - Complex choreographed animations with labels and controls
 
@@ -37,24 +54,24 @@
 - **Stagger** - Run animations with customizable delay patterns
 - **Stagger Patterns** - linear, center, wave, spiral, grid, random stagger functions
 - **Trail Effect** - Follow animations with staggered delays
-- **Decay** - Natural momentum deceleration with velocity
+- **Decay** - iOS-style momentum in real units (px/s), with `from`, `modifyTarget` snapping and clamping
 
 ### Interpolation
 - **Value Interpolation** - Map values between input/output ranges
-- **Color Interpolation** - Smooth transitions between colors (hex, rgb, hsl)
+- **Color Interpolation** - Smooth transitions between colors (hex, rgb, hsl, alpha), with premultiplied alpha and an optional perceptual `space: 'oklab'`
 - **Extrapolation** - Clamp, extend, or identity modes for out-of-range values
 
 ### Gestures
 - **Drag Spring** - Rubber band physics with bounds and release momentum
 - **Snap Points** - Snap to grid or custom points on release
 - **Drag Constraints** - Parent/element constraints, elastic bounds, momentum
-- **Scroll Spring** - Momentum scrolling with bounce and snap points
+- **Scroll Spring** - Momentum scrolling with edge bounce
 - **Gesture Props** - `whileHover`, `whileTap`, `whileFocus`, `whileInView`, `whileDrag`
 
 ### SVG Animations
 - **Path Animation** - `createPathAnimation()` for line drawing effects
 - **SVG Morphing** - `createMorph()` for shape-to-shape transitions
-- **Shape Library** - Built-in shapes: circle, square, star, heart, triangle...
+- **Shape Library** - Built-in shapes: circle, rect, polygon, star, heart, arrow
 - **Path Utilities** - `getPathLength()`, `preparePathForAnimation()`, `getPointAtProgress()`
 
 ### Layout Animations (FLIP)
@@ -68,6 +85,7 @@
 
 ### Global Loop
 - **Animation Manager** - `globalLoop` for FPS monitoring and animation tracking
+- **Slow motion** - `globalLoop.setTimeScale(0.1)` slows every spring, decay, timeline and native animation down for inspection; `0` freezes them
 - **Animation States** - `AnimationState` enum (Idle, Running, Paused, Complete)
 
 ### Math & Color Utilities
@@ -79,7 +97,9 @@
 - **Motion Hooks** - `useMotionValue`, `useTransform`, `useInView`, `useScroll`, `useAnimate`
 - **Variants System** - Declarative animation states with `useVariants`, `VariantProvider`
 - **Accessibility** - `useReducedMotion` for motion-sensitive users
-- **Components** - `<Spring>`, `<Animated>`, `<Trail>`, `<AnimatePresence>`, `<MotionConfig>`
+- **Components** - `<Spring>`, `<Animated>`, `<Trail>`, `<AnimatePresence>` (`sync`, `wait`, `popLayout`), `<MotionConfig>`
+- **Drag** - `<Animated drag>` with constraints, elasticity, momentum, snap-to-origin, `dragControls` and `onDragStart`/`onDrag`/`onDragEnd`
+- **Motion components** - `createMotionComponent('li', { variants })` with automatic stagger under `<VariantProvider>`
 - **Exit Animations** - `<AnimatePresence>` for unmounting component animations
 - **Server Components ready** - The React entry ships with `"use client"`, so it works in the Next.js App Router
 
@@ -88,7 +108,7 @@
 - **Frame-drop Resilient** - Delta time clamping prevents animation jumps
 - **Zero Dependencies** - No runtime dependencies
 - **TypeScript** - Full type definitions included
-- **Tree-shakeable** - ~2 KB min+gzip for `spring()` alone, ~24 KB for the entire core
+- **Tree-shakeable** - ~3 KB min+gzip for `spring()` or `animateNative()` alone, ~31 KB for the entire core
 - **ESM + CJS** - Dual package with correct types for every module resolution mode
 - **95%+ Test Coverage** - Comprehensive test suite
 
@@ -114,6 +134,60 @@ const anim = spring(0, 100, {
 
 anim.start()
 ```
+
+### Compositor springs (no per-frame JavaScript)
+
+```typescript
+import { animateNative, springTransition, defineSpring } from '@oxog/springkit'
+
+const pop = defineSpring({ duration: 450, bounce: 0.3 })
+
+// Web Animations API, played by the browser
+await animateNative(card, {
+  transform: ['scale(0.9) translateY(20px)', 'none'],
+  opacity: [0, 1],
+}, pop).finished
+
+// Or as a plain CSS transition
+button.style.transition = springTransition(['transform', 'box-shadow'], pop)
+```
+
+In React, use it directly in `style`:
+
+```tsx
+<div style={{
+  transform: open ? 'none' : 'translateX(-100%)',
+  transition: springTransition('transform', defineSpring({ bounce: 0.2 })),
+}} />
+```
+
+### Seekable springs
+
+```typescript
+import { solveSpring } from '@oxog/springkit'
+
+const s = solveSpring({ stiffness: 260, damping: 18 }, 0, 300)
+slider.oninput = () => {
+  const { value } = s.at(slider.valueAsNumber * s.duration)
+  el.style.transform = `translateX(${value}px)`
+}
+```
+
+### Testing animations
+
+```typescript
+import { spring } from '@oxog/springkit'
+import { installTestClock } from '@oxog/springkit/testing'
+
+const clock = installTestClock()          // virtual rAF + performance.now
+const anim = spring(0, 100).start()
+clock.advance(100)                        // exactly 6 frames at 60fps
+clock.runAll()                            // until everything is at rest
+expect(anim.getValue()).toBe(100)
+clock.uninstall()
+```
+
+Pass `{ timers: true }` to also virtualize `setTimeout`/`setInterval`, and `{ frameRate: 120 }` to simulate a high refresh rate display.
 
 ## React
 
@@ -239,27 +313,34 @@ const config = createFeeling('bouncy') // snappy, smooth, bouncy, heavy, light, 
 
 // Adjust presets
 import { adjustSpeed, adjustBounce } from '@oxog/springkit'
-const faster = adjustSpeed(physicsPresets.modal, 1.5)
+const faster = adjustSpeed(physicsPresets.modalEnter, 1.5)
 const bouncier = adjustBounce(physicsPresets.button, 0.8)
 ```
 
 ### Variants System (v1.3.0)
 
 ```tsx
-import { useVariants, VariantProvider } from '@oxog/springkit/react'
+import { useVariants } from '@oxog/springkit/react'
 
 const cardVariants = {
-  initial: { opacity: 0, y: 20 },
-  visible: { opacity: 1, y: 0 },
-  hover: { scale: 1.05 },
+  hidden: { opacity: 0, y: 20 },
+  visible: { opacity: 1, y: 0, scale: 1 },
+  hover: { opacity: 1, y: 0, scale: 1.05 },
 }
 
 function Card() {
-  const { variant, setVariant, style } = useVariants(cardVariants, 'initial')
+  const { values, setVariant } = useVariants({
+    variants: cardVariants,
+    initial: 'hidden',
+    animate: 'visible',
+  })
 
   return (
     <div
-      style={style}
+      style={{
+        opacity: values.opacity as number,
+        transform: `translateY(${values.y}px) scale(${values.scale})`,
+      }}
       onMouseEnter={() => setVariant('hover')}
       onMouseLeave={() => setVariant('visible')}
     />
@@ -272,13 +353,65 @@ function Card() {
 ```typescript
 import { createMorph, shapes } from '@oxog/springkit'
 
-const morph = createMorph(pathElement, {
-  from: shapes.circle(50, 50, 40),
-  to: shapes.star(50, 50, 40, 20, 5),
+const circle = shapes.circle(50, 50, 40)
+const star = shapes.star(50, 50, 40, 20, 5)
+
+const morph = createMorph(circle, {
+  spring: { stiffness: 120, damping: 14 },
 })
 
-await morph.play() // Morph from circle to star
-await morph.reverse() // Morph back
+// Render every intermediate path
+morph.subscribe((d) => pathElement.setAttribute('d', d))
+
+morph.morphTo(star)   // Morph from circle to star
+morph.morphTo(circle) // Morph back
+```
+
+### Staggered lists with variants
+
+```tsx
+import { createMotionComponent, VariantProvider } from '@oxog/springkit/react'
+
+const MotionLi = createMotionComponent('li', {
+  variants: { hidden: { opacity: 0, y: 12 }, visible: { opacity: 1, y: 0 } },
+})
+
+<ul>
+  <VariantProvider variant="visible" transition={{ staggerChildren: 60 }}>
+    {items.map((item) => <MotionLi key={item.id} initial="hidden">{item.label}</MotionLi>)}
+  </VariantProvider>
+</ul>
+```
+
+### Draggable with momentum and constraints
+
+```tsx
+import { useRef } from 'react'
+import { Animated } from '@oxog/springkit/react'
+
+function Sheet() {
+  const bounds = useRef<HTMLDivElement>(null)
+  return (
+    <div ref={bounds} className="area">
+      <Animated.div
+        drag
+        dragConstraints={bounds}
+        dragElastic={0.2}
+        whileDrag={{ scale: 1.05 }}
+        onDragEnd={(e, info) => console.log(info.velocity)} // px/s
+      />
+    </div>
+  )
+}
+```
+
+### Slow-motion debugging
+
+```typescript
+import { globalLoop } from '@oxog/springkit'
+
+globalLoop.setTimeScale(0.1) // every animation at 10% speed
+globalLoop.setTimeScale(1)   // back to normal
 ```
 
 ### Drag with Snap Points (v1.3.0)

@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import {
   Gauge, Grid3X3, Timer, Zap, Shapes, MousePointer2, Layers, Type,
-  ArrowRight, Sparkles, Play, LayoutGrid
+  ArrowRight, Sparkles, Play, LayoutGrid, Cpu
 } from 'lucide-react'
 
 interface DemoCardProps {
@@ -68,6 +68,14 @@ function DemoCard({ title, description, icon, path, gradient, tags }: DemoCardPr
 }
 
 const demos: DemoCardProps[] = [
+  {
+    title: 'Native Springs',
+    description: 'Spring physics compiled to CSS linear() and run on the compositor. Smooth even when the main thread is blocked, and exactly seekable.',
+    icon: <Cpu className="w-6 h-6 text-white" />,
+    path: '/examples/native-springs',
+    gradient: 'from-emerald-500 to-teal-500',
+    tags: ['New', 'Compositor', 'WAAPI'],
+  },
   {
     title: 'Physics Presets',
     description: 'Pre-configured spring physics for common animation needs. Bouncy, snappy, smooth, and more.',

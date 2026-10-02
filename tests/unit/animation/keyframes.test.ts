@@ -292,7 +292,7 @@ describe('keyframes', () => {
       })
 
       // Start animation but don't await
-      const playPromise = anim.play()
+      const _playPromise = anim.play()
 
       // Advance timers to let animation start
       vi.advanceTimersByTime(16)

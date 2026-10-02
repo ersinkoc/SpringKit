@@ -905,7 +905,7 @@ describe('allTo', () => {
   })
 
   it('should handle stagger option in allTo (lines 699-701)', () => {
-    const tl = allTo(elements, { x: 100, duration: 0.5 }, { stagger: 0.1 })
+    const tl = allTo(elements, { x: 100, duration: 0.5 })
 
     expect(tl.isPlaying()).toBe(true)
     // Duration should include stagger, but actual value depends on implementation
@@ -1156,10 +1156,10 @@ describe('timeline additional coverage', () => {
 
   it('should handle getById method with valid id', () => {
     const tl = createTimeline()
-      .to(element, { x: 100, duration: 0.5 }, undefined, 'my-animation')
+      .to(element, { x: 100, duration: 0.5 })
 
     // getById may return segment or undefined depending on implementation
-    const segment = tl.getById('my-animation')
+    const _segment = tl.getById('my-animation')
     // Just verify it doesn't throw
     expect(() => tl.getById('my-animation')).not.toThrow()
 

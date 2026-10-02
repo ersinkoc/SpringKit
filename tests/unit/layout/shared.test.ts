@@ -4,6 +4,7 @@ import {
   createSharedLayoutContext,
   createAutoLayout,
 } from '@oxog/springkit'
+import { installTestClock, type TestClock } from '../../../src/testing'
 
 describe('Shared Layout Animations', () => {
   let element1: HTMLElement
@@ -340,7 +341,7 @@ describe('Shared Layout Animations', () => {
 
     it('should handle undefined root', () => {
       // Temporarily remove document.body
-      const originalBody = document.body
+      const _originalBody = document.body
 
       // Create auto layout that handles undefined root
       const autoLayout = createAutoLayout({ root: null as unknown as HTMLElement })
@@ -1206,5 +1207,340 @@ describe('Shared Layout Animations', () => {
       vi.useRealTimers()
       container.remove()
     })
+  })
+})
+
+describe('Shared Layout regressions', () => {
+  let el: HTMLElement
+  let layout: { x: number; y: number; width: number; height: number }
+
+  const nextFrame = () => new Promise(resolve => requestAnimationFrame(() => resolve(undefined)))
+  const waitFor = async (condition: () => boolean, timeout = 3000) => {
+    const start = Date.now()
+    while (!condition() && Date.now() - start < timeout) {
+      await new Promise(resolve => setTimeout(resolve, 16))
+    }
+  }
+
+  // Rect reflects the layout box plus any translate() applied by the animation
+  const visualRect = () => {
+    const m = /translate\(([-\d.e]+)px, ([-\d.e]+)px\)/.exec(el.style.transform)
+    const dx = m ? parseFloat(m[1]!) : 0
+    const dy = m ? parseFloat(m[2]!) : 0
+    const left = layout.x + dx
+    const top = layout.y + dy
+    return {
+      left, top, right: left + layout.width, bottom: top + layout.height,
+      width: layout.width, height: layout.height, x: left, y: top, toJSON: () => ({}),
+    } as DOMRect
+  }
+
+  beforeEach(() => {
+    el = document.createElement('div')
+    document.body.appendChild(el)
+    layout = { x: 0, y: 0, width: 100, height: 100 }
+    el.getBoundingClientRect = visualRect
+  })
+
+  afterEach(() => {
+    el.remove()
+  })
+
+  it('measures opacity 0 as 0 (not 1)', async () => {
+    el.style.opacity = '0'
+    const group = createLayoutGroup({ crossfade: true })
+    group.register('a', el)
+
+    layout = { ...layout, x: 100 }
+    group.update()
+    await nextFrame()
+    await nextFrame()
+
+    expect(el.style.opacity).toBe('0')
+    group.destroy()
+  })
+
+  it('compensates border radius per axis for non-uniform scale', async () => {
+    el.style.borderRadius = '10px'
+    const group = createLayoutGroup()
+    group.register('a', el)
+
+    layout = { ...layout, width: 200 }
+    group.update()
+    await nextFrame()
+    await nextFrame()
+
+    // scaleX ≈ 0.5, scaleY = 1 -> horizontal radius must be larger than vertical
+    expect(el.style.borderRadius).toContain('/')
+    group.destroy()
+  })
+
+  it('fires onAnimationComplete once when an animation is interrupted by another update', async () => {
+    const onAnimationComplete = vi.fn()
+    const group = createLayoutGroup({ spring: { stiffness: 1000, damping: 63 }, onAnimationComplete })
+    group.register('a', el)
+
+    layout = { ...layout, x: 100 }
+    group.update()
+    await nextFrame()
+    layout = { ...layout, x: 200 }
+    group.update()
+
+    await waitFor(() => onAnimationComplete.mock.calls.length > 0)
+    await new Promise(resolve => setTimeout(resolve, 100))
+    expect(onAnimationComplete).toHaveBeenCalledTimes(1)
+    group.destroy()
+  })
+
+  it('does not jump when update() is called while an animation is running', async () => {
+    const group = createLayoutGroup({ spring: { stiffness: 100, damping: 20 } })
+    group.register('a', el)
+
+    layout = { ...layout, x: 300 }
+    group.update()
+    await nextFrame()
+    await nextFrame()
+    await nextFrame()
+
+    const before = visualRect().left
+    // Layout didn't change again - re-running update must keep the element where it is
+    group.update()
+    await nextFrame()
+    const after = visualRect().left
+
+    expect(Math.abs(after - before)).toBeLessThan(30)
+    group.destroy()
+  })
+
+  it('auto layout unregisters tracked descendants of removed nodes', async () => {
+    const root = document.createElement('div')
+    const wrapper = document.createElement('section')
+    const card = document.createElement('div')
+    card.setAttribute('data-layout-id', 'card')
+    let left = 50
+    card.getBoundingClientRect = () => ({
+      left, top: 0, right: left + 10, bottom: 10, width: 10, height: 10, x: left, y: 0, toJSON: () => ({}),
+    }) as DOMRect
+    wrapper.appendChild(card)
+    root.appendChild(wrapper)
+    document.body.appendChild(root)
+
+    const onAnimationStart = vi.fn()
+    const auto = createAutoLayout({ root, onAnimationStart })
+
+    root.removeChild(wrapper)
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    left = 0
+    auto.update()
+    expect(onAnimationStart).not.toHaveBeenCalled()
+
+    auto.destroy()
+    root.remove()
+  })
+})
+
+describe('createSharedLayoutContext id reuse', () => {
+  let el: HTMLElement
+  let layout: { x: number; y: number; width: number; height: number }
+  let clock: TestClock
+
+  beforeEach(() => {
+    clock = installTestClock()
+    el = document.createElement('div')
+    document.body.appendChild(el)
+    layout = { x: 0, y: 0, width: 100, height: 100 }
+    el.getBoundingClientRect = () => ({
+      left: layout.x, top: layout.y, right: layout.x + layout.width, bottom: layout.y + layout.height,
+      width: layout.width, height: layout.height, x: layout.x, y: layout.y, toJSON: () => ({}),
+    }) as DOMRect
+  })
+
+  afterEach(() => {
+    clock.uninstall()
+    el.remove()
+  })
+
+  it('destroys the previous group when an id is reused', () => {
+    const context = createSharedLayoutContext()
+    const previous = context.createGroup('list')
+    previous.register('a', el)
+
+    layout = { ...layout, x: 100 }
+    previous.update()
+    clock.nextFrame()
+    expect(el.style.transform).toContain('translate(')
+
+    const replacement = context.createGroup('list')
+    expect(replacement).not.toBe(previous)
+    expect(context.getGroup('list')).toBe(replacement)
+    // The old group's running animation was stopped and its element reset
+    expect(el.style.transform).toBe('')
+
+    clock.advance(100)
+    expect(el.style.transform).toBe('')
+    context.destroy()
+  })
+})
+
+describe('createLayoutGroup transitions and style restoration', () => {
+  let clock: TestClock
+  const els: HTMLElement[] = []
+
+  /** Element whose layout box is controlled by the returned setter */
+  const makeEl = () => {
+    const el = document.createElement('div')
+    document.body.appendChild(el)
+    els.push(el)
+    const box = { x: 0, y: 0, width: 100, height: 100 }
+    // Like a real browser, the measured box includes the FLIP translate
+    el.getBoundingClientRect = () => {
+      const left = box.x + translateX(el)
+      return {
+        left, top: box.y, right: left + box.width, bottom: box.y + box.height,
+        width: box.width, height: box.height, x: left, y: box.y, toJSON: () => ({}),
+      } as DOMRect
+    }
+    return { el, box }
+  }
+
+  /** Current FLIP translateX from the inline transform */
+  const translateX = (el: HTMLElement) => {
+    const match = el.style.transform.match(/translate\(([-\d.e]+)px/)
+    return match ? parseFloat(match[1]!) : 0
+  }
+
+  /** Spring groups notify in a microtask (after each frame in a browser) */
+  const advance = async (ms: number) => {
+    clock.advance(ms)
+    await Promise.resolve()
+  }
+  const runAll = async () => {
+    clock.runAll()
+    await Promise.resolve()
+  }
+
+  beforeEach(() => {
+    clock = installTestClock()
+  })
+
+  afterEach(() => {
+    clock.uninstall()
+    els.splice(0).forEach(el => el.remove())
+  })
+
+  it('honors a per-property transition overriding the default spring', async () => {
+    const control = makeEl()
+    const custom = makeEl()
+    const controlGroup = createLayoutGroup({ spring: { stiffness: 300, damping: 30 } })
+    const customGroup = createLayoutGroup({
+      spring: { stiffness: 300, damping: 30 },
+      transition: { x: { stiffness: 30, damping: 11 } },
+    })
+    controlGroup.register('a', control.el)
+    customGroup.register('a', custom.el)
+
+    control.box.x = 100
+    custom.box.x = 100
+    controlGroup.update()
+    customGroup.update()
+    await advance(150)
+
+    // The default spring has mostly caught up, the slow x transition has not
+    expect(translateX(control.el)).toBeGreaterThan(-30)
+    expect(translateX(custom.el)).toBeLessThan(-50)
+
+    await runAll()
+    controlGroup.destroy()
+    customGroup.destroy()
+  })
+
+  it('animates opacity with its own transition while the transform uses the default', async () => {
+    const { el, box } = makeEl()
+    el.style.opacity = '0'
+    const group = createLayoutGroup({
+      crossfade: true,
+      spring: { stiffness: 300, damping: 30 },
+      transition: { opacity: { stiffness: 30, damping: 11 } },
+    })
+    group.register('a', el)
+
+    el.style.opacity = '1'
+    box.x = 100
+    group.update()
+    await advance(150)
+
+    expect(translateX(el)).toBeGreaterThan(-30)
+    expect(parseFloat(el.style.opacity)).toBeLessThan(0.5)
+
+    await runAll()
+    group.destroy()
+  })
+
+  it("restores the element's own inline transform, opacity and border radius afterwards", async () => {
+    const { el, box } = makeEl()
+    el.style.transform = 'rotate(5deg)'
+    el.style.transformOrigin = 'center'
+    el.style.opacity = '0.5'
+    el.style.borderRadius = '4px'
+    const onAnimationComplete = vi.fn()
+    const group = createLayoutGroup({ crossfade: true, onAnimationComplete })
+    group.register('a', el)
+
+    box.x = 100
+    group.update()
+    await advance(50)
+    expect(el.style.transform).toContain('translate(')
+
+    // Interrupt mid-flight with a new layout change
+    box.x = 200
+    group.update()
+    await runAll()
+
+    expect(onAnimationComplete).toHaveBeenCalled()
+    expect(el.style.transform).toBe('rotate(5deg)')
+    expect(el.style.transformOrigin).toBe('center')
+    expect(el.style.opacity).toBe('0.5')
+    expect(el.style.borderRadius).toBe('4px')
+    group.destroy()
+    expect(el.style.transform).toBe('rotate(5deg)')
+  })
+
+  it('restores inline styles when destroyed or unregistered mid-animation', async () => {
+    const a = makeEl()
+    const b = makeEl()
+    a.el.style.transform = 'scale(2)'
+    b.el.style.opacity = '0.25'
+    const group = createLayoutGroup({ crossfade: true })
+    group.register('a', a.el)
+    group.register('b', b.el)
+
+    a.box.x = 100
+    b.box.x = 100
+    group.update()
+    await advance(32)
+    expect(a.el.style.transform).toContain('translate(')
+
+    group.unregister('a', a.el)
+    expect(a.el.style.transform).toBe('scale(2)')
+
+    group.destroy()
+    expect(b.el.style.opacity).toBe('0.25')
+    expect(b.el.style.transform).toBe('')
+    await advance(100)
+    expect(a.el.style.transform).toBe('scale(2)')
+    expect(b.el.style.transform).toBe('')
+  })
+
+  it('createSharedLayoutContext.createGroup accepts a layout config', async () => {
+    const { el, box } = makeEl()
+    const onAnimationStart = vi.fn()
+    const context = createSharedLayoutContext()
+    const group = context.createGroup('g', { onAnimationStart })
+    group.register('a', el)
+    box.x = 50
+    group.update()
+    expect(onAnimationStart).toHaveBeenCalledWith('a')
+    context.destroy()
   })
 })

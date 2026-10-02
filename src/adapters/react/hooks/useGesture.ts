@@ -57,7 +57,7 @@ export interface GestureBind {
  *
  *   return (
  *     <div
- *       {...bind()}
+ *       {...bind}
  *       style={{
  *         transform: `translate(${style.x}px, ${style.y}px) scale(${style.scale})`,
  *       }}
@@ -78,6 +78,16 @@ export function useGesture(handlers: GestureHandlers): GestureBind {
   })
 
   const onPointerDown = (e: React.PointerEvent) => {
+    // Capture the pointer so move/up events keep coming to this element even
+    // when the pointer leaves it (otherwise a release outside the element
+    // leaves the gesture stuck in the dragging state)
+    try {
+      const target = e.currentTarget as Element | null
+      target?.setPointerCapture?.(e.pointerId)
+    } catch {
+      // Ignore: capture can fail (e.g. synthetic or already-released pointers)
+    }
+
     stateRef.current = {
       isDragging: true,
       startX: e.clientX,

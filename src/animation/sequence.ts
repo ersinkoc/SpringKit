@@ -1,10 +1,29 @@
-import type { SpringAnimation } from '../core/spring.js'
+/**
+ * Anything exposing a `finished` promise (a spring animation, keyframes,
+ * decay, an `animate()` control, ...). Used by sequence() and parallel(),
+ * which only await `finished`.
+ */
+export interface FinishableAnimation {
+  readonly finished: PromiseLike<unknown>
+}
+
+/**
+ * An animation that stagger() can start after its delay and then await.
+ * SpringAnimation (from `spring()`) satisfies this.
+ */
+export interface StartableAnimation extends FinishableAnimation {
+  start(): unknown
+}
 
 /**
  * Stagger options interface
  */
 export interface StaggerOptions {
-  /** Delay between animations (ms) or function returning delay */
+  /**
+   * Delay between consecutive items in ms (item k steps away from `from`
+   * starts after k * delay), or a function receiving the item's position in
+   * start order and returning its delay
+   */
   delay?: number | ((index: number) => number)
   /** Where to start staggering from */
   from?: 'first' | 'last' | 'center' | number
@@ -28,7 +47,7 @@ export interface StaggerOptions {
  * ```
  */
 export async function sequence(
-  animations: Array<() => SpringAnimation>
+  animations: ReadonlyArray<() => FinishableAnimation>
 ): Promise<void> {
   for (const createAnimation of animations) {
     const anim = createAnimation()
@@ -54,7 +73,7 @@ export async function sequence(
  * ```
  */
 export async function parallel(
-  animations: Array<() => SpringAnimation>
+  animations: ReadonlyArray<() => FinishableAnimation>
 ): Promise<void> {
   const promises = animations.map((createAnimation) => {
     const anim = createAnimation()
@@ -67,7 +86,9 @@ export async function parallel(
  * Run animations with staggered delays
  *
  * @param items - Array of items to animate
- * @param animate - Function that creates an animation for each item
+ * @param animate - Function that creates an animation for each item. Return
+ *   it *without* calling `start()`: stagger() starts each one after its delay
+ *   (an already started animation ignores the delay).
  * @param options - Stagger options
  * @returns Promise that resolves when all animations complete
  *
@@ -82,24 +103,33 @@ export async function parallel(
  *       onUpdate: (value) => {
  *         element.style.opacity = String(value)
  *       },
- *     }).start()
+ *     })
  *   },
  *   { delay: 50 }
  * )
  * ```
  */
 export async function stagger<T>(
-  items: T[],
-  animate: (item: T, index: number) => SpringAnimation,
+  items: readonly T[],
+  animate: (item: T, index: number) => StartableAnimation,
   options: StaggerOptions = {}
 ): Promise<void> {
   const { delay = 0, from = 'first' } = options
+
+  // Nothing to animate
+  if (items.length === 0) return
 
   // Calculate start index based on 'from' option
   let startIndex = 0
   if (from === 'last') startIndex = items.length - 1
   else if (from === 'center') startIndex = Math.floor(items.length / 2)
-  else if (typeof from === 'number') startIndex = from
+  else if (typeof from === 'number') {
+    // Clamp to a valid integer index; an out-of-range start would skip items
+    // and call animate() with undefined
+    startIndex = Number.isFinite(from)
+      ? Math.min(Math.max(Math.round(from), 0), items.length - 1)
+      : 0
+  }
 
   // Build index order from start point outward
   const indices: number[] = []
@@ -129,8 +159,13 @@ export async function stagger<T>(
   // No need for defensive fallback as the logic is complete
 
   // Start animations with delay
-  const getDelay = typeof delay === 'function' ? delay : (_i: number) => delay
-  const animations: SpringAnimation[] = []
+  // A number is the delay *between* items: scale it by the distance from the
+  // start index, so 'center' fans out symmetrically
+  const getDelay =
+    typeof delay === 'function'
+      ? (i: number) => delay(i)
+      : (i: number) => Math.abs(indices[i]! - startIndex) * delay
+  const animations: StartableAnimation[] = []
   const timeoutIds: ReturnType<typeof setTimeout>[] = []
 
   for (let i = 0; i < indices.length; i++) {

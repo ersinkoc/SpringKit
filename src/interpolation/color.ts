@@ -1,5 +1,21 @@
 import type { SpringValue } from '../core/spring-value.js'
 import type { InterpolateOptions } from './interpolate.js'
+import { parseColorRGBA, mixColorsRGBA, formatRGBA, type ColorSpace } from '../utils/color.js'
+
+type RGBATuple = [number, number, number, number]
+
+/**
+ * Color interpolation options
+ */
+export interface ColorInterpolateOptions extends InterpolateOptions {
+  /**
+   * Color space to interpolate in (default `'srgb'`).
+   * `'oklab'` gives perceptually even blends (e.g. blue → yellow without a
+   * gray midpoint); `'linear'` mixes physically like light.
+   * Alpha is always interpolated premultiplied.
+   */
+  space?: ColorSpace
+}
 
 /**
  * Global color parsing cache to avoid repeated regex operations
@@ -9,7 +25,7 @@ import type { InterpolateOptions } from './interpolate.js'
  * in long-running applications with many unique colors
  */
 const MAX_COLOR_CACHE_SIZE = 1000
-const colorCache = new Map<string, [number, number, number]>()
+const colorCache = new Map<string, RGBATuple>()
 
 /**
  * Color interpolation interface
@@ -25,18 +41,27 @@ export interface ColorInterpolation {
 class ColorInterpolationImpl implements ColorInterpolation {
   private source: SpringValue | (() => number)
   private input: number[]
-  private colors: [number, number, number][]
-  private options: InterpolateOptions
+  private colors: RGBATuple[]
+  private options: ColorInterpolateOptions
 
   constructor(
     source: SpringValue | (() => number),
     input: number[],
     colorStrings: string[],
-    options: InterpolateOptions = {}
+    options: ColorInterpolateOptions = {}
   ) {
     this.source = source
-    this.input = input
-    this.colors = colorStrings.map((c) => this.parseColorCached(c))
+    // Ignore unmatched trailing entries so mismatched lengths can't produce NaN
+    const length = Math.min(input.length, colorStrings.length)
+    let normalizedInput = input.slice(0, length)
+    let colors = colorStrings.slice(0, length).map((c) => this.parseColorCached(c))
+    // Segment lookup assumes an ascending input range; reverse descending ranges
+    if (length > 1 && normalizedInput[0]! > normalizedInput[length - 1]!) {
+      normalizedInput = normalizedInput.reverse()
+      colors = colors.reverse()
+    }
+    this.input = normalizedInput
+    this.colors = colors
     this.options = options
   }
 
@@ -45,7 +70,7 @@ class ColorInterpolationImpl implements ColorInterpolation {
    * Avoids repeated regex operations for the same color strings
    * Implements LRU eviction to prevent memory bloat
    */
-  private parseColorCached(color: string): [number, number, number] {
+  private parseColorCached(color: string): RGBATuple {
     // Check cache first
     const cached = colorCache.get(color)
     if (cached) {
@@ -74,10 +99,11 @@ class ColorInterpolationImpl implements ColorInterpolation {
     let value = typeof this.source === 'function' ? this.source() : this.source.get()
     const { extrapolate, extrapolateLeft, extrapolateRight } = this.options
 
-    // Handle single color case
-    if (this.input.length === 1) {
-      const [r, g, b] = this.colors[0]!
-      return `rgb(${r}, ${g}, ${b})`
+    // Handle single color case, and guard against NaN/Infinity from source
+    // (which would otherwise produce an invalid `rgb(NaN, NaN, NaN)` string)
+    if (this.input.length <= 1 || !Number.isFinite(value)) {
+      const [r, g, b, a] = this.colors[0] ?? [0, 0, 0, 1]
+      return this.format(r, g, b, a)
     }
 
     // Handle extrapolation
@@ -109,99 +135,33 @@ class ColorInterpolationImpl implements ColorInterpolation {
     const inputRange = this.input[i]! - this.input[i - 1]!
     const ratio = inputRange !== 0 ? (value - this.input[i - 1]!) / inputRange : 0
 
-    // Interpolate each color channel
-    const r = this.lerp(this.colors[i - 1]![0], this.colors[i]![0], ratio)
-    const g = this.lerp(this.colors[i - 1]![1], this.colors[i]![1], ratio)
-    const b = this.lerp(this.colors[i - 1]![2], this.colors[i]![2], ratio)
+    // Interpolate alpha-premultiplied in the requested color space, so
+    // e.g. transparent -> white doesn't pass through gray
+    const from = this.colors[i - 1]!
+    const to = this.colors[i]!
+    const mixed = mixColorsRGBA(
+      { r: from[0], g: from[1], b: from[2], a: from[3] },
+      { r: to[0], g: to[1], b: to[2], a: to[3] },
+      ratio,
+      this.options.space
+    )
 
-    return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`
+    return this.format(mixed.r, mixed.g, mixed.b, mixed.a)
   }
 
-  private parseColorInternal(color: string): [number, number, number] {
-    // Try to parse hex
-    const hexMatch = color.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i)
-    if (hexMatch) {
-      const hex = hexMatch[1]!
-      if (hex.length === 3) {
-        return [
-          parseInt(hex.charAt(0) + hex.charAt(0), 16),
-          parseInt(hex.charAt(1) + hex.charAt(1), 16),
-          parseInt(hex.charAt(2) + hex.charAt(2), 16),
-        ]
-      }
-      return [
-        parseInt(hex.slice(0, 2), 16),
-        parseInt(hex.slice(2, 4), 16),
-        parseInt(hex.slice(4, 6), 16),
-      ]
-    }
-
-    // Try to parse rgb()
-    const rgbMatch = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/i)
-    if (rgbMatch) {
-      return [
-        parseInt(rgbMatch[1]!, 10),
-        parseInt(rgbMatch[2]!, 10),
-        parseInt(rgbMatch[3]!, 10),
-      ]
-    }
-
-    // Try to parse rgba()
-    const rgbaMatch = color.match(/rgba\((\d+),\s*(\d+),\s*(\d+),\s*[\d.]+\)/i)
-    if (rgbaMatch) {
-      return [
-        parseInt(rgbaMatch[1]!, 10),
-        parseInt(rgbaMatch[2]!, 10),
-        parseInt(rgbaMatch[3]!, 10),
-      ]
-    }
-
-    // Try to parse hsl()
-    const hslMatch = color.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/i)
-    if (hslMatch) {
-      return this.hslToRgb(
-        parseInt(hslMatch[1]!, 10),
-        parseInt(hslMatch[2]!, 10),
-        parseInt(hslMatch[3]!, 10)
-      )
-    }
-
-    // Default to black
-    return [0, 0, 0]
+  /**
+   * Format channels as a CSS color. Opaque colors keep the `rgb()` form,
+   * translucent ones use `rgba()` so alpha is not silently dropped.
+   */
+  private format(r: number, g: number, b: number, a: number): string {
+    return formatRGBA({ r, g, b, a })
   }
 
-  private hslToRgb(h: number, s: number, l: number): [number, number, number] {
-    h = ((h % 360) + 360) % 360
-    s = Math.max(0, Math.min(100, s)) / 100
-    l = Math.max(0, Math.min(100, l)) / 100
-
-    if (s === 0) {
-      const gray = Math.round(l * 255)
-      return [gray, gray, gray]
-    }
-
-    const hue2rgb = (p: number, q: number, t: number): number => {
-      if (t < 0) t += 1
-      if (t > 1) t -= 1
-      if (t < 1 / 6) return p + (q - p) * 6 * t
-      if (t < 1 / 2) return q
-      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6
-      return p
-    }
-
-    const q = l < 0.5 ? l * (1 + s) : l + s - l * s
-    const p = 2 * l - q
-
-    return [
-      Math.round(hue2rgb(p, q, h / 360 + 1 / 3) * 255),
-      Math.round(hue2rgb(p, q, h / 360) * 255),
-      Math.round(hue2rgb(p, q, h / 360 - 1 / 3) * 255),
-    ]
+  private parseColorInternal(color: string): RGBATuple {
+    const { r, g, b, a } = parseColorRGBA(color)
+    return [r, g, b, a]
   }
 
-  private lerp(a: number, b: number, t: number): number {
-    return a + (b - a) * t
-  }
 }
 
 /**
@@ -209,8 +169,8 @@ class ColorInterpolationImpl implements ColorInterpolation {
  *
  * @param value - Spring value or function that returns a number
  * @param input - Input range (array of numbers)
- * @param colors - Array of color strings (hex, rgb, hsl)
- * @param options - Interpolation options
+ * @param colors - Array of color strings (hex, rgb(a), hsl(a), transparent)
+ * @param options - Interpolation options (plus `space`: `'srgb'` | `'linear'` | `'oklab'`)
  * @returns Color interpolation controller
  *
  * @example
@@ -229,13 +189,16 @@ class ColorInterpolationImpl implements ColorInterpolation {
  * })
  *
  * progress.set(50) // color is '#00ff00'
+ *
+ * // Perceptually even blend
+ * const sky = interpolateColor(progress, [0, 100], ['#0000ff', '#ffff00'], { space: 'oklab' })
  * ```
  */
 export function interpolateColor(
   value: SpringValue | (() => number),
   input: number[],
   colors: string[],
-  options?: InterpolateOptions
+  options?: ColorInterpolateOptions
 ): ColorInterpolation {
   return new ColorInterpolationImpl(value, input, colors, options)
 }

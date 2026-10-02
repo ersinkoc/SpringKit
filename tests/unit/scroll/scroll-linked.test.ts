@@ -6,6 +6,8 @@ import {
   createScrollLinkedValue,
   scrollEasings,
 } from '@oxog/springkit'
+import type { ScrollProgress } from '../../../src/scroll/scroll-linked'
+import { installTestClock, type TestClock } from '../../../src/testing'
 
 describe('Scroll-Linked Animations', () => {
   let element: HTMLElement
@@ -1027,5 +1029,386 @@ describe('Scroll-Linked Animations', () => {
         expect(easing(1)).toBeCloseTo(1, 5)
       })
     })
+  })
+})
+
+describe('Scroll-Linked regressions', () => {
+  let element: HTMLElement
+
+  const mockRect = (el: HTMLElement, top: number, height: number) => {
+    el.getBoundingClientRect = () => ({
+      top, bottom: top + height, left: 0, right: 100, width: 100, height, x: 0, y: top,
+      toJSON: () => ({}),
+    }) as DOMRect
+  }
+
+  const nextFrame = () => new Promise(resolve => requestAnimationFrame(() => resolve(undefined)))
+
+  beforeEach(() => {
+    element = document.createElement('div')
+    document.body.appendChild(element)
+  })
+
+  afterEach(() => {
+    element.remove()
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 0 })
+    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: 0 })
+  })
+
+  it('scroll trigger progress grows as the element scrolls through the viewport', () => {
+    const wh = window.innerHeight
+    const trigger = createScrollTrigger(element, { start: 'top', end: 'bottom' })
+
+    // Element below the viewport: not started
+    mockRect(element, wh + 100, 200)
+    trigger.refresh()
+    expect(trigger.getProgress()).toBe(0)
+
+    // Element top in the middle of the viewport
+    mockRect(element, wh / 2, 200)
+    trigger.refresh()
+    expect(trigger.getProgress()).toBeCloseTo((wh / 2) / (wh + 200))
+
+    // Element bottom has left through the top of the viewport: finished
+    mockRect(element, -300, 200)
+    trigger.refresh()
+    expect(trigger.getProgress()).toBe(1)
+
+    trigger.destroy()
+  })
+
+  it('scroll progress subscribers receive the current info, not the creation-time info', async () => {
+    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: window.innerHeight + 1000 })
+    const progress = createScrollProgress()
+    expect(progress.get()).toBe(0)
+
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 500 })
+    window.dispatchEvent(new Event('scroll'))
+    await nextFrame()
+    expect(progress.get()).toBeCloseTo(0.5)
+
+    const callback = vi.fn()
+    progress.subscribe(callback)
+    expect(callback.mock.calls[0]![0].progress).toBeCloseTo(0.5)
+
+    progress.destroy()
+  })
+
+  it('does not report a bogus velocity when created on an already scrolled page', async () => {
+    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: window.innerHeight + 5000 })
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 3000 })
+    const progress = createScrollProgress()
+
+    expect(progress.getInfo().velocity).toBe(0)
+    expect(progress.getInfo().direction).toBe(0)
+    progress.destroy()
+  })
+
+  it('reports visibleRatio 0 instead of NaN for zero-height elements', () => {
+    mockRect(element, 100, 0)
+    const progress = createScrollProgress(element)
+    expect(progress.getInfo().visibleRatio).toBe(0)
+    progress.destroy()
+
+    const onProgress = vi.fn()
+    const trigger = createScrollTrigger(element, { onProgress, scrub: true })
+    return nextFrame().then(() => {
+      expect(Number.isNaN(onProgress.mock.calls[0]![0].visibleRatio)).toBe(false)
+      trigger.destroy()
+    })
+  })
+
+  it('scroll-linked value extrapolates past the last stop when clamp is false', () => {
+    const fakeProgress: ScrollProgress = {
+      get: () => 1,
+      getInfo: () => ({ progress: 1, scrollY: 0, velocity: 0, direction: 0, isInView: true, visibleRatio: 1 }),
+      subscribe: (cb) => {
+        cb({ progress: 1, scrollY: 0, velocity: 0, direction: 0, isInView: true, visibleRatio: 1 })
+        return () => {}
+      },
+      destroy: () => {},
+    }
+    const value = createScrollLinkedValue(fakeProgress, {
+      inputRange: [0, 0.25, 0.5],
+      outputRange: [0, 25, 50],
+      clamp: false,
+    })
+
+    expect(value.get()).toBeCloseTo(100)
+    value.destroy()
+  })
+
+  it('isolates scroll-linked value subscriber errors', () => {
+    let emit: ((info: ReturnType<ScrollProgress['getInfo']>) => void) | null = null
+    const fakeProgress: ScrollProgress = {
+      get: () => 0,
+      getInfo: () => ({ progress: 0, scrollY: 0, velocity: 0, direction: 0, isInView: true, visibleRatio: 1 }),
+      subscribe: (cb) => {
+        emit = cb
+        return () => {}
+      },
+      destroy: () => {},
+    }
+    const value = createScrollLinkedValue(fakeProgress, { inputRange: [0, 1], outputRange: [0, 10] })
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const good = vi.fn()
+    let calls = 0
+    value.subscribe(() => {
+      if (calls++ > 0) throw new Error('boom')
+    })
+    value.subscribe(good)
+
+    expect(() => emit!({ progress: 0.5, scrollY: 0, velocity: 0, direction: 0, isInView: true, visibleRatio: 1 })).not.toThrow()
+    expect(good).toHaveBeenLastCalledWith(5)
+    errorSpy.mockRestore()
+    value.destroy()
+  })
+})
+
+describe('Scroll-linked color interpolation regressions', () => {
+  const fixedProgress = (progress: number): ScrollProgress => ({
+    get: () => progress,
+    getInfo: () => ({ progress, scrollY: 0, velocity: 0, direction: 0, isInView: true, visibleRatio: 1 }),
+    subscribe: (cb) => {
+      cb({ progress, scrollY: 0, velocity: 0, direction: 0, isInView: true, visibleRatio: 1 })
+      return () => {}
+    },
+    destroy: () => {},
+  })
+
+  it('keeps alpha and does not pass through gray when fading from transparent', () => {
+    const value = createScrollLinkedValue(fixedProgress(0.5), {
+      inputRange: [0, 1],
+      outputRange: ['transparent', '#ffffff'],
+    })
+    expect(value.get()).toBe('rgba(255, 255, 255, 0.5)')
+    value.destroy()
+  })
+
+  it('keeps hex output for opaque colors', () => {
+    const value = createScrollLinkedValue(fixedProgress(0.5), {
+      inputRange: [0, 1],
+      outputRange: ['#ff0000', '#0000ff'],
+    })
+    expect(value.get()).toBe('#800080')
+    value.destroy()
+  })
+
+  it('supports an opt-in OKLab color space', () => {
+    const value = createScrollLinkedValue(fixedProgress(0.5), {
+      inputRange: [0, 1],
+      outputRange: ['#0000ff', '#ffff00'],
+      colorSpace: 'oklab',
+    })
+    expect(value.get()).not.toBe('#808080')
+    value.destroy()
+  })
+})
+
+describe('Scroll-linked smoothing (smooth option)', () => {
+  let clock: TestClock
+
+  beforeEach(() => {
+    clock = installTestClock()
+  })
+
+  afterEach(() => {
+    clock.uninstall()
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 0 })
+    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: 0 })
+  })
+
+  const info = (progress: number) => ({
+    progress, scrollY: 0, velocity: 0, direction: 0 as const, isInView: true, visibleRatio: 1,
+  })
+
+  /** Fake progress source whose progress can be pushed manually */
+  const manualProgress = (initial = 0) => {
+    let current = initial
+    const subs = new Set<(i: ReturnType<typeof info>) => void>()
+    const source: ScrollProgress = {
+      get: () => current,
+      getInfo: () => info(current),
+      subscribe: (cb) => {
+        subs.add(cb)
+        cb(info(current))
+        return () => subs.delete(cb)
+      },
+      destroy: () => subs.clear(),
+    }
+    const emit = (progress: number) => {
+      current = progress
+      subs.forEach(cb => cb(info(progress)))
+    }
+    return { source, emit }
+  }
+
+  it('follows the scroll target with a spring and settles exactly on it (numeric factor)', () => {
+    const { source, emit } = manualProgress(0)
+    const value = createScrollLinkedValue(source, {
+      inputRange: [0, 1],
+      outputRange: [0, 100],
+      smooth: 0.8,
+    })
+    expect(value.get()).toBe(0)
+
+    emit(1)
+    // Not applied instantly: the value lags behind the scroll position
+    expect(value.get()).toBeLessThan(100)
+
+    clock.advance(50)
+    const mid = value.get() as number
+    expect(mid).toBeGreaterThan(0)
+    expect(mid).toBeLessThan(100)
+
+    // Keeps moving after scrolling stopped (no more progress events)
+    clock.runAll()
+    expect(value.get()).toBe(100)
+    value.destroy()
+  })
+
+  it('accepts a spring config and notifies subscribers every frame', () => {
+    const { source, emit } = manualProgress(0)
+    const value = createScrollLinkedValue(source, {
+      inputRange: [0, 1],
+      outputRange: [0, 10],
+      smooth: { stiffness: 170, damping: 26 },
+    })
+    const seen: number[] = []
+    value.subscribe(v => seen.push(v as number))
+
+    emit(0.5)
+    clock.runAll()
+    expect(seen.length).toBeGreaterThan(3)
+    expect(value.get()).toBe(5)
+    value.destroy()
+  })
+
+  it('smooths the progress and maps it through color output ranges', () => {
+    const { source, emit } = manualProgress(0)
+    const value = createScrollLinkedValue(source, {
+      inputRange: [0, 1],
+      outputRange: ['#000000', '#ffffff'],
+      smooth: 0.8,
+    })
+    emit(1)
+    clock.advance(50)
+    expect(value.get()).not.toBe('#000000')
+    expect(value.get()).not.toBe('#ffffff')
+    clock.runAll()
+    expect(value.get()).toBe('#ffffff')
+    value.destroy()
+  })
+
+  it('starts at the current progress instead of animating in from 0', () => {
+    const { source } = manualProgress(0.5)
+    const value = createScrollLinkedValue(source, {
+      inputRange: [0, 1],
+      outputRange: [0, 100],
+      smooth: 0.8,
+    })
+    expect(value.get()).toBe(50)
+    expect(clock.pendingFrames).toBe(0)
+    value.destroy()
+  })
+
+  it('smooth: 0 keeps the instant (unsmoothed) behavior', () => {
+    const { source, emit } = manualProgress(0)
+    const value = createScrollLinkedValue(source, {
+      inputRange: [0, 1],
+      outputRange: [0, 100],
+      smooth: 0,
+    })
+    emit(1)
+    expect(value.get()).toBe(100)
+    value.destroy()
+  })
+
+  it('stops the smoothing spring on destroy', () => {
+    const { source, emit } = manualProgress(0)
+    const value = createScrollLinkedValue(source, {
+      inputRange: [0, 1],
+      outputRange: [0, 100],
+      smooth: 0.8,
+    })
+    const callback = vi.fn()
+    value.subscribe(callback)
+    emit(1)
+    clock.advance(16)
+    value.destroy()
+    callback.mockClear()
+    const frozen = value.get()
+
+    clock.advance(1000)
+    expect(callback).not.toHaveBeenCalled()
+    expect(value.get()).toBe(frozen)
+  })
+
+  it('createScrollProgress smoothing keeps converging after scrolling stops', () => {
+    Object.defineProperty(document.documentElement, 'scrollHeight', {
+      configurable: true, value: window.innerHeight + 1000,
+    })
+    const progress = createScrollProgress(undefined, { smooth: 0.8 })
+    expect(progress.get()).toBe(0)
+
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 500 })
+    window.dispatchEvent(new Event('scroll'))
+    clock.nextFrame()
+    expect(progress.get()).toBeLessThan(0.5)
+
+    // A single scroll event: the smoothed progress must still reach the target
+    clock.runAll()
+    expect(progress.get()).toBeCloseTo(0.5, 6)
+    progress.destroy()
+  })
+
+  it('createScrollProgress smoothing starts at the current scroll position', () => {
+    Object.defineProperty(document.documentElement, 'scrollHeight', {
+      configurable: true, value: window.innerHeight + 1000,
+    })
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 500 })
+    const progress = createScrollProgress(undefined, { smooth: 0.8 })
+    expect(progress.get()).toBeCloseTo(0.5)
+    progress.destroy()
+  })
+
+  it('createScrollTrigger numeric scrub keeps converging after scrolling stops', () => {
+    const element = document.createElement('div')
+    document.body.appendChild(element)
+    const wh = window.innerHeight
+    let top = wh + 100
+    element.getBoundingClientRect = () => ({
+      top, bottom: top + 200, left: 0, right: 100, width: 100, height: 200, x: 0, y: top,
+      toJSON: () => ({}),
+    }) as DOMRect
+    const onProgress = vi.fn()
+    const trigger = createScrollTrigger(element, { scrub: 0.8, onProgress })
+    clock.nextFrame()
+    expect(trigger.getProgress()).toBe(0)
+
+    top = wh / 2
+    window.dispatchEvent(new Event('scroll'))
+    clock.nextFrame()
+    const expected = (wh / 2) / (wh + 200)
+    expect(trigger.getProgress()).toBeLessThan(expected)
+
+    clock.runAll()
+    expect(trigger.getProgress()).toBeCloseTo(expected, 6)
+    expect(onProgress.mock.lastCall![0].progress).toBeCloseTo(expected, 6)
+    trigger.destroy()
+    element.remove()
+  })
+})
+
+describe('createParallax cleanup', () => {
+  it("restores the element's own inline transform on destroy instead of clearing it", () => {
+    const element = document.createElement('div')
+    element.style.transform = 'rotate(10deg)'
+    document.body.appendChild(element)
+    const parallax = createParallax(element)
+    element.style.transform = 'translate3d(0, 12px, 0)' // as written by update()
+    parallax.destroy()
+    expect(element.style.transform).toBe('rotate(10deg)')
+    element.remove()
   })
 })

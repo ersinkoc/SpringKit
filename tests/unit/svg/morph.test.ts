@@ -628,3 +628,95 @@ describe('SVG Morph', () => {
     })
   })
 })
+
+describe('SVG Morph regressions', () => {
+  const waitFor = async (condition: () => boolean, timeout = 3000) => {
+    const start = Date.now()
+    while (!condition() && Date.now() - start < timeout) {
+      await new Promise(resolve => setTimeout(resolve, 16))
+    }
+  }
+
+  const coords = (d: string) => (d.match(/-?\d+(?:\.\d+)?/g) ?? []).map(Number)
+
+  it('resolves relative (lowercase) commands against the current point', () => {
+    const relative = createMorph('m 10 10 l 20 0 l 0 20', { samples: 3 })
+    const absolute = createMorph('M 10 10 L 30 10 L 30 30', { samples: 3 })
+
+    expect(relative.getPath()).toBe(absolute.getPath())
+    expect(coords(relative.getPath())).toEqual([10, 10, 30, 10, 30, 30])
+    relative.destroy()
+    absolute.destroy()
+  })
+
+  it('resolves relative h/v commands', () => {
+    const morph = createMorph('M 10 10 h 20 v 20 h -20', { samples: 4 })
+    expect(coords(morph.getPath())).toEqual([10, 10, 30, 10, 30, 30, 10, 30])
+    morph.destroy()
+  })
+
+  it('handles implicit repeated coordinates and compact number syntax', () => {
+    // "M 0 0 10 0 10 10" = M 0 0 L 10 0 L 10 10; "10-5" is two numbers
+    const implicit = createMorph('M 0 0 10 0 10 10', { samples: 3 })
+    expect(coords(implicit.getPath())).toEqual([0, 0, 10, 0, 10, 10])
+
+    const compact = createMorph('M0 0L10-5', { samples: 2 })
+    expect(coords(compact.getPath())).toEqual([0, 0, 10, -5])
+    implicit.destroy()
+    compact.destroy()
+  })
+
+  it('keeps the end points of smooth curve commands (S/T)', () => {
+    const morph = createMorph('M 0 0 S 5 5 10 0 T 20 0', { samples: 3 })
+    expect(coords(morph.getPath())).toEqual([0, 0, 10, 0, 20, 0])
+    morph.destroy()
+  })
+
+  it('calls onComplete only once per morph even when the spring overshoots', async () => {
+    const onComplete = vi.fn()
+    let maxProgress = 0
+    const morph = createMorph('M 0 0 L 10 0', {
+      // Very bouncy spring: oscillates around 1 several times
+      spring: { stiffness: 400, damping: 4 },
+      samples: 2,
+      onComplete,
+      onProgress: (p) => { maxProgress = Math.max(maxProgress, p) },
+    })
+
+    morph.morphTo('M 0 10 L 10 10')
+    await waitFor(() => morph.getProgress() === 1 || maxProgress > 1.2, 3000)
+    await new Promise(resolve => setTimeout(resolve, 300))
+
+    expect(maxProgress).toBeGreaterThan(1)
+    expect(onComplete).toHaveBeenCalledTimes(1)
+    morph.destroy()
+  })
+
+  it('morphToNext/morphToPrevious work when called detached from the object', () => {
+    const sequence = createMorphSequence(['M 0 0 L 1 1', 'M 0 0 L 2 2', 'M 0 0 L 3 3'])
+    const { morphToNext, morphToPrevious } = sequence
+
+    expect(() => morphToNext()).not.toThrow()
+    expect(sequence.getCurrentIndex()).toBe(1)
+    expect(() => morphToPrevious()).not.toThrow()
+    expect(sequence.getCurrentIndex()).toBe(0)
+    sequence.destroy()
+  })
+
+  it('does not produce NaN coordinates with a single sample in browsers', () => {
+    const proto = SVGElement.prototype as unknown as Record<string, unknown>
+    const hadLength = 'getTotalLength' in proto
+    Object.defineProperty(proto, 'getTotalLength', { configurable: true, value: () => 100 })
+    Object.defineProperty(proto, 'getPointAtLength', { configurable: true, value: (l: number) => ({ x: l, y: 0 }) })
+    try {
+      const morph = createMorph('M 0 0 L 100 0', { samples: 1 })
+      expect(morph.getPath()).not.toContain('NaN')
+      morph.destroy()
+    } finally {
+      if (!hadLength) {
+        delete proto.getTotalLength
+        delete proto.getPointAtLength
+      }
+    }
+  })
+})

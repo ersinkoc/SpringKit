@@ -1,4 +1,5 @@
-import { useRef, useCallback } from 'react'
+import * as React from 'react'
+import { useRef, useCallback, useMemo } from 'react'
 
 /**
  * Drag controls for programmatic drag initiation
@@ -6,7 +7,10 @@ import { useRef, useCallback } from 'react'
 export interface DragControls {
   /** Start dragging from a pointer event */
   start: (event: React.PointerEvent | PointerEvent, options?: DragStartOptions) => void
-  /** Stop any active drag */
+  /**
+   * Stop the active drag (and any momentum / snap-back animation): the element
+   * settles immediately, without momentum. `onDragEnd` is called.
+   */
   stop: () => void
   /** Check if currently dragging */
   isDragging: () => boolean
@@ -41,6 +45,7 @@ export interface DragStartOptions {
  *       <Animated.div
  *         dragControls={controls}
  *         drag="both"
+ *         dragListener={false} // only the handle starts drags
  *       >
  *         Card content
  *       </Animated.div>
@@ -92,7 +97,8 @@ export function useDragControls(): DragControls {
     // Prevent default to avoid text selection
     event.preventDefault()
 
-    // Call the registered drag handler
+    // Call the registered drag handler (an Animated element with `drag` and
+    // `dragControls={controls}`)
     if (listenerRef.current) {
       const pointerEvent = 'nativeEvent' in event ? event.nativeEvent : event
       listenerRef.current(pointerEvent, options)
@@ -110,12 +116,16 @@ export function useDragControls(): DragControls {
     return isDraggingRef.current
   }, [])
 
-  // Create a controls object with internal setters for the drag component
-  const controls: DragControls & {
-    _setDragHandler: (handler: (event: PointerEvent, options?: DragStartOptions) => void) => void
-    _setStopHandler: (handler: () => void) => void
+  // Create a controls object with internal setters for the drag component.
+  // Memoized so it can be passed as a prop / effect dependency without
+  // changing identity on every render.
+  const controls = useMemo<DragControls & {
+    // Called by the dragged component (Animated with `dragControls`); null unregisters
+    _setDragHandler: (handler: ((event: PointerEvent, options?: DragStartOptions) => void) | null) => void
+    _setStopHandler: (handler: (() => void) | null) => void
+    _notifyDragStart: () => void
     _notifyDragEnd: () => void
-  } = {
+  }>(() => ({
     start,
     stop,
     isDragging,
@@ -125,10 +135,15 @@ export function useDragControls(): DragControls {
     _setStopHandler: (handler) => {
       stopRef.current = handler
     },
+    // Called by the dragged component when a drag starts / ends, including
+    // drags started by its own pointer listener
+    _notifyDragStart: () => {
+      isDraggingRef.current = true
+    },
     _notifyDragEnd: () => {
       isDraggingRef.current = false
     },
-  }
+  }), [start, stop, isDragging])
 
   return controls
 }

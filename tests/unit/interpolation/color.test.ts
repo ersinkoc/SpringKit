@@ -47,7 +47,8 @@ describe('interpolateColor', () => {
     it('should parse rgba colors', () => {
       const color = interpolateColor(() => 0, [0], ['rgba(255, 0, 0, 0.5)'])
 
-      expect(color.get()).toBe('rgb(255, 0, 0)')
+      // Alpha must be preserved (previously it was silently dropped)
+      expect(color.get()).toBe('rgba(255, 0, 0, 0.5)')
     })
 
     it('should parse hsl colors', () => {
@@ -302,5 +303,37 @@ describe('interpolateColor', () => {
       const color = interpolateColor(() => 0, [0], ['hsl(0, 100%, 75%)'])
       expect(color.get()).toBe('rgb(255, 128, 128)')
     })
+  })
+})
+
+describe('interpolateColor regressions', () => {
+  it('interpolates alpha instead of dropping it', () => {
+    const color = interpolateColor(() => 0.5, [0, 1], ['rgba(255, 0, 0, 0)', 'rgba(255, 0, 0, 1)'])
+    expect(color.get()).toBe('rgba(255, 0, 0, 0.5)')
+  })
+
+  it('fades from transparent', () => {
+    expect(interpolateColor(() => 0, [0, 1], ['transparent', '#ffffff']).get()).toBe('rgba(0, 0, 0, 0)')
+    expect(interpolateColor(() => 1, [0, 1], ['transparent', '#ffffff']).get()).toBe('rgb(255, 255, 255)')
+  })
+
+  it('supports 8-digit hex alpha', () => {
+    expect(interpolateColor(() => 0, [0], ['#ff000080']).get()).toBe('rgba(255, 0, 0, 0.502)')
+  })
+
+  it('returns a valid color when the source is NaN', () => {
+    const color = interpolateColor(() => NaN, [0, 1], ['#ff0000', '#0000ff'])
+    expect(color.get()).toBe('rgb(255, 0, 0)')
+  })
+
+  it('handles descending input ranges', () => {
+    const color = interpolateColor(() => 25, [100, 50, 0], ['#000000', '#000000', '#ffffff'])
+    // 25 lies halfway between 50 (black) and 0 (white)
+    expect(color.get()).toBe('rgb(128, 128, 128)')
+  })
+
+  it('does not produce NaN when there are fewer colors than input stops', () => {
+    const color = interpolateColor(() => 75, [0, 50, 100], ['#ff0000', '#0000ff'])
+    expect(color.get()).toBe('rgb(0, 0, 255)')
   })
 })

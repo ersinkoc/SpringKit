@@ -3050,8 +3050,8 @@ function DecayDemo() {
     // Small delay to ensure reset is visible
     setTimeout(() => {
       animRef.current = decay({
-        velocity: velocity * 0.5, // Scale velocity appropriately
-        deceleration: 0.992,
+        velocity, // px/s
+        deceleration: 0.997, // fraction of velocity kept per ms
         clamp: [0, 280],
         onUpdate: v => {
           if (boxRef.current) boxRef.current.style.transform = `translateX(${v}px)`
@@ -3096,7 +3096,7 @@ function DecayDemo() {
         <div className="flex-1">
           <div className="flex justify-between text-sm mb-2">
             <span className="text-white/60">Initial Velocity</span>
-            <span className="font-mono text-teal-400">{velocity}</span>
+            <span className="font-mono text-teal-400">{velocity} px/s</span>
           </div>
           <input
             type="range"
@@ -4792,7 +4792,7 @@ function RubberBand() {
       onMouseUp={() => release()}
     >
       <div style={{ height: \`\${20 + offset}px\` }} /> {/* Band */}
-      <div onMouseDown={() => startY = e.clientY}> {/* Handle */}
+      <div onMouseDown={(e) => { startY = e.clientY }}> {/* Handle */}
         Drag me!
       </div>
     </div>

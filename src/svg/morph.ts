@@ -22,7 +22,22 @@ type CommandType = 'M' | 'L' | 'C' | 'Q' | 'A' | 'Z' | 'H' | 'V' | 'S' | 'T'
 interface PathCommand {
   type: CommandType
   values: number[]
+  /** Lowercase (relative) command in the source path */
+  relative?: boolean
 }
+
+/**
+ * Number of parameters each command takes (used to split implicit repeats,
+ * e.g. `L 0 0 10 10` is two line-to commands)
+ */
+const PARAM_COUNTS: Record<CommandType, number> = {
+  M: 2, L: 2, H: 1, V: 1, C: 6, S: 4, Q: 4, T: 2, A: 7, Z: 0,
+}
+
+/**
+ * Matches SVG path numbers, including compact forms like `10-5` and `.5.5`
+ */
+const PATH_NUMBER_REGEX = /[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?/gi
 
 /**
  * Normalized point with control points
@@ -86,14 +101,26 @@ function parsePath(d: string): PathCommand[] {
     if (!typeChar || valuesStr === undefined) continue
 
     const type = typeChar.toUpperCase() as CommandType
-    const values = valuesStr
-      .trim()
-      .split(/[\s,]+/)
-      .filter(v => v !== '')
+    const relative = typeChar !== type
+    const values = (valuesStr.match(PATH_NUMBER_REGEX) ?? [])
       .map(parseFloat)
       .filter(v => !isNaN(v))
 
-    commands.push({ type, values })
+    const count = PARAM_COUNTS[type]
+    if (count === 0 || values.length <= count) {
+      commands.push({ type, values, relative })
+      continue
+    }
+
+    // Split implicit repeated parameter sets into separate commands.
+    // Extra coordinate pairs after a moveto are implicit linetos.
+    for (let i = 0; i + count <= values.length; i += count) {
+      commands.push({
+        type: type === 'M' && i > 0 ? 'L' : type,
+        values: values.slice(i, i + count),
+        relative,
+      })
+    }
   }
 
   return commands
@@ -109,55 +136,81 @@ function toAbsolute(commands: PathCommand[]): PathCommand[] {
   let startY = 0
 
   return commands.map(cmd => {
-    const { type, values } = cmd
+    const { type, values, relative } = cmd
     const absValues = [...values]
+
+    // Resolve relative (lowercase) commands against the current point
+    if (relative) {
+      const offsetPair = (i: number) => {
+        const x = absValues[i]
+        const y = absValues[i + 1]
+        if (x !== undefined) absValues[i] = x + currentX
+        if (y !== undefined) absValues[i + 1] = y + currentY
+      }
+      switch (type) {
+        case 'H':
+          if (absValues[0] !== undefined) absValues[0] += currentX
+          break
+        case 'V':
+          if (absValues[0] !== undefined) absValues[0] += currentY
+          break
+        case 'A':
+          offsetPair(5)
+          break
+        case 'Z':
+          break
+        default:
+          // M, L, T, C, S, Q: every value is part of an x/y pair
+          for (let i = 0; i < absValues.length; i += 2) offsetPair(i)
+      }
+    }
 
     switch (type) {
       case 'M':
-        currentX = values[0] ?? 0
-        currentY = values[1] ?? 0
+        currentX = absValues[0] ?? 0
+        currentY = absValues[1] ?? 0
         startX = currentX
         startY = currentY
         break
 
       case 'L':
-        currentX = values[0] ?? 0
-        currentY = values[1] ?? 0
+        currentX = absValues[0] ?? 0
+        currentY = absValues[1] ?? 0
         break
 
       case 'H':
-        absValues[0] = values[0] ?? 0
-        currentX = values[0] ?? 0
+        absValues[0] = absValues[0] ?? 0
+        currentX = absValues[0]
         break
 
       case 'V':
-        absValues[0] = values[0] ?? 0
-        currentY = values[0] ?? 0
+        absValues[0] = absValues[0] ?? 0
+        currentY = absValues[0]
         break
 
       case 'C':
-        currentX = values[4] ?? 0
-        currentY = values[5] ?? 0
+        currentX = absValues[4] ?? 0
+        currentY = absValues[5] ?? 0
         break
 
       case 'Q':
-        currentX = values[2] ?? 0
-        currentY = values[3] ?? 0
+        currentX = absValues[2] ?? 0
+        currentY = absValues[3] ?? 0
         break
 
       case 'A':
-        currentX = values[5] ?? 0
-        currentY = values[6] ?? 0
+        currentX = absValues[5] ?? 0
+        currentY = absValues[6] ?? 0
         break
 
       case 'S': // Smooth cubic Bezier
-        currentX = values[2] ?? 0
-        currentY = values[3] ?? 0
+        currentX = absValues[2] ?? 0
+        currentY = absValues[3] ?? 0
         break
 
       case 'T': // Smooth quadratic Bezier
-        currentX = values[0] ?? 0
-        currentY = values[1] ?? 0
+        currentX = absValues[0] ?? 0
+        currentY = absValues[1] ?? 0
         break
 
       case 'Z':
@@ -228,6 +281,10 @@ function samplePathFallback(commands: PathCommand[], samples: number): Normalize
         cp1x: cmd.values[0] ?? 0,
         cp1y: cmd.values[1] ?? 0,
       })
+    } else if (cmd.type === 'S') {
+      points.push({ x: cmd.values[2] ?? 0, y: cmd.values[3] ?? 0 })
+    } else if (cmd.type === 'T') {
+      points.push({ x: cmd.values[0] ?? 0, y: cmd.values[1] ?? 0 })
     } else if (cmd.type === 'A') {
       points.push({ x: cmd.values[5] ?? 0, y: cmd.values[6] ?? 0 })
     } else if (cmd.type === 'H') {
@@ -291,7 +348,8 @@ function samplePath(commands: PathCommand[], samples: number): NormalizedPoint[]
 
   try {
     const totalLength = path.getTotalLength()
-    const step = totalLength / (samples - 1)
+    // Guard against division by zero for a single sample
+    const step = samples > 1 ? totalLength / (samples - 1) : 0
 
     for (let i = 0; i < samples; i++) {
       const point = path.getPointAtLength(i * step)
@@ -367,6 +425,8 @@ export function createMorph(
   let currentPoints: NormalizedPoint[] = []
 
   const subscribers = new Set<(path: string) => void>()
+  // onComplete fires once per morph, even if the spring overshoots around 1
+  let completed = false
 
   // Parse initial path
   const initialCommands = parsePath(initialPath)
@@ -395,7 +455,8 @@ export function createMorph(
       }
     })
 
-    if (progress >= 0.999) {
+    if (progress >= 0.999 && !completed) {
+      completed = true
       onComplete?.()
     }
   })
@@ -421,6 +482,7 @@ export function createMorph(
       }
 
       // Reset and animate
+      completed = false
       progressSpring.jump(0)
       progressSpring.set(1)
     },
@@ -498,7 +560,7 @@ export function createMorphSequence(
   const firstPath = paths[0]!
   const morph = createMorph(firstPath, config)
 
-  return {
+  const sequence = {
     getPath: () => morph.getPath(),
     getCurrentIndex: () => currentIndex,
 
@@ -511,17 +573,21 @@ export function createMorphSequence(
       }
     },
 
+    // Use the local object instead of `this` so detached calls work
+    // (e.g. passing sequence.morphToNext directly as an event handler)
     morphToNext() {
-      this.morphToIndex((currentIndex + 1) % paths.length)
+      sequence.morphToIndex((currentIndex + 1) % paths.length)
     },
 
     morphToPrevious() {
-      this.morphToIndex((currentIndex - 1 + paths.length) % paths.length)
+      sequence.morphToIndex((currentIndex - 1 + paths.length) % paths.length)
     },
 
-    subscribe: (callback) => morph.subscribe(callback),
+    subscribe: (callback: (path: string) => void) => morph.subscribe(callback),
     destroy: () => morph.destroy(),
   }
+
+  return sequence
 }
 
 // ============ Preset Shapes ============

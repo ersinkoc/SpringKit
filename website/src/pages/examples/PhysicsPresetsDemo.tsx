@@ -4,9 +4,11 @@ import { spring } from '@oxog/springkit'
 import { DemoPageLayout } from './DemoPageLayout'
 
 const CODE = `import { useState, useRef } from 'react'
-import { spring, physicsPresets } from '@oxog/springkit'
+import { spring } from '@oxog/springkit'
 
-// Available physics presets from SpringKit
+// Hand-tuned spring configs for this demo.
+// For built-in presets see springPresets (gentle, wobbly, stiff, bounce, ...)
+// and physicsPresets (button, modalEnter, toast, jelly, ...).
 const presets = {
   // Soft & Gentle
   gentle: { stiffness: 120, damping: 14 },

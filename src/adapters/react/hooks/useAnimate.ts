@@ -2,6 +2,31 @@ import { useRef, useCallback, useEffect } from 'react'
 import { createSpringValue } from '@oxog/springkit'
 import type { SpringConfig } from '@oxog/springkit'
 
+const TRANSFORM_DEFAULTS: Record<string, number> = {
+  x: 0, y: 0, z: 0,
+  scale: 1, scaleX: 1, scaleY: 1,
+  rotate: 0, rotateX: 0, rotateY: 0, rotateZ: 0,
+}
+
+/**
+ * Starting value for a property that hasn't been animated yet: the identity
+ * for transform shorthands (scale starts at 1, not 0) and the element's
+ * computed style for everything else (e.g. its current opacity or width).
+ */
+function readInitialValue(element: HTMLElement | null, property: string): number {
+  const transformDefault = TRANSFORM_DEFAULTS[property]
+  if (transformDefault !== undefined) return transformDefault
+  if (element && typeof getComputedStyle === 'function') {
+    const computed = parseFloat(
+      getComputedStyle(element).getPropertyValue(
+        property.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)
+      )
+    )
+    if (Number.isFinite(computed)) return computed
+  }
+  return property === 'opacity' ? 1 : 0
+}
+
 /**
  * Animation target - either a CSS property object or a keyframe array
  */
@@ -101,6 +126,21 @@ export function useAnimate(): UseAnimateReturn {
   const rafIdsRef = useRef<Set<number>>(new Set())
   const timeoutIdsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
   const isDestroyedRef = useRef(false)
+  // Resolvers of pending animate() promises; settled on unmount, otherwise
+  // cancelling their RAF/timeouts would leave `await animate()` hanging forever
+  const pendingResolversRef = useRef<Set<() => void>>(new Set())
+
+  // Create a promise whose resolver is tracked for unmount
+  const trackedPromise = useCallback((executor: (done: () => void) => void) => {
+    return new Promise<void>((resolve) => {
+      const done = () => {
+        pendingResolversRef.current.delete(done)
+        resolve()
+      }
+      pendingResolversRef.current.add(done)
+      executor(done)
+    })
+  }, [])
 
   // Reset destroyed flag on mount (handles React StrictMode remount)
   useEffect(() => {
@@ -173,7 +213,7 @@ export function useAnimate(): UseAnimateReturn {
 
     try {
       if (delay > 0) {
-        await new Promise<void>((resolve) => {
+        await trackedPromise((resolve) => {
           const timeoutId = setTimeout(() => {
             timeoutIdsRef.current.delete(timeoutId)
             resolve()
@@ -197,7 +237,7 @@ export function useAnimate(): UseAnimateReturn {
 
         for (const targetValue of targetValues) {
           animationPromise = animationPromise.then(() => {
-            return new Promise<void>((resolve) => {
+            return trackedPromise((resolve) => {
               // Early exit if destroyed
               if (isDestroyedRef.current) {
                 resolve()
@@ -209,7 +249,10 @@ export function useAnimate(): UseAnimateReturn {
                 let spring = springsRef.current.get(property)
 
                 if (!spring) {
-                  spring = createSpringValue(valuesRef.current.get(property) ?? 0, config)
+                  spring = createSpringValue(
+                    valuesRef.current.get(property) ?? readInitialValue(scopeRef.current, property),
+                    config
+                  )
                   springsRef.current.set(property, spring)
 
                   const unsubscribe = spring.subscribe((v) => {
@@ -272,7 +315,7 @@ export function useAnimate(): UseAnimateReturn {
       console.error('[SpringKit] animate() error:', error)
       isAnimatingRef.current = false
     }
-  }, [applyStyles])
+  }, [applyStyles, trackedPromise])
 
   const controls: AnimationControls = {
     stop: useCallback(() => {
@@ -297,6 +340,7 @@ export function useAnimate(): UseAnimateReturn {
     const timeoutIds = timeoutIdsRef.current
     const cleanup = cleanupRef.current
     const springs = springsRef.current
+    const pendingResolvers = pendingResolversRef.current
 
     return () => {
       // Mark as destroyed to prevent further updates
@@ -316,6 +360,10 @@ export function useAnimate(): UseAnimateReturn {
       // Destroy springs to prevent memory leaks
       springs.forEach((spring) => spring.destroy())
       springs.clear()
+
+      // Settle pending animate() promises (their RAF/timeouts were cancelled)
+      Array.from(pendingResolvers).forEach((resolve) => resolve())
+      pendingResolvers.clear()
     }
   }, [])
 

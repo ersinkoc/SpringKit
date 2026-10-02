@@ -58,8 +58,8 @@ describe('Stagger Patterns', () => {
       // Center item should have smallest delay
       expect(delays[2]).toBe(0)
       // Edge items should have larger delays
-      expect(delays[0]).toBeGreaterThan(delays[2])
-      expect(delays[4]).toBeGreaterThan(delays[2])
+      expect(delays[0]).toBeGreaterThan(delays[2]!)
+      expect(delays[4]).toBeGreaterThan(delays[2]!)
     })
 
     it('should handle even count', () => {
@@ -75,8 +75,8 @@ describe('Stagger Patterns', () => {
 
       expect(delays).toHaveLength(5)
       // Edge items should have smallest delays
-      expect(delays[0]).toBeLessThan(delays[2])
-      expect(delays[4]).toBeLessThan(delays[2])
+      expect(delays[0]).toBeLessThan(delays[2]!)
+      expect(delays[4]).toBeLessThan(delays[2]!)
     })
   })
 
@@ -104,7 +104,7 @@ describe('Stagger Patterns', () => {
 
       expect(delays).toHaveLength(9)
       // Center should have smallest delay
-      expect(delays[4]).toBeLessThanOrEqual(delays[0])
+      expect(delays[4]).toBeLessThanOrEqual(delays[0]!)
     })
 
     it('should support row direction', () => {

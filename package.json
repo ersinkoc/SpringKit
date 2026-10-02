@@ -53,6 +53,16 @@
         "default": "./dist/react/index.cjs"
       }
     },
+    "./testing": {
+      "import": {
+        "types": "./dist/testing/index.d.ts",
+        "default": "./dist/testing/index.js"
+      },
+      "require": {
+        "types": "./dist/testing/index.d.cts",
+        "default": "./dist/testing/index.cjs"
+      }
+    },
     "./package.json": "./package.json"
   },
   "main": "./dist/index.cjs",
@@ -73,8 +83,8 @@
     "test:all": "npm run test && npm run test:react",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest watch",
-    "typecheck": "tsc --noEmit",
-    "lint": "eslint src",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
+    "lint": "eslint src tests",
     "lint:package": "publint --strict && attw --pack .",
     "prepublishOnly": "npm run typecheck && npm run lint && npm run build && npm run test:all"
   },
@@ -113,6 +123,9 @@
     "*": {
       "react": [
         "./dist/react/index.d.ts"
+      ],
+      "testing": [
+        "./dist/testing/index.d.ts"
       ]
     }
   }

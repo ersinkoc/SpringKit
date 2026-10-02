@@ -6,19 +6,105 @@
  */
 
 import { clamp, lerp } from '../utils/math.js'
-import { parseColor, rgbToHex } from '../utils/color.js'
+import { parseColorRGBA, rgbToHex, mixColorsRGBA, formatRGBA, type ColorSpace } from '../utils/color.js'
+import { createSpringValue } from '../core/spring-value.js'
+import type { SpringConfig } from '../core/config.js'
 
 /**
- * Simple color lerp for scroll-linked animations
+ * Smoothing option: a 0-1 factor (higher = smoother, 0 = off) or a spring config
  */
-function lerpColor(colorA: string, colorB: string, t: number): string {
-  const a = parseColor(colorA)
-  const b = parseColor(colorB)
-  return rgbToHex(
-    Math.round(lerp(a.r, b.r, t)),
-    Math.round(lerp(a.g, b.g, t)),
-    Math.round(lerp(a.b, b.b, t))
-  )
+export type ScrollSmoothing = number | SpringConfig
+
+/** Largest accepted smoothing factor (~325ms time constant) */
+const MAX_SMOOTHING_FACTOR = 0.95
+
+/**
+ * Resolve a smoothing option to a spring config, or `null` for no smoothing.
+ *
+ * A numeric factor `s` keeps the classic "move `1 - s` of the remaining
+ * distance per 60fps frame" feel, expressed as a critically damped spring
+ * with the same time constant so it runs frame-rate independently on the
+ * global animation loop. Progress is 0-1, so the rest thresholds are tighter
+ * than the spring defaults (a 1% snap would be visible on large outputs).
+ */
+function resolveSmoothing(smooth: ScrollSmoothing | undefined): SpringConfig | null {
+  const rest = { restDelta: 1e-4, restSpeed: 1e-3 }
+  if (typeof smooth === 'number') {
+    if (!Number.isFinite(smooth) || smooth <= 0) return null
+    const omega = -Math.log(Math.min(smooth, MAX_SMOOTHING_FACTOR)) * 60
+    // Scale mass so stiffness stays in a sane range for slow smoothing
+    const mass = Math.max(1, 100 / (omega * omega))
+    return { ...rest, mass, stiffness: mass * omega * omega, damping: 2 * mass * omega }
+  }
+  if (smooth && typeof smooth === 'object') return { ...rest, ...smooth }
+  return null
+}
+
+interface Smoother {
+  /** Retarget; the first call jumps straight to the target (without onChange) */
+  set(target: number): void
+  get(): number
+  destroy(): void
+}
+
+/**
+ * Spring that follows a target value on the global animation loop, so it
+ * keeps moving to the exact target after the input (scrolling) stops.
+ */
+function createSmoother(
+  smooth: ScrollSmoothing | undefined,
+  onChange: (value: number) => void
+): Smoother | null {
+  const config = resolveSmoothing(smooth)
+  if (!config) return null
+
+  const value = createSpringValue(0, config)
+  let initialized = false
+  let target = 0
+  value.subscribe((v) => {
+    if (initialized) onChange(v)
+  })
+
+  return {
+    set: (next) => {
+      if (!Number.isFinite(next)) return
+      if (!initialized) {
+        target = next
+        value.jump(next)
+        initialized = true
+        return
+      }
+      if (next === target) return
+      target = next
+      value.set(next)
+    },
+    get: () => value.get(),
+    destroy: () => value.destroy(),
+  }
+}
+
+/**
+ * Color lerp for scroll-linked animations (alpha-premultiplied).
+ * Opaque results keep the hex form, translucent ones use `rgba()` so alpha
+ * isn't dropped.
+ */
+function lerpColor(colorA: string, colorB: string, t: number, space?: ColorSpace): string {
+  const mixed = mixColorsRGBA(parseColorRGBA(colorA), parseColorRGBA(colorB), t, space)
+  return mixed.a >= 1 ? rgbToHex(mixed.r, mixed.g, mixed.b) : formatRGBA(mixed)
+}
+
+const isColorString = (value: unknown): value is string =>
+  typeof value === 'string' &&
+  (value.startsWith('#') || value.startsWith('rgb') || value.startsWith('hsl') ||
+    value.trim().toLowerCase() === 'transparent')
+
+/**
+ * Fraction (0-1) of an element's rect that is inside the viewport.
+ * Zero-height elements report 0 instead of NaN.
+ */
+function getVisibleRatio(rect: DOMRect, windowHeight: number): number {
+  if (rect.height <= 0) return 0
+  return clamp((Math.min(rect.bottom, windowHeight) - Math.max(rect.top, 0)) / rect.height, 0, 1)
 }
 
 /**
@@ -59,7 +145,10 @@ export interface ScrollTriggerConfig {
   onProgress?: (info: ScrollInfo) => void
   /** Only trigger once */
   once?: boolean
-  /** Scrub animation to scroll (true = instant, number = smoothing factor) */
+  /**
+   * Scrub animation to scroll (true = instant, number = 0-1 smoothing factor,
+   * higher = smoother; the smoothed progress keeps converging after scrolling stops)
+   */
   scrub?: boolean | number
 }
 
@@ -87,10 +176,18 @@ export interface ScrollLinkedConfig {
   outputRange: (number | string)[]
   /** Clamp output to range */
   clamp?: boolean
-  /** Use smooth interpolation */
-  smooth?: number
+  /**
+   * Smooth the scroll progress with a spring before mapping it through the
+   * ranges, so the value eases toward (and settles exactly on) the
+   * scroll-derived target, even after scrolling stops. Either a 0-1 factor
+   * (higher = smoother, 0 = off, capped at 0.95) or a spring config.
+   * Works for numeric and color outputs.
+   */
+  smooth?: ScrollSmoothing
   /** Easing function */
   easing?: (t: number) => number
+  /** Color space for color outputs (default `'srgb'`) */
+  colorSpace?: ColorSpace
 }
 
 /**
@@ -154,14 +251,19 @@ export function createScrollProgress(
   element?: HTMLElement | null,
   options: {
     offset?: ['start' | 'center' | 'end', 'start' | 'center' | 'end']
-    smooth?: number
+    /**
+     * Smoothing: 0-1 factor (higher = smoother) or spring config. The
+     * smoothed progress keeps converging after scrolling stops.
+     */
+    smooth?: ScrollSmoothing
   } = {}
 ): ScrollProgress {
   const { offset = ['start', 'end'], smooth = 0 } = options
 
   let progress = 0
-  let smoothedProgress = 0
-  let lastScrollY = 0
+  // Start from the current scroll position so the first update doesn't report
+  // a huge bogus velocity when the page is already scrolled
+  let lastScrollY = typeof window !== 'undefined' ? window.scrollY : 0
   let lastTime = performance.now()
   let velocity = 0
   let direction: -1 | 0 | 1 = 0
@@ -209,18 +311,17 @@ export function createScrollProgress(
 
       // Check if in view
       isInView = rect.top < windowHeight && rect.bottom > 0
-      visibleRatio = isInView ?
-        clamp((Math.min(rect.bottom, windowHeight) - Math.max(rect.top, 0)) / rect.height, 0, 1) : 0
+      visibleRatio = isInView ? getVisibleRatio(rect, windowHeight) : 0
     } else {
       // Track overall page scroll
       const documentHeight = document.documentElement.scrollHeight - windowHeight
       newProgress = documentHeight > 0 ? clamp(scrollY / documentHeight, 0, 1) : 0
     }
 
-    // Apply smoothing
-    if (smooth > 0) {
-      smoothedProgress = lerp(smoothedProgress, newProgress, 1 - smooth)
-      progress = smoothedProgress
+    // Apply smoothing: the spring is retargeted and reports its own progress
+    if (smoother) {
+      smoother.set(newProgress)
+      progress = smoother.get()
     } else {
       progress = newProgress
     }
@@ -245,18 +346,26 @@ export function createScrollProgress(
     })
   }
 
+  // Smoothed progress is driven by a spring on the global animation loop
+  const smoother = createSmoother(smooth, (value) => {
+    if (destroyed) return
+    progress = value
+    latestInfo = { ...latestInfo, progress: value }
+    notify(latestInfo)
+  })
+
   const onScroll = () => {
     if (rafId || destroyed) return
     rafId = requestAnimationFrame(() => {
       rafId = null
       if (destroyed) return
-      const info = calculateProgress()
-      notify(info)
+      latestInfo = calculateProgress()
+      notify(latestInfo)
     })
   }
 
-  // Initial calculation
-  const initialInfo = calculateProgress()
+  // Initial calculation - kept up to date so late subscribers get current info
+  let latestInfo = calculateProgress()
 
   window.addEventListener('scroll', onScroll, { passive: true })
   window.addEventListener('resize', onScroll, { passive: true })
@@ -266,7 +375,11 @@ export function createScrollProgress(
     getInfo: () => calculateProgress(),
     subscribe: (callback) => {
       subscribers.add(callback)
-      callback(initialInfo)
+      try {
+        callback(latestInfo)
+      } catch (e) {
+        console.error('[SpringKit] ScrollProgress subscriber error:', e)
+      }
       return () => subscribers.delete(callback)
     },
     destroy: () => {
@@ -275,6 +388,7 @@ export function createScrollProgress(
       if (rafId) cancelAnimationFrame(rafId)
       window.removeEventListener('scroll', onScroll)
       window.removeEventListener('resize', onScroll)
+      smoother?.destroy()
       subscribers.clear()
     },
   }
@@ -305,6 +419,8 @@ export function createParallax(
   let observer: IntersectionObserver | null = null
   let pendingRafId: number | null = null
   let destroyed = false
+  // The element's own inline transform, restored on destroy
+  const originalTransform = element.style.transform
 
   const update = () => {
     if (!isInView) return
@@ -370,7 +486,7 @@ export function createParallax(
 
       observer?.disconnect()
       window.removeEventListener('scroll', onScroll)
-      element.style.transform = ''
+      element.style.transform = originalTransform
     },
   }
 }
@@ -408,8 +524,24 @@ export function createScrollTrigger(
   let isActive = false
   let progress = 0
   let hasEntered = false
-  let smoothedProgress = 0
   let rafId: number | null = null
+  let destroyed = false
+  let latestInfo: ScrollInfo | null = null
+
+  // Numeric scrub: progress follows the scroll with a spring on the global
+  // animation loop and keeps reporting until it settles
+  const smoother = typeof scrub === 'number'
+    ? createSmoother(scrub, (value) => {
+      if (destroyed || !latestInfo) return
+      progress = value
+      latestInfo = { ...latestInfo, progress: value }
+      try {
+        onProgress?.(latestInfo)
+      } catch (e) {
+        console.error('[SpringKit] ScrollTrigger onProgress error:', e)
+      }
+    })
+    : null
 
   const getPosition = (pos: 'top' | 'center' | 'bottom' | number, rect: DOMRect): number => {
     if (typeof pos === 'number') return pos
@@ -427,28 +559,34 @@ export function createScrollTrigger(
     const startPos = getPosition(start, rect) + startOffset
     const endPos = getPosition(end, rect) + endOffset
 
-    // Calculate progress based on viewport position
-    const triggerStart = windowHeight
-    const triggerEnd = 0
-    const triggerRange = triggerStart - triggerEnd
+    // Progress runs from 0 when the start marker reaches the bottom of the
+    // viewport to 1 when the end marker reaches the top of the viewport.
+    // Scrolling moves both markers together, so the distance to scroll is
+    // windowHeight + (endPos - startPos).
+    const scrolled = windowHeight - startPos
+    const scrollDistance = windowHeight + (endPos - startPos)
+    const rawProgress = scrollDistance > 0
+      ? clamp(scrolled / scrollDistance, 0, 1)
+      : scrolled >= 0 ? 1 : 0
 
-    const startProgress = triggerRange !== 0 ? (triggerStart - startPos) / triggerRange : 0
-    const endProgress = triggerRange !== 0 ? (triggerStart - endPos) / triggerRange : 1
+    const isInView = rect.top < windowHeight && rect.bottom > 0
+    const visibleRatio = isInView ? getVisibleRatio(rect, windowHeight) : 0
+    latestInfo = {
+      progress: rawProgress,
+      scrollY: window.scrollY,
+      velocity: 0,
+      direction: 0,
+      isInView,
+      visibleRatio,
+    }
 
-    const progressRange = endProgress - startProgress
-    const rawProgress = progressRange !== 0
-      ? clamp((startProgress - 0) / progressRange, 0, 1)
-      : startProgress >= 0 ? 1 : 0
-
-    // Apply scrub smoothing
-    if (typeof scrub === 'number' && scrub > 0) {
-      smoothedProgress = lerp(smoothedProgress, rawProgress, 1 - scrub)
-      progress = smoothedProgress
+    // Apply scrub smoothing (the smoother reports progress while it moves)
+    if (smoother) {
+      smoother.set(rawProgress)
+      progress = smoother.get()
     } else {
       progress = rawProgress
     }
-
-    const isInView = rect.top < windowHeight && rect.bottom > 0
 
     return {
       progress,
@@ -456,14 +594,15 @@ export function createScrollTrigger(
       velocity: 0,
       direction: 0,
       isInView,
-      visibleRatio: isInView ? clamp((Math.min(rect.bottom, windowHeight) - Math.max(rect.top, 0)) / rect.height, 0, 1) : 0,
+      visibleRatio,
     }
   }
 
   const onScroll = () => {
-    if (rafId) return
+    if (rafId || destroyed) return
     rafId = requestAnimationFrame(() => {
       rafId = null
+      if (destroyed) return
       const info = calculateProgress()
 
       // Check for enter/leave
@@ -510,9 +649,12 @@ export function createScrollTrigger(
       calculateProgress()
     },
     destroy: () => {
+      destroyed = true
       if (rafId) cancelAnimationFrame(rafId)
+      rafId = null
       window.removeEventListener('scroll', onScroll)
       window.removeEventListener('resize', onScroll)
+      smoother?.destroy()
     },
   }
 }
@@ -536,15 +678,14 @@ export function createScrollLinkedValue(
   scrollProgress: ScrollProgress,
   config: ScrollLinkedConfig
 ): ScrollLinkedValue {
-  const { inputRange, outputRange, clamp: shouldClamp = true, easing } = config
+  const { inputRange, outputRange, clamp: shouldClamp = true, easing, colorSpace, smooth } = config
 
   if (inputRange.length !== outputRange.length) {
     throw new Error('inputRange and outputRange must have the same length')
   }
 
   const firstOutput = outputRange[0]
-  const isColorOutput = typeof firstOutput === 'string' &&
-    (firstOutput.startsWith('#') || firstOutput.startsWith('rgb') || firstOutput.startsWith('hsl'))
+  const isColorOutput = isColorString(firstOutput)
 
   let currentValue: number | string = firstOutput ?? 0
   const subscribers = new Set<(value: number | string) => void>()
@@ -566,7 +707,9 @@ export function createScrollLinkedValue(
         break
       }
       if (p > next) {
-        segmentIndex = i + 1
+        // Past the last stop, keep using the last segment so unclamped
+        // values extrapolate (instead of collapsing onto the last output)
+        segmentIndex = Math.min(i + 1, Math.max(inputRange.length - 2, 0))
       }
     }
 
@@ -580,26 +723,57 @@ export function createScrollLinkedValue(
     const endValue = outputRange[segmentIndex + 1] ?? startValue
 
     if (isColorOutput && typeof startValue === 'string' && typeof endValue === 'string') {
-      return lerpColor(startValue, endValue, segmentProgress)
+      return lerpColor(startValue, endValue, segmentProgress, colorSpace)
     }
 
     return lerp(startValue as number, endValue as number, segmentProgress)
   }
 
+  let destroyed = false
+
+  const update = (progress: number) => {
+    if (destroyed) return
+    currentValue = interpolate(progress)
+    subscribers.forEach(cb => {
+      try {
+        cb(currentValue)
+      } catch (e) {
+        console.error('[SpringKit] ScrollLinkedValue subscriber error:', e)
+      }
+    })
+  }
+
+  // With `smooth`, the progress follows its scroll-derived target with a
+  // spring on the global animation loop and is mapped through the ranges
+  // every frame (works for numbers and colors alike)
+  const smoother = createSmoother(smooth, update)
+
+  let hasValue = false
   const unsubscribe = scrollProgress.subscribe((info) => {
-    currentValue = interpolate(info.progress)
-    subscribers.forEach(cb => cb(currentValue))
+    if (!smoother) return update(info.progress)
+    smoother.set(info.progress)
+    // The first progress is applied immediately (no animating in from 0)
+    if (!hasValue) {
+      hasValue = true
+      update(smoother.get())
+    }
   })
 
   return {
     get: () => currentValue,
     subscribe: (callback) => {
       subscribers.add(callback)
-      callback(currentValue)
+      try {
+        callback(currentValue)
+      } catch (e) {
+        console.error('[SpringKit] ScrollLinkedValue subscriber error:', e)
+      }
       return () => subscribers.delete(callback)
     },
     destroy: () => {
+      destroyed = true
       unsubscribe()
+      smoother?.destroy()
       subscribers.clear()
     },
   }

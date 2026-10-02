@@ -52,10 +52,9 @@ class SpringGroupImpl<T extends Record<string, number>> implements SpringGroup<T
       this.values.set(key as keyof T, springValue)
     }
 
+    // Nothing is animating yet: `finished` is already settled (a pending
+    // promise here would hang forever if awaited before any set())
     this.finishedPromise = Promise.resolve()
-
-    // Initialize promise handler
-    this.resetPromise()
   }
 
   private resetPromise(): void {
@@ -80,8 +79,11 @@ class SpringGroupImpl<T extends Record<string, number>> implements SpringGroup<T
     // Guard against use after destroy
     if (this.destroyed) return
 
-    // Reset promise for new batch of animations
+    // Reset promise for new batch of animations. Capture this batch's
+    // resolver locally: a superseded batch must settle its OWN promise, not
+    // the promise of whichever batch happens to be current when it finishes.
     this.resetPromise()
+    const resolveBatch = this.resolveComplete
 
     const promises: Promise<void>[] = []
 
@@ -95,9 +97,7 @@ class SpringGroupImpl<T extends Record<string, number>> implements SpringGroup<T
 
     // Resolve when all animations complete
     Promise.all(promises).then(() => {
-      if (this.resolveComplete && !this.destroyed) {
-        this.resolveComplete()
-      }
+      resolveBatch?.()
     })
   }
 

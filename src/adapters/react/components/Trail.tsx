@@ -2,6 +2,9 @@ import * as React from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { createTrail } from '@oxog/springkit'
 import type { SpringConfig } from '@oxog/springkit'
+import { useStableSpringConfig } from '../utils/config.js'
+
+const DEFAULT_TRAIL_CONFIG: SpringConfig = {}
 
 /**
  * Trail component props
@@ -17,7 +20,10 @@ export interface TrailProps<T, V extends Record<string, number>> {
   to: V
   /** Spring configuration */
   config?: SpringConfig
-  /** Whether to reverse the trail */
+  /**
+   * Reverse the stagger order: the last item leads and the first item follows
+   * last. Items keep their order in the DOM and their index in `children`.
+   */
   reverse?: boolean
   /** Render function */
   children: (values: V, item: T, index: number) => React.ReactNode
@@ -54,40 +60,95 @@ export const Trail = <T, V extends Record<string, number>>({
   keys,
   from,
   to,
-  config = {},
+  config: configProp,
   reverse = false,
   children,
 }: TrailProps<T, V>) => {
-  const trailRef = useRef<ReturnType<typeof createTrail> | null>(null)
+  const config = useStableSpringConfig(configProp, DEFAULT_TRAIL_CONFIG)
+  // One trail per animated key
+  const trailsRef = useRef<Map<string, ReturnType<typeof createTrail>>>(new Map())
   const [values, setValues] = useState<V[]>(() =>
     items.map(() => ({ ...from }))
   )
 
-  // Initialize trail
+  // Latest from/to/reverse for use in effects
+  const fromRef = useRef(from)
+  fromRef.current = from
+  const toRef = useRef(to)
+  toRef.current = to
+  const reverseRef = useRef(reverse)
+  reverseRef.current = reverse
+
+  const valueKeysSignature = Object.keys(to).join('|')
+  const toSignature = Object.keys(to).map((key) => `${key}:${to[key]}`).join('|')
+
+  // Initialize trails (one per key, each animating from `from[key]` to `to[key]`)
   useEffect(() => {
-    const trail = createTrail(items.length, config)
+    const count = items.length
+    const fromValues = fromRef.current as Record<string, number>
+    const toValues = toRef.current as Record<string, number>
+    const keys = Object.keys(toValues)
+    const trails = new Map<string, ReturnType<typeof createTrail>>()
+    const current: Record<string, number[]> = {}
+    const unsubscribes: (() => void)[] = []
 
-    const unsubscribe = trail.subscribe((vals) => {
-      setValues(vals.map((v) => ({ ...to, x: v })))
-    })
+    const publish = () => {
+      // In reverse, the last item follows the leader first
+      const isReversed = reverseRef.current
+      setValues(
+        Array.from({ length: count }, (_, index) => {
+          const itemValues: Record<string, number> = { ...fromValues }
+          const trailIndex = isReversed ? count - 1 - index : index
+          for (const key of keys) {
+            itemValues[key] = current[key]?.[trailIndex] ?? fromValues[key] ?? toValues[key] ?? 0
+          }
+          return itemValues as V
+        })
+      )
+    }
 
-    trailRef.current = trail
+    for (const key of keys) {
+      const start = fromValues[key] ?? toValues[key] ?? 0
+      const trail = createTrail(count, config)
+      trail.jump(start)
+      current[key] = new Array<number>(count).fill(start)
+      unsubscribes.push(
+        trail.subscribe((vals) => {
+          current[key] = vals
+          publish()
+        })
+      )
+      trails.set(key, trail)
+    }
+
+    trailsRef.current = trails
 
     // Start animation
-    const firstValue = Object.values(to)[0] as number
-    trail.set(firstValue)
+    for (const key of keys) {
+      const target = toValues[key]
+      if (typeof target === 'number') trails.get(key)?.set(target)
+    }
 
     return () => {
-      unsubscribe()
-      trail.destroy()
+      unsubscribes.forEach((unsubscribe) => unsubscribe())
+      trails.forEach((trail) => trail.destroy())
+      trailsRef.current = new Map()
     }
-  }, [items.length, config.stiffness, config.damping]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [items.length, config, valueKeysSignature])
 
   // Update when to values change
+  const isFirstUpdateRef = useRef(true)
   useEffect(() => {
-    const firstValue = Object.values(to)[0] as number
-    trailRef.current?.set(firstValue)
-  }, [to])
+    if (isFirstUpdateRef.current) {
+      isFirstUpdateRef.current = false
+      return
+    }
+    const toValues = toRef.current as Record<string, number>
+    trailsRef.current.forEach((trail, key) => {
+      const target = toValues[key]
+      if (typeof target === 'number') trail.set(target)
+    })
+  }, [toSignature])
 
   return (
     <>
@@ -100,7 +161,7 @@ export const Trail = <T, V extends Record<string, number>>({
         }
         return (
           <React.Fragment key={keys(item, index)}>
-            {children(itemValues, item, reverse ? items.length - 1 - index : index)}
+            {children(itemValues, item, index)}
           </React.Fragment>
         )
       })}

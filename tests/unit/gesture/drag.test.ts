@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createDragSpring } from '@oxog/springkit'
+import { installTestClock, type TestClock } from '../../../src/testing'
 
 describe('createDragSpring', () => {
   let element: HTMLElement
@@ -120,7 +121,7 @@ describe('createDragSpring', () => {
   describe('callbacks', () => {
     it('should call onDragStart callback', () => {
       const onDragStart = vi.fn()
-      const drag = createDragSpring(element, { onDragStart })
+      const _drag = createDragSpring(element, { onDragStart })
 
       // Trigger pointerdown to actually call onDragStart
       const pointerDownEvent = new PointerEvent('pointerdown', {
@@ -376,7 +377,7 @@ describe('createDragSpring', () => {
   describe('pointer events', () => {
     it('should handle pointerup event (lines 201-214)', () => {
       const onDragEnd = vi.fn()
-      const drag = createDragSpring(element, { onDragEnd })
+      const _drag = createDragSpring(element, { onDragEnd })
 
       // Start a drag
       const pointerDownEvent = new PointerEvent('pointerdown', {
@@ -579,7 +580,7 @@ describe('createDragSpring', () => {
 
     it('should handle pointercancel event (lines 201-214)', () => {
       const onDragEnd = vi.fn()
-      const drag = createDragSpring(element, { onDragEnd })
+      const _drag = createDragSpring(element, { onDragEnd })
 
       // Start a drag
       const pointerDownEvent = new PointerEvent('pointerdown', {
@@ -606,7 +607,7 @@ describe('createDragSpring', () => {
 
     it('should ignore non-primary mouse button (line 119)', () => {
       const onDragStart = vi.fn()
-      const drag = createDragSpring(element, { onDragStart })
+      const _drag = createDragSpring(element, { onDragStart })
 
       // Right click (button 2)
       const pointerDownEvent = new PointerEvent('pointerdown', {
@@ -1796,5 +1797,308 @@ describe('createDragSpring', () => {
       document.body.appendChild(element)
       drag.destroy()
     })
+  })
+})
+
+describe('createDragSpring regressions', () => {
+  let element: HTMLElement
+
+  const pointer = (type: string, pointerId: number, clientX: number, clientY: number) =>
+    new PointerEvent(type, { bubbles: true, cancelable: true, pointerId, button: 0, clientX, clientY })
+
+  beforeEach(() => {
+    element = document.createElement('div')
+    document.body.appendChild(element)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    element.remove()
+  })
+
+  it('ignores a second pointer (multi-touch) during an active drag', () => {
+    const drag = createDragSpring(element)
+
+    element.dispatchEvent(pointer('pointerdown', 1, 100, 100))
+    element.dispatchEvent(pointer('pointermove', 1, 150, 100))
+    expect(drag.getPosition().x).toBe(50)
+
+    // Second finger touches down elsewhere and moves - must not hijack the drag
+    element.dispatchEvent(pointer('pointerdown', 2, 400, 400))
+    element.dispatchEvent(pointer('pointermove', 2, 500, 500))
+    expect(drag.getPosition()).toEqual({ x: 50, y: 0 })
+
+    // Second finger lifting must not end the drag
+    element.dispatchEvent(pointer('pointerup', 2, 500, 500))
+    expect(drag.isDragging()).toBe(true)
+
+    element.dispatchEvent(pointer('pointermove', 1, 160, 100))
+    expect(drag.getPosition()).toEqual({ x: 60, y: 0 })
+    drag.destroy()
+  })
+
+  it('keeps the locked axis at its current value instead of resetting it to 0', () => {
+    const drag = createDragSpring(element, { axis: 'x' })
+    drag.setPosition(0, 40)
+
+    element.dispatchEvent(pointer('pointerdown', 1, 100, 100))
+    element.dispatchEvent(pointer('pointermove', 1, 130, 160))
+
+    expect(drag.getPosition()).toEqual({ x: 30, y: 40 })
+    drag.destroy()
+  })
+
+  it('supports constraints.lockAxis during drag', () => {
+    const drag = createDragSpring(element, { constraints: { lockAxis: 'y' } })
+
+    element.dispatchEvent(pointer('pointerdown', 1, 100, 100))
+    element.dispatchEvent(pointer('pointermove', 1, 130, 160))
+
+    expect(drag.getPosition()).toEqual({ x: 0, y: 60 })
+    drag.destroy()
+  })
+
+  it('applies constraints.bounds while dragging, not only on release', () => {
+    const drag = createDragSpring(element, { constraints: { bounds: { left: 0, right: 100 } } })
+
+    element.dispatchEvent(pointer('pointerdown', 1, 0, 0))
+    element.dispatchEvent(pointer('pointermove', 1, 300, 0))
+
+    expect(drag.getPosition().x).toBe(100)
+    drag.destroy()
+  })
+
+  it('starts the snap animation from the released position, not the stale spring value', () => {
+    const updates: number[] = []
+    const drag = createDragSpring(element, {
+      snap: { points: [{ x: 120, y: 0, radius: 50 }], velocityThreshold: Infinity },
+      onUpdate: (x) => updates.push(x),
+    })
+
+    element.dispatchEvent(pointer('pointerdown', 1, 0, 0))
+    element.dispatchEvent(pointer('pointermove', 1, 100, 0))
+    updates.length = 0
+    element.dispatchEvent(pointer('pointerup', 1, 100, 0))
+
+    // No update may jump back towards the pre-drag spring value (0)
+    expect(updates.every((x) => x >= 100)).toBe(true)
+    expect(drag.getPosition().x).toBeGreaterThanOrEqual(100)
+    drag.destroy()
+  })
+
+  it('animateTo after a drag starts from the dragged position', async () => {
+    const updates: number[] = []
+    const drag = createDragSpring(element, { momentum: false, onUpdate: (x) => updates.push(x) })
+
+    element.dispatchEvent(pointer('pointerdown', 1, 0, 0))
+    element.dispatchEvent(pointer('pointermove', 1, 100, 0))
+    element.dispatchEvent(pointer('pointerup', 1, 100, 0))
+
+    updates.length = 0
+    drag.animateTo(200, 0)
+    await new Promise(resolve => setTimeout(resolve, 100))
+
+    expect(updates.length).toBeGreaterThan(0)
+    expect(updates.every((x) => x >= 100)).toBe(true)
+    drag.destroy()
+  })
+
+  it('discards stale velocity when the pointer was held still before release', () => {
+    let now = 1000
+    vi.spyOn(performance, 'now').mockImplementation(() => now)
+    const onDragEnd = vi.fn()
+    const drag = createDragSpring(element, { onDragEnd })
+
+    element.dispatchEvent(pointer('pointerdown', 1, 0, 0))
+    now += 16
+    element.dispatchEvent(pointer('pointermove', 1, 100, 0))
+    // User holds still for half a second, then releases
+    now += 500
+    element.dispatchEvent(pointer('pointerup', 1, 100, 0))
+
+    expect(onDragEnd).toHaveBeenCalledWith(100, 0, { x: 0, y: 0 })
+    drag.destroy()
+  })
+
+  it('stops moving the element after disable() is called mid-drag', () => {
+    const drag = createDragSpring(element)
+
+    element.dispatchEvent(pointer('pointerdown', 1, 0, 0))
+    element.dispatchEvent(pointer('pointermove', 1, 50, 0))
+    drag.disable()
+    element.dispatchEvent(pointer('pointermove', 1, 200, 0))
+
+    expect(drag.getPosition().x).toBe(50)
+    expect(element.hasPointerCapture(1)).toBe(false)
+    drag.destroy()
+  })
+
+  it('releases pointer capture when destroyed mid-drag', () => {
+    const drag = createDragSpring(element)
+    element.dispatchEvent(pointer('pointerdown', 1, 0, 0))
+    expect(element.hasPointerCapture(1)).toBe(true)
+
+    drag.destroy()
+    expect(element.hasPointerCapture(1)).toBe(false)
+  })
+
+  it('does not produce NaN when snapping to a grid with a zero cell size', () => {
+    const onSnapStart = vi.fn()
+    const drag = createDragSpring(element, { snap: { grid: { x: 0, y: 20 } }, onSnapStart })
+
+    element.dispatchEvent(pointer('pointerdown', 1, 0, 0))
+    element.dispatchEvent(pointer('pointermove', 1, 33, 33))
+    element.dispatchEvent(pointer('pointerup', 1, 33, 33))
+
+    expect(onSnapStart).toHaveBeenCalledWith({ x: 33, y: 40 })
+    drag.destroy()
+  })
+})
+
+describe('createDragSpring constraints and options', () => {
+  let clock: TestClock
+  const roots: HTMLElement[] = []
+
+  beforeEach(() => {
+    clock = installTestClock()
+  })
+
+  afterEach(() => {
+    clock.uninstall()
+    roots.splice(0).forEach((el) => el.remove())
+  })
+
+  const rect = (left: number, top: number, width: number, height: number) =>
+    ({ left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}) }) as DOMRect
+
+  const pointer = (type: string, clientX: number, clientY: number) =>
+    new PointerEvent(type, { pointerId: 1, button: 0, clientX, clientY, bubbles: true })
+
+  /**
+   * Parent at (100, 100) 500x400 with the child laid out at (+200, +50),
+   * 100x100. The child's rect follows its drag position like a translate().
+   */
+  const setup = (config: Parameters<typeof createDragSpring>[1]) => {
+    const parent = document.createElement('div')
+    const child = document.createElement('div')
+    parent.appendChild(child)
+    document.body.appendChild(parent)
+    roots.push(parent)
+    parent.getBoundingClientRect = () => rect(100, 100, 500, 400)
+    const drag = createDragSpring(child, config)
+    child.getBoundingClientRect = () => {
+      const { x, y } = drag.getPosition()
+      return rect(300 + x, 150 + y, 100, 100)
+    }
+    return { parent, child, drag }
+  }
+
+  it('constrainToParent uses the element\'s actual offset inside the parent', () => {
+    const { child, drag } = setup({ constraints: { constrainToParent: true } })
+
+    child.dispatchEvent(pointer('pointerdown', 0, 0))
+    child.dispatchEvent(pointer('pointermove', 1000, 1000))
+    // Right edge: 500 - 100 - 200 = 200, bottom: 400 - 100 - 50 = 250
+    expect(drag.getPosition()).toEqual({ x: 200, y: 250 })
+
+    child.dispatchEvent(pointer('pointermove', -1000, -1000))
+    // Left edge of the parent is 200px to the left, top edge 50px up
+    expect(drag.getPosition()).toEqual({ x: -200, y: -50 })
+    child.dispatchEvent(pointer('pointerup', -1000, -1000))
+    drag.destroy()
+  })
+
+  it('constrainToParent bounds do not depend on the current drag position', () => {
+    const { child, drag } = setup({ constraints: { constrainToParent: true, constraintPadding: 10 } })
+    drag.setPosition(120, 30)
+
+    child.dispatchEvent(pointer('pointerdown', 0, 0))
+    child.dispatchEvent(pointer('pointermove', 1000, 1000))
+    expect(drag.getPosition()).toEqual({ x: 190, y: 240 })
+    child.dispatchEvent(pointer('pointermove', -1000, -1000))
+    expect(drag.getPosition()).toEqual({ x: -190, y: -40 })
+    child.dispatchEvent(pointer('pointerup', -1000, -1000))
+    drag.destroy()
+  })
+
+  it('constrainToElement is relative to the element\'s layout position', () => {
+    const constraint = document.createElement('div')
+    document.body.appendChild(constraint)
+    roots.push(constraint)
+    constraint.getBoundingClientRect = () => rect(0, 0, 800, 600)
+    const { child, drag } = setup({ constraints: { constrainToElement: constraint } })
+
+    child.dispatchEvent(pointer('pointerdown', 0, 0))
+    child.dispatchEvent(pointer('pointermove', 2000, 2000))
+    // Child layout box at (300, 150): may move 800 - 100 - 300 right, 600 - 100 - 150 down
+    expect(drag.getPosition()).toEqual({ x: 400, y: 350 })
+    child.dispatchEvent(pointer('pointermove', -2000, -2000))
+    expect(drag.getPosition()).toEqual({ x: -300, y: -150 })
+    child.dispatchEvent(pointer('pointerup', -2000, -2000))
+    drag.destroy()
+  })
+
+  it('lockToDiagonal projects movement onto the nearest 45° diagonal', () => {
+    const element = document.createElement('div')
+    document.body.appendChild(element)
+    roots.push(element)
+    const drag = createDragSpring(element, { constraints: { lockToDiagonal: true } })
+
+    element.dispatchEvent(pointer('pointerdown', 0, 0))
+    element.dispatchEvent(pointer('pointermove', 100, 20))
+    expect(drag.getPosition()).toEqual({ x: 60, y: 60 })
+
+    element.dispatchEvent(pointer('pointermove', -50, 30))
+    expect(drag.getPosition()).toEqual({ x: -40, y: 40 })
+    element.dispatchEvent(pointer('pointerup', -50, 30))
+    drag.destroy()
+  })
+
+  it('lockToDiagonal keeps release momentum on the diagonal', () => {
+    const element = document.createElement('div')
+    document.body.appendChild(element)
+    roots.push(element)
+    const drag = createDragSpring(element, { constraints: { lockToDiagonal: true } })
+
+    drag.release(10, 0)
+    clock.runAll()
+    const { x, y } = drag.getPosition()
+    expect(x).not.toBeCloseTo(0)
+    expect(Math.abs(x)).toBeCloseTo(Math.abs(y), 3)
+    drag.destroy()
+  })
+
+  const minXAfterRelease = (elasticBounce: number | undefined) => {
+    const element = document.createElement('div')
+    document.body.appendChild(element)
+    roots.push(element)
+    let minX = Infinity
+    const drag = createDragSpring(element, {
+      bounds: { right: 100 },
+      momentum: false,
+      ...(elasticBounce === undefined ? {} : { elasticBounce }),
+      onUpdate: (x) => { minX = Math.min(minX, x) },
+    })
+    drag.setPosition(200, 0)
+    minX = Infinity
+    drag.release(0, 0)
+    clock.runAll()
+    expect(drag.getPosition().x).toBeCloseTo(100, 1)
+    drag.destroy()
+    return minX
+  }
+
+  it('elasticBounce controls the bounce off a bound', () => {
+    const noBounce = minXAfterRelease(0)
+    const bouncy = minXAfterRelease(0.9)
+    const unset = minXAfterRelease(undefined)
+
+    // 0: critically damped, never overshoots the bound
+    expect(noBounce).toBeGreaterThan(99.9)
+    // 0.9: clearly bounces back past the bound
+    expect(bouncy).toBeLessThan(70)
+    // Unset: regular spring damping (slight overshoot), in between
+    expect(unset).toBeLessThan(noBounce)
+    expect(unset).toBeGreaterThan(bouncy)
   })
 })

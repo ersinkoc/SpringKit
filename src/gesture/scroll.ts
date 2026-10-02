@@ -80,6 +80,11 @@ const defaultScrollConfig: Required<
   clamp: false,
 }
 
+/** Pixels per line for WheelEvent.DOM_DELTA_LINE */
+const LINE_HEIGHT_PX = 16
+/** Pixels per page for WheelEvent.DOM_DELTA_PAGE when the container has no height */
+const PAGE_HEIGHT_FALLBACK_PX = 800
+
 /**
  * Scroll spring implementation
  */
@@ -139,9 +144,15 @@ class ScrollSpringImpl implements ScrollSpring {
       this.config.onScrollStart?.()
     }
 
+    // Normalize delta to pixels (Firefox and some mice report lines or pages)
+    const deltaScale =
+      e.deltaMode === 1 ? LINE_HEIGHT_PX
+        : e.deltaMode === 2 ? (this.container.clientHeight || PAGE_HEIGHT_FALLBACK_PX)
+          : 1
+
     // Apply direction filter
-    let deltaX = e.deltaX
-    let deltaY = e.deltaY
+    let deltaX = e.deltaX * deltaScale
+    let deltaY = e.deltaY * deltaScale
 
     if (this.config.direction === 'horizontal') {
       deltaY = 0
@@ -192,6 +203,13 @@ class ScrollSpringImpl implements ScrollSpring {
     this.springX.set(this.target.x)
     this.springY.set(this.target.y)
 
+    // Only one end-check loop may run at a time - every wheel event used to
+    // start an additional, untracked RAF chain
+    if (this.pendingRafId !== null) {
+      cancelAnimationFrame(this.pendingRafId)
+      this.pendingRafId = null
+    }
+
     // Check for scroll end
     const checkEnd = () => {
       this.pendingRafId = null
@@ -204,6 +222,14 @@ class ScrollSpringImpl implements ScrollSpring {
         !this.springX.isAnimating() &&
         !this.springY.isAnimating()
 
+      // Once the overscroll has settled, bounce back to the nearest edge
+      if (settled && this.isScrolling && this.config.bounce && this.clampTargetToBounds()) {
+        this.springX.set(this.target.x)
+        this.springY.set(this.target.y)
+        this.pendingRafId = requestAnimationFrame(checkEnd)
+        return
+      }
+
       if (settled && this.isScrolling) {
         this.isScrolling = false
         this.config.onScrollEnd?.()
@@ -213,6 +239,20 @@ class ScrollSpringImpl implements ScrollSpring {
     }
 
     checkEnd()
+  }
+
+  /**
+   * Clamp the scroll target into the scrollable range.
+   * @returns true if the target was outside the range
+   */
+  private clampTargetToBounds(): boolean {
+    const maxScrollX = Math.max(0, this.container.scrollWidth - this.container.clientWidth)
+    const maxScrollY = Math.max(0, this.container.scrollHeight - this.container.clientHeight)
+    const x = Math.max(0, Math.min(this.target.x, maxScrollX))
+    const y = Math.max(0, Math.min(this.target.y, maxScrollY))
+    const changed = x !== this.target.x || y !== this.target.y
+    this.target = { x, y }
+    return changed
   }
 
   getScroll(): { x: number; y: number } {

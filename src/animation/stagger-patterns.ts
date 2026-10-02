@@ -231,6 +231,16 @@ export function gridStagger(config: GridStaggerConfig): number[] {
   const rows = Math.ceil(count / columns)
   const delays: number[] = []
 
+  // The farthest cell from the origin depends on the origin (e.g. for
+  // 'center' it's a corner, for 'top-right' it's bottom-left), so measure it
+  // rather than assuming it's a fixed index.
+  let maxRadialDistance = 0
+  if (direction === 'radial') {
+    for (let i = 0; i < count; i++) {
+      maxRadialDistance = Math.max(maxRadialDistance, gridDistance(i, columns, rows, origin))
+    }
+  }
+
   for (let i = 0; i < count; i++) {
     const col = i % columns
     const row = Math.floor(i / columns)
@@ -248,22 +258,18 @@ export function gridStagger(config: GridStaggerConfig): number[] {
         t = col / Math.max(columns - 1, 1)
         break
 
-      case 'diagonal':
-        // Diagonal wave
-        t = (col + row) / (columns + rows - 2)
+      case 'diagonal': {
+        // Diagonal wave (guard against 0/0 for a single cell)
+        const diagonalSpan = columns + rows - 2
+        t = diagonalSpan > 0 ? (col + row) / diagonalSpan : 0
         break
+      }
 
       case 'radial':
       default: {
-        // Distance from origin
-        const maxDistance = gridDistance(
-          origin === 'center' ? 0 : count - 1,
-          columns,
-          rows,
-          origin === 'center' ? 'top-left' : origin
-        )
+        // Distance from origin, normalised by the farthest existing cell
         const distance = gridDistance(i, columns, rows, origin)
-        t = maxDistance > 0 ? distance / maxDistance : 0
+        t = maxRadialDistance > 0 ? distance / maxRadialDistance : 0
         break
       }
     }
@@ -355,6 +361,12 @@ export function spiralStagger(config: SpiralStaggerConfig): number[] {
   const rows = Math.ceil(count / columns)
   const spiral: number[] = []
   const visited = new Set<string>()
+  // Counter-clockwise is the horizontal mirror of the clockwise spiral
+  // (start top-right, go left). Reversing the order instead would turn it
+  // into a center-out spiral and cancel out startFrom: 'center'.
+  const mirror = direction === 'counter-clockwise'
+  const cellIndex = (row: number, col: number) =>
+    row * columns + (mirror ? columns - 1 - col : col)
 
   let top = 0
   let bottom = rows - 1
@@ -365,7 +377,7 @@ export function spiralStagger(config: SpiralStaggerConfig): number[] {
   while (top <= bottom && left <= right) {
     // Top row
     for (let col = left; col <= right; col++) {
-      const idx = top * columns + col
+      const idx = cellIndex(top, col)
       if (idx < count && !visited.has(`${top},${col}`)) {
         spiral.push(idx)
         visited.add(`${top},${col}`)
@@ -375,7 +387,7 @@ export function spiralStagger(config: SpiralStaggerConfig): number[] {
 
     // Right column
     for (let row = top; row <= bottom; row++) {
-      const idx = row * columns + right
+      const idx = cellIndex(row, right)
       if (idx < count && !visited.has(`${row},${right}`)) {
         spiral.push(idx)
         visited.add(`${row},${right}`)
@@ -386,7 +398,7 @@ export function spiralStagger(config: SpiralStaggerConfig): number[] {
     // Bottom row
     if (top <= bottom) {
       for (let col = right; col >= left; col--) {
-        const idx = bottom * columns + col
+        const idx = cellIndex(bottom, col)
         if (idx < count && !visited.has(`${bottom},${col}`)) {
           spiral.push(idx)
           visited.add(`${bottom},${col}`)
@@ -398,7 +410,7 @@ export function spiralStagger(config: SpiralStaggerConfig): number[] {
     // Left column
     if (left <= right) {
       for (let row = bottom; row >= top; row--) {
-        const idx = row * columns + left
+        const idx = cellIndex(row, left)
         if (idx < count && !visited.has(`${row},${left}`)) {
           spiral.push(idx)
           visited.add(`${row},${left}`)
@@ -408,11 +420,8 @@ export function spiralStagger(config: SpiralStaggerConfig): number[] {
     }
   }
 
-  // Reverse for center start or counter-clockwise
+  // Reverse for center start
   if (startFrom === 'center') {
-    spiral.reverse()
-  }
-  if (direction === 'counter-clockwise') {
     spiral.reverse()
   }
 

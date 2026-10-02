@@ -142,7 +142,7 @@ anim.start()`} />
       {/* Physics Presets Section */}
       <DocSection title="Physics Presets (v1.3.0)" icon={Gauge}>
         <p className="text-muted-foreground mb-6">
-          40+ semantic, use-case oriented spring configurations. Instead of tuning stiffness and damping manually,
+          38 semantic, use-case oriented spring configurations. Instead of tuning stiffness and damping manually,
           use presets that describe the behavior you want.
         </p>
 

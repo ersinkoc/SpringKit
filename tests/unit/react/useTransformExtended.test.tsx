@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { renderHook, act, waitFor } from '@testing-library/react'
-import React from 'react'
+import { renderHook, act } from '@testing-library/react'
 import {
   useMotionValue,
   useMotionTemplate,
@@ -27,9 +26,7 @@ afterEach(() => {
 
 // Helper to run animation frames
 function runAnimationFrames(count: number) {
-  let timestamp = 0
   for (let i = 0; i < count; i++) {
-    timestamp += 16
     vi.advanceTimersByTime(16)
   }
 }

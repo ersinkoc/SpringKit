@@ -35,7 +35,6 @@ class TrailImpl implements Trail {
   private followDelay: number
   private subscribers = new Set<(values: number[]) => void>()
   private frameCount: number = 0
-  private pendingUpdates: Map<number, number> = new Map()
   // Track timeout IDs for cleanup to prevent memory leaks
   private pendingTimeouts: Set<ReturnType<typeof setTimeout>> = new Set()
   private destroyed = false
@@ -69,9 +68,6 @@ class TrailImpl implements Trail {
       const delayFrames = (i + 1) * this.followDelay
       const targetFrame = this.frameCount + delayFrames
 
-      // Store the pending update
-      this.pendingUpdates.set(i, targetFrame)
-
       // Schedule the update
       this.scheduleFollowerUpdate(i, targetValue, targetFrame, delayFrames)
     }
@@ -97,12 +93,12 @@ class TrailImpl implements Trail {
         // Remove from pending set
         this.pendingTimeouts.delete(timeoutId)
 
-        // Skip if destroyed or not the current pending update
+        // Skip if destroyed
         if (this.destroyed) return
-        const currentTarget = this.pendingUpdates.get(index)
-        if (currentTarget === targetFrame) {
-          this.springs[index]!.set(targetValue)
-        }
+        // Apply every delayed leader sample in order. (Only applying the
+        // latest-scheduled one meant followers never moved while the leader
+        // kept updating each frame, and only caught up after it stopped.)
+        this.springs[index]!.set(targetValue)
       }, delayMs)
 
       // Track timeout for cleanup
@@ -115,6 +111,9 @@ class TrailImpl implements Trail {
   }
 
   jump(value: number): void {
+    // Drop delayed follower updates scheduled before the jump, otherwise they
+    // would pull followers back toward stale values afterwards
+    this.clearPendingTimeouts()
     this.leader.jump(value)
     for (const spring of this.springs) {
       spring.jump(value)
@@ -128,18 +127,22 @@ class TrailImpl implements Trail {
   subscribe(callback: (values: number[]) => void): () => void {
     this.subscribers.add(callback)
 
-    // Subscribe to each follower spring
+    // Subscribe to each follower spring. Each subscription only notifies
+    // THIS callback (notifying all subscribers here would multiply calls by
+    // the number of subscribers), and the synchronous initial invocation
+    // that SpringValue.subscribe performs is skipped.
+    let initialized = false
+    const handler = () => {
+      if (initialized) this.safeNotify(callback)
+    }
     const unsubscribers: (() => void)[] = []
     for (const spring of this.springs) {
-      unsubscribers.push(
-        spring.subscribe(() => {
-          this.notify()
-        })
-      )
+      unsubscribers.push(spring.subscribe(handler))
     }
+    initialized = true
 
-    // Immediately call with current values
-    callback(this.getValues())
+    // Immediately call with current values (once)
+    this.safeNotify(callback)
 
     // Return unsubscribe function
     return () => {
@@ -150,28 +153,32 @@ class TrailImpl implements Trail {
     }
   }
 
-  private notify(): void {
-    const values = this.getValues()
-    for (const subscriber of this.subscribers) {
-      subscriber(values)
+  private safeNotify(callback: (values: number[]) => void): void {
+    try {
+      callback(this.getValues())
+    } catch (e) {
+      console.error('[SpringKit] Trail subscriber error:', e)
     }
+  }
+
+  private clearPendingTimeouts(): void {
+    for (const timeoutId of this.pendingTimeouts) {
+      clearTimeout(timeoutId)
+    }
+    this.pendingTimeouts.clear()
   }
 
   destroy(): void {
     this.destroyed = true
 
     // Clear all pending timeouts to prevent memory leaks
-    for (const timeoutId of this.pendingTimeouts) {
-      clearTimeout(timeoutId)
-    }
-    this.pendingTimeouts.clear()
+    this.clearPendingTimeouts()
 
     this.leader.destroy()
     for (const spring of this.springs) {
       spring.destroy()
     }
     this.subscribers.clear()
-    this.pendingUpdates.clear()
   }
 }
 

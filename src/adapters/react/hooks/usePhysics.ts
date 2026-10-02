@@ -9,6 +9,8 @@ import { useRef, useEffect, useCallback, useState } from 'react'
 import { createMotionValue, MotionValue } from '@oxog/springkit'
 import { createSpringValue } from '@oxog/springkit'
 import type { SpringConfig } from '@oxog/springkit'
+import { useDestroyOnUnmount } from './useDestroyOnUnmount.js'
+import { useElementEffect } from './useElementEffect.js'
 
 // ============ useSpringState ============
 
@@ -57,6 +59,9 @@ export function useSpringState(
   const [state, setState] = useState(initial)
   const springRef = useRef<ReturnType<typeof createSpringValue> | null>(null)
   const motionValueRef = useRef<MotionValue<number> | null>(null)
+  // Always call the latest onChange (avoid stale closure from first render)
+  const onChangeRef = useRef(onChange)
+  onChangeRef.current = onChange
 
   // Initialize spring
   // Recreate if destroyed (happens with React StrictMode double-mount)
@@ -65,7 +70,7 @@ export function useSpringState(
       ...springConfig,
       onUpdate: (value) => {
         setState(value)
-        onChange?.(value)
+        onChangeRef.current?.(value)
       },
     })
   }
@@ -85,12 +90,11 @@ export function useSpringState(
   }, [])
 
   // Cleanup: destroy spring to prevent memory leaks
-  useEffect(() => {
-    return () => {
-      springRef.current?.destroy()
-      springRef.current = null
-    }
-  }, [])
+  // (deferred so StrictMode's simulated remount keeps the same live spring)
+  useDestroyOnUnmount(() => {
+    springRef.current?.destroy()
+    springRef.current = null
+  })
 
   const setValue = useCallback((value: number) => {
     springRef.current?.set(value)
@@ -146,6 +150,10 @@ export function useMomentum(options: UseMomentumOptions = {}) {
   const velocityRef = useRef<MotionValue<number> | null>(null)
   const frameRef = useRef<number | null>(null)
   const isActiveRef = useRef(false)
+  // The running frame loop reads the latest options (and onRest) from here,
+  // not the ones captured when push() started it
+  const optionsRef = useRef({ friction, minVelocity, bounds, onRest })
+  optionsRef.current = { friction, minVelocity, bounds, onRest }
 
   // Recreate if destroyed (happens with React StrictMode double-mount)
   if (valueRef.current === null || valueRef.current.isDestroyed()) {
@@ -156,15 +164,17 @@ export function useMomentum(options: UseMomentumOptions = {}) {
   }
 
   const applyBounds = useCallback((val: number) => {
+    const { bounds } = optionsRef.current
     if (!bounds) return val
     let result = val
     if (bounds.min !== undefined) result = Math.max(bounds.min, result)
     if (bounds.max !== undefined) result = Math.min(bounds.max, result)
     return result
-  }, [bounds])
+  }, [])
 
   const tick = useCallback(() => {
     if (!isActiveRef.current) return
+    const { friction, minVelocity, bounds, onRest } = optionsRef.current
 
     const currentVelocity = velocityRef.current?.get() ?? 0
     const currentValue = valueRef.current?.get() ?? 0
@@ -199,7 +209,7 @@ export function useMomentum(options: UseMomentumOptions = {}) {
     }
 
     frameRef.current = requestAnimationFrame(tick)
-  }, [friction, minVelocity, bounds, applyBounds, onRest])
+  }, [applyBounds])
 
   const push = useCallback((velocity: number) => {
     // Validate velocity
@@ -405,9 +415,14 @@ export function useBounce(options: UseBounceOptions = {}) {
   const velocityRef = useRef(0)
   const frameRef = useRef<number | null>(null)
   const isActiveRef = useRef(false)
+  // The running frame loop reads the latest options from here, not the ones
+  // captured when drop()/bounce() started it
+  const optionsRef = useRef({ dampening, gravity, floor, ceiling, restitution })
+  optionsRef.current = { dampening, gravity, floor, ceiling, restitution }
 
   const tick = useCallback(() => {
     if (!isActiveRef.current) return
+    const { dampening, gravity, floor, ceiling, restitution } = optionsRef.current
 
     const currentValue = motionValue.get()
 
@@ -442,7 +457,7 @@ export function useBounce(options: UseBounceOptions = {}) {
 
     motionValue.jump(newValue)
     frameRef.current = requestAnimationFrame(tick)
-  }, [motionValue, gravity, dampening, floor, ceiling, restitution])
+  }, [motionValue])
 
   const drop = useCallback((fromY: number = ceiling, initialVelocity: number = 0) => {
     // Validate inputs
@@ -562,9 +577,14 @@ export function useGravity(options: UseGravityOptions = {}) {
   const velocityRef = useRef({ x: 0, y: 0 })
   const frameRef = useRef<number | null>(null)
   const isActiveRef = useRef(false)
+  // The running frame loop reads the latest options from here, not the ones
+  // captured when launch()/start() started it
+  const optionsRef = useRef({ gravity, drag, bounds, bounciness })
+  optionsRef.current = { gravity, drag, bounds, bounciness }
 
   const tick = useCallback(() => {
     if (!isActiveRef.current) return
+    const { gravity, drag, bounds, bounciness } = optionsRef.current
 
     const currentX = xMotion.get()
     const currentY = yMotion.get()
@@ -621,7 +641,7 @@ export function useGravity(options: UseGravityOptions = {}) {
     } else {
       isActiveRef.current = false
     }
-  }, [xMotion, yMotion, gravity, drag, bounds, bounciness])
+  }, [xMotion, yMotion])
 
   const launch = useCallback((velocity: { x: number; y: number }) => {
     // Validate velocities
@@ -739,9 +759,12 @@ export function useChain(
     allKeys.forEach((key) => {
       // Recreate if destroyed (happens with React StrictMode double-mount)
       if (!valuesRef.current[key] || valuesRef.current[key].isDestroyed()) {
-        const initial = initialValues[key] ?? 0
-        valuesRef.current[key] = createMotionValue(initial)
-        springsRef.current[key] = createSpringValue(initial, {
+        valuesRef.current[key] = createMotionValue(initialValues[key] ?? 0)
+      }
+      // The springs are destroyed by this effect's cleanup, so they must be
+      // recreated when StrictMode re-runs the effect (the MotionValues survive)
+      if (!springsRef.current[key] || springsRef.current[key].isDestroyed()) {
+        springsRef.current[key] = createSpringValue(valuesRef.current[key].get(), {
           onUpdate: (v) => valuesRef.current[key]?.jump(v),
         })
       }
@@ -901,15 +924,18 @@ export function usePointer(options: UsePointerOptions = {}) {
   if (xRef.current === null || xRef.current.isDestroyed()) xRef.current = createMotionValue(0)
   if (yRef.current === null || yRef.current.isDestroyed()) yRef.current = createMotionValue(0)
 
-  useEffect(() => {
-    const element = target?.current ?? window
+  // Re-attaches when the target element changes - including a target that
+  // mounts after the hook first ran (conditional rendering)
+  useElementEffect(() => {
+    const targetElement = target?.current ?? null
+    const element = targetElement ?? window
 
     const handleMove = (e: MouseEvent | PointerEvent) => {
       let newX: number
       let newY: number
 
-      if (target?.current) {
-        const rect = target.current.getBoundingClientRect()
+      if (targetElement) {
+        const rect = targetElement.getBoundingClientRect()
         newX = e.clientX - rect.left
         newY = e.clientY - rect.top
       } else {
@@ -943,20 +969,17 @@ export function usePointer(options: UsePointerOptions = {}) {
       frameRef.current = requestAnimationFrame(smoothLoop)
     }
 
-    if (hoverOnly && target?.current) {
-      target.current.addEventListener('pointermove', handleMove as EventListener)
-      target.current.addEventListener('pointerenter', handleEnter)
-      target.current.addEventListener('pointerleave', handleLeave)
+    if (hoverOnly && targetElement) {
+      targetElement.addEventListener('pointermove', handleMove as EventListener)
+      targetElement.addEventListener('pointerenter', handleEnter)
+      targetElement.addEventListener('pointerleave', handleLeave)
     } else {
       (element as Window | HTMLElement).addEventListener('pointermove', handleMove as EventListener)
-      if (target?.current) {
-        target.current.addEventListener('pointerenter', handleEnter)
-        target.current.addEventListener('pointerleave', handleLeave)
+      if (targetElement) {
+        targetElement.addEventListener('pointerenter', handleEnter)
+        targetElement.addEventListener('pointerleave', handleLeave)
       }
     }
-
-    // Capture target ref at effect creation time for cleanup
-    const targetElement = target?.current
 
     return () => {
       if (frameRef.current) cancelAnimationFrame(frameRef.current)
@@ -972,7 +995,7 @@ export function usePointer(options: UsePointerOptions = {}) {
         }
       }
     }
-  }, [target, smooth, hoverOnly])
+  }, () => [target?.current ?? null, smooth, hoverOnly])
 
   // Cleanup: don't destroy MotionValues
   // (They are reused across React StrictMode remounts)
@@ -1004,7 +1027,10 @@ export interface UseGyroscopeOptions {
 /**
  * Track device orientation/gyroscope as MotionValues
  *
- * Falls back to pointer position on desktop.
+ * Falls back to the mouse position on desktop: when `DeviceOrientationEvent`
+ * is missing, or when no event with real values arrives within 500ms (desktop
+ * Chrome defines the event but never reports orientation). `isSupported` only
+ * becomes true once real orientation data arrives.
  *
  * @example
  * ```tsx
@@ -1057,36 +1083,58 @@ export function useGyroscope(options: UseGyroscopeOptions = {}) {
     }
     frameRef.current = requestAnimationFrame(smoothLoop)
 
+    // Mouse position fallback (desktop)
+    const handleMouse = (e: MouseEvent) => {
+      const centerX = window.innerWidth / 2
+      const centerY = window.innerHeight / 2
+      rawXRef.current = clampValue((e.clientX - centerX) / centerX * 45)
+      rawYRef.current = clampValue((e.clientY - centerY) / centerY * 45)
+    }
+    let usingMouse = false
+    const enableMouseFallback = () => {
+      if (usingMouse) return
+      usingMouse = true
+      window.addEventListener('mousemove', handleMouse)
+    }
+
+    let fallbackTimer: ReturnType<typeof setTimeout> | null = null
+    let handleOrientation: ((e: DeviceOrientationEvent) => void) | null = null
+
     if (hasOrientation) {
-      const handleOrientation = (e: DeviceOrientationEvent) => {
+      handleOrientation = (e: DeviceOrientationEvent) => {
+        // Desktop browsers may define DeviceOrientationEvent and fire a single
+        // event with null values without having a sensor: ignore those
+        if (e.gamma == null || e.beta == null) return
+        if (fallbackTimer !== null) {
+          clearTimeout(fallbackTimer)
+          fallbackTimer = null
+        }
+        if (usingMouse) {
+          usingMouse = false
+          window.removeEventListener('mousemove', handleMouse)
+        }
         setIsSupported(true)
         // gamma: left/right tilt (-90 to 90)
         // beta: front/back tilt (-180 to 180)
-        rawXRef.current = clampValue(e.gamma ?? 0)
-        rawYRef.current = clampValue(e.beta ?? 0)
+        rawXRef.current = clampValue(e.gamma)
+        rawYRef.current = clampValue(e.beta)
       }
 
       window.addEventListener('deviceorientation', handleOrientation)
-
-      return () => {
-        if (frameRef.current) cancelAnimationFrame(frameRef.current)
-        window.removeEventListener('deviceorientation', handleOrientation)
-      }
+      // No real orientation data shortly after mounting: fall back to the mouse
+      fallbackTimer = setTimeout(() => {
+        fallbackTimer = null
+        enableMouseFallback()
+      }, GYROSCOPE_FALLBACK_MS)
     } else {
-      // Fallback to mouse position
-      const handleMouse = (e: MouseEvent) => {
-        const centerX = window.innerWidth / 2
-        const centerY = window.innerHeight / 2
-        rawXRef.current = clampValue((e.clientX - centerX) / centerX * 45)
-        rawYRef.current = clampValue((e.clientY - centerY) / centerY * 45)
-      }
+      enableMouseFallback()
+    }
 
-      window.addEventListener('mousemove', handleMouse)
-
-      return () => {
-        if (frameRef.current) cancelAnimationFrame(frameRef.current)
-        window.removeEventListener('mousemove', handleMouse)
-      }
+    return () => {
+      if (frameRef.current) cancelAnimationFrame(frameRef.current)
+      if (fallbackTimer !== null) clearTimeout(fallbackTimer)
+      if (handleOrientation) window.removeEventListener('deviceorientation', handleOrientation)
+      if (usingMouse) window.removeEventListener('mousemove', handleMouse)
     }
   }, [clampValue, smooth])
 
@@ -1105,3 +1153,9 @@ export function useGyroscope(options: UseGyroscopeOptions = {}) {
     isSupported,
   }
 }
+
+/**
+ * How long useGyroscope waits for a deviceorientation event with real values
+ * before falling back to the mouse
+ */
+const GYROSCOPE_FALLBACK_MS = 500

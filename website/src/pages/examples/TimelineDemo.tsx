@@ -24,11 +24,11 @@ function TimelineDemo() {
 
     // Add animations at specific positions
     timeline
-      .to(box1Ref.current, { x: 200, rotate: 180 }, '0')      // Start at 0s
-      .to(box2Ref.current, { x: 200, scale: 1.5 }, '0.2')     // Start at 0.2s
-      .to(box3Ref.current, { x: 200, opacity: 0.5 }, '0.4')   // Start at 0.4s
-      .to(box1Ref.current, { y: 50 }, '0.5')                  // Additional animation
-      .to(box2Ref.current, { y: -50 }, '0.5')
+      .to(box1Ref.current, { x: 200, rotate: 180 }, 0)      // Start at 0s
+      .to(box2Ref.current, { x: 200, scale: 1.5 }, 0.2)     // Start at 0.2s
+      .to(box3Ref.current, { x: 200, opacity: 0.5 }, 0.4)   // Start at 0.4s
+      .to(box1Ref.current, { y: 50 }, 0.5)                  // Additional animation
+      .to(box2Ref.current, { y: -50 }, 0.5)
 
     timelineRef.current = timeline
     return () => {
@@ -97,20 +97,20 @@ function TimelineDemo() {
     // Build the timeline sequence
     timeline
       // Phase 1: Boxes slide in
-      .to(box1Ref.current, { x: 250, rotate: 360 }, '0')
-      .to(box2Ref.current, { x: 250, scale: 1.3 }, '0.15')
-      .to(box3Ref.current, { x: 250, borderRadius: 50 }, '0.3')
+      .to(box1Ref.current, { x: 250, rotate: 360 }, 0)
+      .to(box2Ref.current, { x: 250, scale: 1.3 }, 0.15)
+      .to(box3Ref.current, { x: 250, borderRadius: 50 }, 0.3)
 
       // Phase 2: Circle appears
-      .to(circleRef.current, { scale: 1, opacity: 1 }, '0.5')
+      .to(circleRef.current, { scale: 1, opacity: 1 }, 0.5)
 
       // Phase 3: Boxes move vertically
-      .to(box1Ref.current, { y: -30 }, '0.7')
-      .to(box2Ref.current, { y: 30 }, '0.7')
-      .to(box3Ref.current, { y: 0 }, '0.7')
+      .to(box1Ref.current, { y: -30 }, 0.7)
+      .to(box2Ref.current, { y: 30 }, 0.7)
+      .to(box3Ref.current, { y: 0 }, 0.7)
 
       // Phase 4: Color shift (using opacity)
-      .to(circleRef.current, { rotate: 360 }, '0.9')
+      .to(circleRef.current, { rotate: 360 }, 0.9)
 
     timelineRef.current = timeline
     setDuration(timeline.duration() || 2)

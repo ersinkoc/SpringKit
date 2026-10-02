@@ -34,6 +34,18 @@ interface SharedLayoutElement {
   spring: SpringGroup<Record<string, number>> | null
   isAnimating: boolean
   pendingRafId: number | null
+  /** The element's own inline styles, saved while a FLIP animation runs */
+  savedStyles: SavedStyles | null
+}
+
+/**
+ * Inline styles a FLIP animation writes to, saved so they can be restored
+ */
+interface SavedStyles {
+  transform: string
+  transformOrigin: string
+  opacity: string
+  borderRadius: string
 }
 
 /**
@@ -50,7 +62,10 @@ export interface LayoutAnimationConfig {
   onAnimationComplete?: (id: string) => void
   /** Enable crossfade during transition */
   crossfade?: boolean
-  /** Custom transition properties */
+  /**
+   * Per-property spring configs, merged over `spring` for that property
+   * (e.g. a softer `opacity` crossfade than the `x`/`y` movement)
+   */
   transition?: {
     x?: SpringConfig
     y?: SpringConfig
@@ -81,8 +96,12 @@ export interface LayoutGroup {
  * Shared layout context for cross-component animations
  */
 export interface SharedLayoutContext {
-  /** Register a layout group */
-  createGroup(id?: string): LayoutGroup
+  /**
+   * Create and register a layout group. Creating a group with an id that is
+   * already in use destroys the previous group (resetting its elements) and
+   * replaces it with the new one. `config` is passed to `createLayoutGroup`.
+   */
+  createGroup(id?: string, config?: LayoutAnimationConfig): LayoutGroup
   /** Get group by id */
   getGroup(id: string): LayoutGroup | undefined
   /** Update all groups */
@@ -105,7 +124,8 @@ function measureElement(element: HTMLElement): LayoutMeasurement {
     y: rect.top + window.scrollY,
     width: rect.width,
     height: rect.height,
-    opacity: parseFloat(styles.opacity) || 1,
+    // Note: `|| 1` would turn a real opacity of 0 into 1
+    opacity: Number.isNaN(parseFloat(styles.opacity)) ? 1 : parseFloat(styles.opacity),
     borderRadius: parseFloat(styles.borderRadius) || 0,
     scaleX: 1,
     scaleY: 1,
@@ -136,21 +156,53 @@ function applyTransform(
     element.style.opacity = String(current.opacity)
   }
 
-  // Apply border radius (scale-compensated)
+  // Apply border radius, compensated per axis so a non-uniform scale doesn't
+  // turn round corners into ellipses
   if (current.borderRadius !== undefined) {
-    const compensatedRadius = current.borderRadius / Math.max(scaleX, scaleY)
-    element.style.borderRadius = `${compensatedRadius}px`
+    const radiusX = scaleX === 0 ? 0 : current.borderRadius / scaleX
+    const radiusY = scaleY === 0 ? 0 : current.borderRadius / scaleY
+    element.style.borderRadius = radiusX === radiusY ? `${radiusX}px` : `${radiusX}px / ${radiusY}px`
   }
 }
 
 /**
- * Reset element transform
+ * Save the element's own inline styles before a FLIP animation writes to them
+ * (no-op if they are already saved, i.e. an animation is being interrupted)
  */
-function resetTransform(element: HTMLElement): void {
-  element.style.transform = ''
-  element.style.transformOrigin = ''
-  element.style.opacity = ''
-  element.style.borderRadius = ''
+function saveStyles(entry: SharedLayoutElement): void {
+  if (entry.savedStyles) return
+  const { style } = entry.element
+  entry.savedStyles = {
+    transform: style.transform,
+    transformOrigin: style.transformOrigin,
+    opacity: style.opacity,
+    borderRadius: style.borderRadius,
+  }
+}
+
+/**
+ * Stop the entry's animation and restore the element's own inline styles
+ * (instead of clearing them, which would wipe the user's transform/opacity)
+ */
+function resetTransform(entry: SharedLayoutElement): void {
+  if (entry.pendingRafId !== null) {
+    cancelAnimationFrame(entry.pendingRafId)
+    entry.pendingRafId = null
+  }
+  // Destroying the spring also drops its pending (microtask) notification,
+  // which would otherwise re-apply a FLIP frame after the reset
+  entry.spring?.destroy()
+  entry.spring = null
+  entry.isAnimating = false
+
+  const saved = entry.savedStyles
+  if (!saved) return
+  entry.savedStyles = null
+  const { style } = entry.element
+  style.transform = saved.transform
+  style.transformOrigin = saved.transformOrigin
+  style.opacity = saved.opacity
+  style.borderRadius = saved.borderRadius
 }
 
 // ============ Layout Group Implementation ============
@@ -177,8 +229,7 @@ export function createLayoutGroup(config: LayoutAnimationConfig = {}): LayoutGro
     onAnimationStart,
     onAnimationComplete,
     crossfade = false,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    transition: _transition = {},
+    transition = {},
   } = config
 
   const elements = new Map<string, SharedLayoutElement[]>()
@@ -201,6 +252,7 @@ export function createLayoutGroup(config: LayoutAnimationConfig = {}): LayoutGro
         spring: null,
         isAnimating: false,
         pendingRafId: null,
+        savedStyles: null,
       })
 
       // Store measurement for future animations
@@ -221,14 +273,9 @@ export function createLayoutGroup(config: LayoutAnimationConfig = {}): LayoutGro
       // Store final measurement before removal
       previousMeasurements.set(id, measureElement(element))
 
-      // Cancel pending RAF to prevent memory leak
-      if (entry.pendingRafId !== null) {
-        cancelAnimationFrame(entry.pendingRafId)
-        entry.pendingRafId = null
-      }
-
-      // Cleanup spring
-      entry.spring?.destroy()
+      // Stop the animation (RAF + spring) and give the element its own
+      // inline styles back, in case it stays in the document
+      resetTransform(entry)
       group.splice(index, 1)
 
       if (group.length === 0) {
@@ -242,8 +289,16 @@ export function createLayoutGroup(config: LayoutAnimationConfig = {}): LayoutGro
     from: LayoutMeasurement,
     to: LayoutMeasurement
   ): void => {
-    // Cleanup previous animation
+    // Cleanup previous animation, including its completion check loop
+    // (otherwise two loops run and onAnimationComplete fires twice)
+    if (entry.pendingRafId !== null) {
+      cancelAnimationFrame(entry.pendingRafId)
+      entry.pendingRafId = null
+    }
     entry.spring?.destroy()
+
+    // Remember the element's own inline styles so they can be restored
+    saveStyles(entry)
 
     // Create spring with initial values
     const initialValues: Record<string, number> = {
@@ -286,15 +341,19 @@ export function createLayoutGroup(config: LayoutAnimationConfig = {}): LayoutGro
       targetValues.borderRadius = to.borderRadius
     }
 
-    entry.spring.set(targetValues)
+    // Each property animates with its own transition (if any) merged over
+    // the default spring
+    for (const [key, value] of Object.entries(targetValues)) {
+      const propertyConfig = transition[key as keyof typeof transition]
+      entry.spring.set({ [key]: value }, propertyConfig ?? {})
+    }
 
     // Check for animation completion
     const checkComplete = () => {
       entry.pendingRafId = null
 
       if (entry.spring && !entry.spring.isAnimating()) {
-        entry.isAnimating = false
-        resetTransform(entry.element)
+        resetTransform(entry)
         onAnimationComplete?.(entry.id)
       } else if (entry.isAnimating) {
         entry.pendingRafId = requestAnimationFrame(checkComplete)
@@ -307,7 +366,16 @@ export function createLayoutGroup(config: LayoutAnimationConfig = {}): LayoutGro
   const update = (): void => {
     for (const [id, group] of elements) {
       for (const entry of group) {
-        const previousMeasurement = previousMeasurements.get(id)
+        let previousMeasurement = previousMeasurements.get(id)
+
+        // Interrupting a running animation: getBoundingClientRect includes the
+        // FLIP transform, so start from the current visual box and measure the
+        // real layout box with the transform removed
+        if (entry.isAnimating) {
+          previousMeasurement = measureElement(entry.element)
+          resetTransform(entry)
+        }
+
         const currentMeasurement = measureElement(entry.element)
 
         // Check if position/size changed
@@ -343,13 +411,8 @@ export function createLayoutGroup(config: LayoutAnimationConfig = {}): LayoutGro
   const destroy = (): void => {
     for (const group of elements.values()) {
       for (const entry of group) {
-        // Cancel pending RAF to prevent memory leak
-        if (entry.pendingRafId !== null) {
-          cancelAnimationFrame(entry.pendingRafId)
-          entry.pendingRafId = null
-        }
-        entry.spring?.destroy()
-        resetTransform(entry.element)
+        // Cancels the pending RAF and spring, restores the inline styles
+        resetTransform(entry)
       }
     }
     elements.clear()
@@ -392,9 +455,11 @@ export function createSharedLayoutContext(): SharedLayoutContext {
   const groups = new Map<string, LayoutGroup>()
 
   return {
-    createGroup(id?: string) {
+    createGroup(id?: string, config?: LayoutAnimationConfig) {
       const groupId = id ?? `layout-group-${groupIdCounter++}`
-      const group = createLayoutGroup()
+      // Don't leak the group being replaced (its RAF loops and springs)
+      groups.get(groupId)?.destroy()
+      const group = createLayoutGroup(config)
       groups.set(groupId, group)
       return group
     },
@@ -525,12 +590,15 @@ export function createAutoLayout(config: AutoLayoutConfig = {}): {
           }
         })
 
-        // Check removed nodes
+        // Check removed nodes (and their descendants)
         mutation.removedNodes.forEach((node) => {
           if (node instanceof HTMLElement) {
-            const id = node.getAttribute(attribute)
-            if (id) {
-              group.unregister(id, node)
+            const removed = [node, ...Array.from(node.querySelectorAll(`[${attribute}]`))]
+            for (const el of removed) {
+              const id = el.getAttribute(attribute)
+              if (id && el instanceof HTMLElement) {
+                group.unregister(id, el)
+              }
             }
           }
         })

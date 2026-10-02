@@ -36,7 +36,10 @@ export interface DragConstraints {
     top?: number
     bottom?: number
   }
-  /** Constrain to parent element */
+  /**
+   * Constrain to parent element. Bounds are relative to the element's own
+   * layout position inside the parent (the drag position is a translate offset).
+   */
   constrainToParent?: boolean
   /** Constrain to specific element */
   constrainToElement?: HTMLElement
@@ -44,7 +47,10 @@ export interface DragConstraints {
   constraintPadding?: number | { top?: number; right?: number; bottom?: number; left?: number }
   /** Lock to specific axis */
   lockAxis?: 'x' | 'y' | null
-  /** Lock to 45-degree diagonal lines */
+  /**
+   * Lock movement to the 45-degree diagonals through the drag start point
+   * (the pointer delta is projected onto the nearest diagonal)
+   */
   lockToDiagonal?: boolean
 }
 
@@ -83,7 +89,11 @@ export interface DragSpringConfig {
   rubberBand?: boolean
   /** Rubber band stretch factor (0-1, default: 0.5) */
   rubberBandFactor?: number
-  /** Elastic bounce power (0-1, default: 0.3) */
+  /**
+   * Bounciness (0-1) of the spring when a release hits a bound or returns from
+   * outside the bounds: 0 = no overshoot (critically damped), 1 = very bouncy.
+   * When unset, the regular spring damping is used.
+   */
   elasticBounce?: number
   /** Momentum after release (true = continue with velocity) */
   momentum?: boolean
@@ -154,7 +164,6 @@ const defaultDragConfig = {
   axis: 'both' as const,
   rubberBand: false,
   rubberBandFactor: 0.5,
-  elasticBounce: 0.3,
   momentum: true,
   momentumDecay: 0.95,
   stiffness: 200,
@@ -163,6 +172,22 @@ const defaultDragConfig = {
   restSpeed: 0.01,
   restDelta: 0.01,
   clamp: false,
+}
+
+/**
+ * If the pointer hasn't moved for this long before release, the tracked
+ * velocity is considered stale and the release has no momentum
+ */
+const VELOCITY_STALE_MS = 100
+
+/**
+ * Project a movement onto the nearest 45-degree diagonal
+ */
+function projectOnDiagonal(dx: number, dy: number): { x: number; y: number } {
+  // Diagonal direction (1, sign) with sign chosen by the quadrant
+  const sign = dx * dy < 0 ? -1 : 1
+  const amount = (dx + sign * dy) / 2
+  return { x: amount, y: sign * amount }
 }
 
 /**
@@ -183,6 +208,10 @@ class DragSpringImpl implements DragSpring {
   private snapTimeoutId: ReturnType<typeof setTimeout> | null = null
   private snapGeneration = 0
   private destroyed = false
+  /** Pointer that owns the current drag (other pointers are ignored) */
+  private activePointerId: number | null = null
+  /** Bounds resolved at drag start (explicit bounds + element constraints) */
+  private dragBounds = { left: -Infinity, right: Infinity, top: -Infinity, bottom: Infinity }
 
   // Springs for each axis
   private springX: SpringValue
@@ -240,7 +269,23 @@ class DragSpringImpl implements DragSpring {
   private onPointerDown = (e: PointerEvent): void => {
     if (!this.enabled || e.button !== 0) return
 
+    if (this._isDragging) {
+      // Ignore additional pointers (multi-touch) while the active pointer still owns the drag
+      const activeId = this.activePointerId
+      if (activeId !== null && e.pointerId !== activeId && (this.element.hasPointerCapture?.(activeId) ?? true)) {
+        return
+      }
+      // The previous pointer's up/cancel was lost - discard the stale drag
+      this.endDrag(activeId)
+    }
+
     this._isDragging = true
+    this.activePointerId = e.pointerId
+    // Stop any running release/snap animation and sync the springs with the
+    // current position (subscribers ignore updates while dragging)
+    this.springX.jump(this.position.x)
+    this.springY.jump(this.position.y)
+    this.dragBounds = this.getEffectiveBounds()
     this.startPosition = { ...this.position }
     this.pointerStart = { x: e.clientX, y: e.clientY }
     this.lastPosition = { x: e.clientX, y: e.clientY }
@@ -259,6 +304,8 @@ class DragSpringImpl implements DragSpring {
   }
 
   private onPointerMove = (e: PointerEvent): void => {
+    if (!this._isDragging || e.pointerId !== this.activePointerId) return
+
     const now = performance.now()
     const dt = now - this.lastTime
 
@@ -282,30 +329,29 @@ class DragSpringImpl implements DragSpring {
     this.lastTime = now
 
     // Calculate new position
-    let newX = this.startPosition.x + (e.clientX - this.pointerStart.x)
-    let newY = this.startPosition.y + (e.clientY - this.pointerStart.y)
+    let deltaX = e.clientX - this.pointerStart.x
+    let deltaY = e.clientY - this.pointerStart.y
 
-    // Apply bounds with elastic effect
-    if (this.config.bounds) {
-      newX = this.applyBounds(
-        newX,
-        this.config.bounds.left ?? -Infinity,
-        this.config.bounds.right ?? Infinity,
-        'x'
-      )
-      newY = this.applyBounds(
-        newY,
-        this.config.bounds.top ?? -Infinity,
-        this.config.bounds.bottom ?? Infinity,
-        'y'
-      )
+    // Project the movement onto the nearest 45-degree diagonal
+    if (this.config.constraints?.lockToDiagonal) {
+      const diagonal = projectOnDiagonal(deltaX, deltaY)
+      deltaX = diagonal.x
+      deltaY = diagonal.y
     }
 
-    // Apply axis constraint
-    if (this.config.axis === 'x') {
-      newY = 0
-    } else if (this.config.axis === 'y') {
-      newX = 0
+    let newX = this.startPosition.x + deltaX
+    let newY = this.startPosition.y + deltaY
+
+    // Apply bounds (explicit bounds and element constraints) with elastic effect
+    newX = this.applyBounds(newX, this.dragBounds.left, this.dragBounds.right, 'x')
+    newY = this.applyBounds(newY, this.dragBounds.top, this.dragBounds.bottom, 'y')
+
+    // Apply axis constraint - keep the locked axis where it was, not at 0
+    const lockAxis = this.config.constraints?.lockAxis
+    if (lockAxis === 'x' || this.config.axis === 'x') {
+      newY = this.startPosition.y
+    } else if (lockAxis === 'y' || this.config.axis === 'y') {
+      newX = this.startPosition.x
     }
 
     this.position = { x: newX, y: newY }
@@ -366,19 +412,20 @@ class DragSpringImpl implements DragSpring {
   }
 
   private onPointerUp = (e: PointerEvent): void => {
-    this._isDragging = false
+    if (!this._isDragging || e.pointerId !== this.activePointerId) return
 
-    // Safety check: element might be removed from DOM during drag
-    if (this.element && document.contains(this.element)) {
-      try {
-        this.element.releasePointerCapture(e.pointerId)
-      } catch {
-        // Ignore errors if pointer capture was already released
-      }
-      this.element.removeEventListener('pointermove', this.onPointerMove)
-      this.element.removeEventListener('pointerup', this.onPointerUp)
-      this.element.removeEventListener('pointercancel', this.onPointerUp)
+    // Sync springs with the dragged position before leaving drag mode so the
+    // release/snap animation starts from where the element actually is
+    // (subscribers ignore this jump because we're still dragging)
+    this.springX.jump(this.position.x)
+    this.springY.jump(this.position.y)
+
+    // Velocity is stale if the pointer was held still before release
+    if (performance.now() - this.lastTime > VELOCITY_STALE_MS) {
+      this.velocity = { x: 0, y: 0 }
     }
+
+    this.endDrag(e.pointerId)
 
     // Check for snap points first
     if (this.config.snap?.snapOnRelease !== false) {
@@ -400,14 +447,34 @@ class DragSpringImpl implements DragSpring {
     }
   }
 
+  /**
+   * Leave drag mode: release pointer capture and remove move/up listeners
+   */
+  private endDrag(pointerId: number | null): void {
+    this._isDragging = false
+    this.activePointerId = null
+
+    if (pointerId !== null) {
+      try {
+        this.element.releasePointerCapture(pointerId)
+      } catch {
+        // Ignore errors if pointer capture was already released or element was removed
+      }
+    }
+    this.element.removeEventListener('pointermove', this.onPointerMove)
+    this.element.removeEventListener('pointerup', this.onPointerUp)
+    this.element.removeEventListener('pointercancel', this.onPointerUp)
+  }
+
   private findNearestSnapPoint(): SnapPoint | null {
     const snap = this.config.snap
     if (!snap) return null
 
     // Check grid snapping first
     if (snap.grid) {
-      const gridX = Math.round(this.position.x / snap.grid.x) * snap.grid.x
-      const gridY = Math.round(this.position.y / snap.grid.y) * snap.grid.y
+      // Guard against division by zero (a 0 cell size disables snapping on that axis)
+      const gridX = snap.grid.x === 0 ? this.position.x : Math.round(this.position.x / snap.grid.x) * snap.grid.x
+      const gridY = snap.grid.y === 0 ? this.position.y : Math.round(this.position.y / snap.grid.y) * snap.grid.y
       return { x: gridX, y: gridY }
     }
 
@@ -451,30 +518,46 @@ class DragSpringImpl implements DragSpring {
 
     const constraints = this.config.constraints
 
+    // The element's rect includes the current drag offset; subtract it to get
+    // where the element sits in the layout (drag position 0, 0)
+    const layoutOrigin = (): { left: number; top: number; width: number; height: number } => {
+      const elementRect = this.element.getBoundingClientRect()
+      return {
+        left: elementRect.left - this.position.x,
+        top: elementRect.top - this.position.y,
+        width: elementRect.width,
+        height: elementRect.height,
+      }
+    }
+
     // Handle constrainToParent
     if (constraints?.constrainToParent && this.element.parentElement) {
       const parent = this.element.parentElement
       const parentRect = parent.getBoundingClientRect()
-      const elementRect = this.element.getBoundingClientRect()
+      const element = layoutOrigin()
 
       const padding = this.normalizePadding(constraints.constraintPadding)
 
-      bounds.left = Math.max(bounds.left, padding.left)
-      bounds.right = Math.min(bounds.right, parentRect.width - elementRect.width - padding.right)
-      bounds.top = Math.max(bounds.top, padding.top)
-      bounds.bottom = Math.min(bounds.bottom, parentRect.height - elementRect.height - padding.bottom)
+      // Offset of the element's layout box inside the parent
+      const offsetX = element.left - parentRect.left
+      const offsetY = element.top - parentRect.top
+
+      bounds.left = Math.max(bounds.left, padding.left - offsetX)
+      bounds.right = Math.min(bounds.right, parentRect.width - element.width - padding.right - offsetX)
+      bounds.top = Math.max(bounds.top, padding.top - offsetY)
+      bounds.bottom = Math.min(bounds.bottom, parentRect.height - element.height - padding.bottom - offsetY)
     }
 
     // Handle constrainToElement
     if (constraints?.constrainToElement) {
       const constraintRect = constraints.constrainToElement.getBoundingClientRect()
-      const elementRect = this.element.getBoundingClientRect()
-      const parentRect = this.element.parentElement?.getBoundingClientRect() ?? { left: 0, top: 0 }
+      const elementRect = layoutOrigin()
 
       const padding = this.normalizePadding(constraints.constraintPadding)
 
-      const offsetX = constraintRect.left - parentRect.left
-      const offsetY = constraintRect.top - parentRect.top
+      // Constraint box relative to the element's layout position
+      const offsetX = constraintRect.left - elementRect.left
+      const offsetY = constraintRect.top - elementRect.top
 
       bounds.left = Math.max(bounds.left, offsetX + padding.left)
       bounds.right = Math.min(bounds.right, offsetX + constraintRect.width - elementRect.width - padding.right)
@@ -504,7 +587,8 @@ class DragSpringImpl implements DragSpring {
   disable(): void {
     this.enabled = false
     if (this._isDragging) {
-      this._isDragging = false
+      // Fully end the drag so later pointer moves no longer move the element
+      this.endDrag(this.activePointerId)
     }
   }
 
@@ -575,6 +659,13 @@ class DragSpringImpl implements DragSpring {
   }
 
   release(velocityX: number, velocityY: number): void {
+    // Keep the momentum on the diagonal too
+    if (this.config.constraints?.lockToDiagonal) {
+      const diagonal = projectOnDiagonal(velocityX, velocityY)
+      velocityX = diagonal.x
+      velocityY = diagonal.y
+    }
+
     const bounds = this.getEffectiveBounds()
     const { left, right, top, bottom } = bounds
 
@@ -601,6 +692,8 @@ class DragSpringImpl implements DragSpring {
     }
 
     // Clamp to bounds
+    const unclampedX = targetX
+    const unclampedY = targetY
     targetX = clamp(targetX, left, right)
     targetY = clamp(targetY, top, bottom)
 
@@ -612,13 +705,28 @@ class DragSpringImpl implements DragSpring {
       if (this.position.y > bottom) this.config.onBoundsHit('bottom')
     }
 
-    // Animate to target with elastic bounce
+    // Animate to target, bouncing off the bound per elasticBounce
+    const hitX = targetX !== unclampedX || this.position.x < left || this.position.x > right
+    const hitY = targetY !== unclampedY || this.position.y < top || this.position.y > bottom
     if (targetX !== this.position.x || this.position.x < left || this.position.x > right) {
-      this.springX.set(targetX, { velocity: velocityX })
+      this.springX.set(targetX, { velocity: velocityX, ...(hitX ? this.getBounceConfig() : {}) })
     }
     if (targetY !== this.position.y || this.position.y < top || this.position.y > bottom) {
-      this.springY.set(targetY, { velocity: velocityY })
+      this.springY.set(targetY, { velocity: velocityY, ...(hitY ? this.getBounceConfig() : {}) })
     }
+  }
+
+  /**
+   * Damping override for bound hits derived from `elasticBounce`
+   * (0 = critically damped, 1 = barely damped). Empty when unset.
+   */
+  private getBounceConfig(): { damping?: number } {
+    const bounce = this.config.elasticBounce
+    if (bounce === undefined || !Number.isFinite(bounce)) return {}
+    const stiffness = this.config.stiffness ?? defaultDragConfig.stiffness
+    const mass = this.config.mass ?? defaultDragConfig.mass
+    const dampingRatio = Math.max(0.05, 1 - clamp(bounce, 0, 1))
+    return { damping: 2 * Math.sqrt(stiffness * mass) * dampingRatio }
   }
 
   snapToNearest(): void {
@@ -670,11 +778,9 @@ class DragSpringImpl implements DragSpring {
       this.snapTimeoutId = null
     }
 
-    // Remove all event listeners
+    // Remove all event listeners (and release pointer capture if mid-drag)
     this.element.removeEventListener('pointerdown', this.onPointerDown)
-    this.element.removeEventListener('pointermove', this.onPointerMove)
-    this.element.removeEventListener('pointerup', this.onPointerUp)
-    this.element.removeEventListener('pointercancel', this.onPointerUp)
+    this.endDrag(this._isDragging ? this.activePointerId : null)
 
     this.springX.destroy()
     this.springY.destroy()

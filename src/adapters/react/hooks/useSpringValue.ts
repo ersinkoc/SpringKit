@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react'
+import { useRef } from 'react'
 import { createSpringValue } from '@oxog/springkit'
 import type { SpringConfig, SpringValue } from '@oxog/springkit'
+import { useDestroyOnUnmount } from './useDestroyOnUnmount.js'
 
 /**
  * Hook for creating a spring value
@@ -43,9 +44,7 @@ export function useSpringValue(
     springRef.current = createSpringValue(initial, config)
   }
 
-  useEffect(() => {
-    return () => springRef.current?.destroy()
-  }, [])
+  useDestroyOnUnmount(() => springRef.current?.destroy())
 
   return springRef.current
 }

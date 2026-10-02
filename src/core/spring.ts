@@ -1,9 +1,22 @@
 import type { SpringConfig } from './config.js'
 import { defaultConfig } from './config.js'
-import { simulateSpring } from './physics.js'
+import { stepSpring } from './physics.js'
 import { globalLoop, type Animatable, AnimationState } from '../animation/loop.js'
 import { clamp } from '../utils/math.js'
 import { validateSpringConfig, validateAnimationValue } from '../utils/warnings.js'
+
+/**
+ * Invoke a user callback with error isolation so a throwing callback can't
+ * leave the spring stuck in the Running state (and never resolve `finished`).
+ */
+function safeCall<A extends unknown[]>(fn: ((...args: A) => void) | undefined, ...args: A): void {
+  if (!fn) return
+  try {
+    fn(...args)
+  } catch (e) {
+    console.error('[SpringKit] Spring callback error:', e)
+  }
+}
 
 /**
  * Spring animation control interface
@@ -11,7 +24,7 @@ import { validateSpringConfig, validateAnimationValue } from '../utils/warnings.
 export interface SpringAnimation {
   /** Start the animation */
   start(): SpringAnimation
-  /** Stop the animation immediately */
+  /** Stop the animation immediately (resolves the current `finished`) */
   stop(): void
   /** Pause the animation */
   pause(): void
@@ -33,7 +46,10 @@ export interface SpringAnimation {
   getValue(): number
   /** Get current velocity */
   getVelocity(): number
-  /** Promise that resolves when complete */
+  /**
+   * Promise that resolves when the current run completes or is stopped.
+   * Each start() after it has settled creates a new pending promise.
+   */
   finished: Promise<void>
   /** Clean up resources */
   destroy(): void
@@ -54,8 +70,9 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
   private clampedFrom: number
   private clampedTo: number
   private lastUpdateTime: number = 0
+  private destroyed = false
 
-  finished: Promise<void>
+  finished!: Promise<void>
 
   constructor(
     from: number,
@@ -71,7 +88,8 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
     this.clampedFrom = this.from
     this.clampedTo = this.to
     this.position = this.from
-    this.velocity = config.velocity ?? 0
+    // A NaN/Infinity initial velocity would make the spring never settle
+    this.velocity = validateAnimationValue(config.velocity ?? 0, 'spring.velocity')
     this.target = this.to
     this.config = {
       ...defaultConfig,
@@ -83,17 +101,35 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
       restDelta: config.restDelta ?? defaultConfig.restDelta!,
     }
 
+    this.resetFinished()
+  }
+
+  /** Create a new pending `finished` promise for the next run */
+  private resetFinished(): void {
     this.finished = new Promise((resolve) => {
       this.resolveComplete = resolve
     })
   }
 
+  /** Resolve the current `finished` promise (once) */
+  private settleFinished(): void {
+    const resolve = this.resolveComplete
+    this.resolveComplete = null
+    resolve?.()
+  }
+
   start(): SpringAnimation {
     if (this.state === AnimationState.Running) return this
 
+    // The previous run already settled `finished` (completed or stopped):
+    // this run gets its own pending promise
+    if (this.resolveComplete === null && !this.destroyed) {
+      this.resetFinished()
+    }
+
     this.state = AnimationState.Running
     this.lastUpdateTime = 0 // Reset timing on start
-    this.config.onStart?.()
+    safeCall(this.config.onStart)
     globalLoop.add(this)
     return this
   }
@@ -101,6 +137,9 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
   stop(): void {
     this.state = AnimationState.Idle
     globalLoop.remove(this)
+    // A stopped run never completes: settle its promise so awaiting it
+    // doesn't hang forever
+    this.settleFinished()
   }
 
   pause(): void {
@@ -168,45 +207,37 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
     }
   }
 
-  update(now: number): void {
+  update(now: number, deltaTime?: number): void {
     if (this.state !== AnimationState.Running) return
 
-    // Initialize last update time on first frame
-    if (this.lastUpdateTime === 0) {
-      this.lastUpdateTime = now
-    }
-
-    // Calculate elapsed time since last update
-    const elapsed = (now - this.lastUpdateTime) / 1000 // Convert to seconds
+    // Calculate elapsed time since last update. On the first update after
+    // start/resume there is no previous timestamp: use the loop's frame
+    // delta (0 for the synchronous tick that starts an idle loop) so an
+    // animation started or retargeted while the loop runs doesn't lose a
+    // frame (retargeting every frame would otherwise never make progress).
+    const elapsedMs = this.lastUpdateTime === 0
+      ? (deltaTime ?? 0)
+      : now - this.lastUpdateTime
+    const elapsed = elapsedMs / 1000 // Convert to seconds
     this.lastUpdateTime = now
 
-    // Use sub-stepping for consistent physics regardless of frame rate
-    // This ensures the spring simulation is stable even with variable frame rates
-    const MAX_DELTA_TIME = 1 / 15 // Maximum 15fps worth of simulation per frame
-    const FIXED_TIME_STEP = 1 / 60 // Fixed 60fps physics step
-
     // Clamp elapsed time to prevent physics explosions after tab suspension
-    const safeElapsed = Math.min(elapsed, MAX_DELTA_TIME)
+    // (and ignore negative deltas from out-of-order timestamps)
+    const MAX_DELTA_TIME = 1 / 15 // Maximum 15fps worth of simulation per frame
+    const safeElapsed = Math.min(Math.max(elapsed, 0), MAX_DELTA_TIME)
 
-    // Calculate number of sub-steps needed
-    const steps = Math.max(1, Math.ceil(safeElapsed / FIXED_TIME_STEP))
-
-    // Run physics simulation with fixed time steps
-    let currentPosition = this.position
-    let currentVelocity = this.velocity
-    let isRest = false
-
-    for (let i = 0; i < steps && !isRest; i++) {
-      const result = simulateSpring(
-        currentPosition,
-        currentVelocity,
-        this.target,
-        this.config
-      )
-      currentPosition = result.position
-      currentVelocity = result.velocity
-      isRest = result.isRest
-    }
+    // Advance with the exact closed-form solution of the spring equation:
+    // frame-rate independent, no integration error, one evaluation per frame
+    const result = stepSpring(
+      this.position,
+      this.velocity,
+      this.target,
+      this.config,
+      safeElapsed
+    )
+    const currentPosition = result.position
+    const currentVelocity = result.velocity
+    const isRest = result.isRest
 
     this.position = currentPosition
     this.velocity = currentVelocity
@@ -219,7 +250,7 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
     }
 
     // Emit update
-    this.config.onUpdate?.(this.position)
+    safeCall(this.config.onUpdate, this.position)
 
     // Check rest state
     if (isRest) {
@@ -227,10 +258,10 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
       globalLoop.remove(this)
       this.position = this.target // Ensure we end exactly at target
       this.velocity = 0
-      this.config.onUpdate?.(this.position)
-      this.config.onComplete?.()
-      this.config.onRest?.()
-      this.resolveComplete?.()
+      safeCall(this.config.onUpdate, this.position)
+      safeCall(this.config.onComplete)
+      safeCall(this.config.onRest)
+      this.settleFinished()
     }
   }
 
@@ -255,10 +286,9 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
   }
 
   destroy(): void {
+    this.destroyed = true
+    // stop() also resolves `finished`, so pending handlers don't leak
     this.stop()
-    // Resolve the promise to prevent memory leaks from pending .finished handlers
-    this.resolveComplete?.()
-    this.resolveComplete = null
     this.config.onUpdate = undefined
     this.config.onStart = undefined
     this.config.onComplete = undefined

@@ -46,8 +46,18 @@ class InterpolationImpl implements Interpolation {
     options: InterpolateOptions = {}
   ) {
     this.source = source
-    this.input = input
-    this.output = output
+    // Ignore unmatched trailing entries so mismatched lengths can't produce NaN
+    const length = Math.min(input.length, output.length)
+    let normalizedInput = input.slice(0, length)
+    let normalizedOutput = output.slice(0, length)
+    // Segment lookup and extrapolation assume an ascending input range,
+    // so normalize descending ranges (e.g. [100, 0] -> [0, 1]) by reversing both
+    if (length > 1 && normalizedInput[0]! > normalizedInput[length - 1]!) {
+      normalizedInput = normalizedInput.reverse()
+      normalizedOutput = normalizedOutput.reverse()
+    }
+    this.input = normalizedInput
+    this.output = normalizedOutput
     this.options = { ...defaultInterpolateOptions, ...options }
   }
 
@@ -65,8 +75,8 @@ class InterpolationImpl implements Interpolation {
     const { extrapolate, extrapolateLeft, extrapolateRight, clamp } = this.options
 
     // Handle single point case - just return the output value
-    if (input.length === 1) {
-      return output[0]!
+    if (input.length <= 1) {
+      return output[0] ?? 0
     }
 
     // Handle extrapolation

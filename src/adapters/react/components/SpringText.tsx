@@ -8,6 +8,54 @@ import * as React from 'react'
 import { useRef, useEffect, useState, useMemo, memo } from 'react'
 import { createSpringValue } from '@oxog/springkit'
 import type { SpringConfig } from '@oxog/springkit'
+import { useStableSpringConfig } from '../utils/config.js'
+
+// ============ Text splitting ============
+
+interface GraphemeSegmenter {
+  segment(input: string): Iterable<{ segment: string }>
+}
+
+type GraphemeSegmenterConstructor = new (
+  locales?: string,
+  options?: { granularity: 'grapheme' }
+) => GraphemeSegmenter
+
+let graphemeSegmenter: GraphemeSegmenter | null | undefined
+
+/**
+ * Split a string into user-perceived characters (grapheme clusters), so emoji,
+ * surrogate pairs and combining marks are never cut in half.
+ * Falls back to code points when Intl.Segmenter is unavailable.
+ */
+function splitCharacters(text: string): string[] {
+  if (graphemeSegmenter === undefined) {
+    const Segmenter = typeof Intl !== 'undefined'
+      ? (Intl as unknown as { Segmenter?: GraphemeSegmenterConstructor }).Segmenter
+      : undefined
+    graphemeSegmenter = typeof Segmenter === 'function'
+      ? new Segmenter(undefined, { granularity: 'grapheme' })
+      : null
+  }
+  if (graphemeSegmenter) {
+    return Array.from(graphemeSegmenter.segment(text), (part) => part.segment)
+  }
+  return Array.from(text)
+}
+
+function splitText(text: string, mode: 'characters' | 'words' | 'lines'): string[] {
+  switch (mode) {
+    case 'words':
+      return text.split(/(\s+)/)
+    case 'lines':
+      return text.split('\n')
+    case 'characters':
+    default:
+      return splitCharacters(text)
+  }
+}
+
+const DEFAULT_TEXT_CONFIG: SpringConfig = { stiffness: 200, damping: 20 }
 
 // ============ SpringText ============
 
@@ -76,7 +124,7 @@ export const SpringText = memo(function SpringText({
   mode = 'characters',
   stagger = 30,
   from = 'bottom',
-  config = { stiffness: 200, damping: 20 },
+  config: configProp,
   initialOpacity = 0,
   initialOffset = 20,
   animateOnMount = true,
@@ -85,43 +133,49 @@ export const SpringText = memo(function SpringText({
   className,
   style,
 }: SpringTextProps) {
-  const [elements, setElements] = useState<string[]>([])
-  const [animatedValues, setAnimatedValues] = useState<number[]>([])
-  const springsRef = useRef<ReturnType<typeof createSpringValue>[]>([])
-  const completedRef = useRef(0)
+  const config = useStableSpringConfig(configProp, DEFAULT_TEXT_CONFIG)
 
-  // Split text based on mode
-  useEffect(() => {
-    let parts: string[]
-    switch (mode) {
-      case 'words':
-        parts = children.split(/(\s+)/)
-        break
-      case 'lines':
-        parts = children.split('\n')
-        break
-      case 'characters':
-      default:
-        parts = children.split('')
-    }
-    setElements(parts)
-    setAnimatedValues(new Array(parts.length).fill(0))
-  }, [children, mode])
+  // Split text during render so the text is present on first paint / SSR
+  const elements = useMemo(() => splitText(children, mode), [children, mode])
+
+  const [animatedValues, setAnimatedValues] = useState<number[]>(() =>
+    new Array<number>(elements.length).fill(animateOnMount ? 0 : 1)
+  )
+
+  // Latest onComplete (an inline callback must not restart the animation)
+  const onCompleteRef = useRef(onComplete)
+  onCompleteRef.current = onComplete
+
+  // Previous trigger value, to detect replay requests
+  const prevTriggerRef = useRef(trigger)
 
   // Create and run animations
   useEffect(() => {
+    const triggerChanged = prevTriggerRef.current !== trigger
+    prevTriggerRef.current = trigger
+    const shouldAnimate = animateOnMount || triggerChanged
+
     if (elements.length === 0) return
 
-    // Cleanup old springs
-    springsRef.current.forEach((s) => s.destroy())
-    springsRef.current = []
-    completedRef.current = 0
+    // Without animation, show the text in its final state
+    if (!shouldAnimate) {
+      setAnimatedValues(new Array<number>(elements.length).fill(1))
+      return
+    }
+
+    let cancelled = false
+    const timeouts = new Set<ReturnType<typeof setTimeout>>()
+    const rafIds = new Set<number>()
+    let completed = 0
+
+    setAnimatedValues(new Array<number>(elements.length).fill(0))
 
     // Create new springs
-    const springs = elements.map((_, index) => {
-      const spring = createSpringValue(0, {
+    const springs = elements.map((_, index) =>
+      createSpringValue(0, {
         ...config,
         onUpdate: (value) => {
+          if (cancelled) return
           setAnimatedValues((prev) => {
             const next = [...prev]
             next[index] = value
@@ -129,36 +183,47 @@ export const SpringText = memo(function SpringText({
           })
         },
       })
-      return spring
-    })
-    springsRef.current = springs
+    )
 
     // Animate with stagger
-    if (animateOnMount || trigger !== undefined) {
-      springs.forEach((spring, index) => {
-        setTimeout(() => {
-          spring.set(1)
+    springs.forEach((spring, index) => {
+      const startTimeout = setTimeout(() => {
+        timeouts.delete(startTimeout)
+        if (cancelled) return
+        spring.set(1)
 
-          // Check completion
-          const checkComplete = () => {
-            if (!spring.isAnimating()) {
-              completedRef.current++
-              if (completedRef.current === elements.length) {
-                onComplete?.()
-              }
-            } else {
-              requestAnimationFrame(checkComplete)
+        // Check completion
+        const checkComplete = () => {
+          if (cancelled) return
+          if (!spring.isAnimating()) {
+            completed++
+            if (completed === springs.length) {
+              onCompleteRef.current?.()
             }
+          } else {
+            const rafId = requestAnimationFrame(() => {
+              rafIds.delete(rafId)
+              checkComplete()
+            })
+            rafIds.add(rafId)
           }
-          setTimeout(checkComplete, 50)
-        }, index * stagger)
-      })
-    }
+        }
+        const checkTimeout = setTimeout(() => {
+          timeouts.delete(checkTimeout)
+          checkComplete()
+        }, 50)
+        timeouts.add(checkTimeout)
+      }, index * stagger)
+      timeouts.add(startTimeout)
+    })
 
     return () => {
+      cancelled = true
+      timeouts.forEach((id) => clearTimeout(id))
+      rafIds.forEach((id) => cancelAnimationFrame(id))
       springs.forEach((s) => s.destroy())
     }
-  }, [elements, stagger, config, animateOnMount, trigger, onComplete])
+  }, [elements, stagger, config, animateOnMount, trigger])
 
   // Calculate transform based on direction
   const getTransform = (progress: number) => {
@@ -381,20 +446,26 @@ export const TypeWriter = memo(function TypeWriter({
   const [_isDeleting, setIsDeleting] = useState(false)
   const timeoutRef = useRef<number | null>(null)
 
+  // Latest onComplete (an inline callback must not restart typing)
+  const onCompleteRef = useRef(onComplete)
+  onCompleteRef.current = onComplete
+
   useEffect(() => {
+    // Type by user-perceived characters so emoji are never cut in half
+    const characters = splitCharacters(children)
     let currentIndex = 0
     let isDeleteMode = false
 
     const tick = () => {
       if (!isDeleteMode) {
         // Typing
-        if (currentIndex <= children.length) {
-          setDisplayText(children.slice(0, currentIndex))
+        if (currentIndex <= characters.length) {
+          setDisplayText(characters.slice(0, currentIndex).join(''))
           currentIndex++
           timeoutRef.current = window.setTimeout(tick, speed)
         } else {
           // Finished typing
-          onComplete?.()
+          onCompleteRef.current?.()
           if (loop) {
             timeoutRef.current = window.setTimeout(() => {
               isDeleteMode = true
@@ -407,7 +478,7 @@ export const TypeWriter = memo(function TypeWriter({
         // Deleting
         if (currentIndex > 0) {
           currentIndex--
-          setDisplayText(children.slice(0, currentIndex))
+          setDisplayText(characters.slice(0, currentIndex).join(''))
           timeoutRef.current = window.setTimeout(tick, deleteSpeed)
         } else {
           // Finished deleting, start over
@@ -424,7 +495,7 @@ export const TypeWriter = memo(function TypeWriter({
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current)
     }
-  }, [children, speed, delay, loop, pauseAtEnd, deleteSpeed, onComplete])
+  }, [children, speed, delay, loop, pauseAtEnd, deleteSpeed])
 
   // Cursor blinking
   useEffect(() => {
@@ -499,17 +570,7 @@ export const SplitText = memo(function SplitText({
   className,
   style,
 }: SplitTextProps) {
-  const elements = useMemo(() => {
-    switch (mode) {
-      case 'words':
-        return children.split(/(\s+)/)
-      case 'lines':
-        return children.split('\n')
-      case 'characters':
-      default:
-        return children.split('')
-    }
-  }, [children, mode])
+  const elements = useMemo(() => splitText(children, mode), [children, mode])
 
   return (
     <span className={className} style={style}>

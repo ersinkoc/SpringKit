@@ -1,5 +1,13 @@
 import { useRef, useEffect, useMemo, useCallback } from 'react'
-import { MotionValue, createMotionValue } from '@oxog/springkit'
+import {
+  MotionValue,
+  createMotionValue,
+  parseColorRGBA,
+  mixColorsRGBA,
+  formatRGBA,
+  type ColorSpace,
+} from '@oxog/springkit'
+import { useDestroyOnUnmount } from './useDestroyOnUnmount.js'
 
 /**
  * Track the velocity of a MotionValue
@@ -81,11 +89,9 @@ export function useVelocity(source: MotionValue<number>): MotionValue<number> {
     }
   }, [source])
 
-  useEffect(() => {
-    return () => {
-      velocityRef.current?.destroy()
-    }
-  }, [])
+  useDestroyOnUnmount(() => {
+    velocityRef.current?.destroy()
+  })
 
   return velocityRef.current
 }
@@ -115,7 +121,7 @@ export function useVelocity(source: MotionValue<number>): MotionValue<number> {
  */
 export function useMotionValueEvent<T>(
   value: MotionValue<T>,
-  event: 'change' | 'animationStart' | 'animationComplete' | 'animationCancel',
+  event: 'change' | 'animationStart' | 'animationEnd' | 'animationComplete' | 'animationCancel',
   callback: (latest: T) => void
 ): void {
   const callbackRef = useRef(callback)
@@ -139,6 +145,68 @@ export interface UseTransformOptions {
   clamp?: boolean
   /** Custom easing function for the interpolation */
   ease?: (t: number) => number
+  /**
+   * Color space for color outputs (default `'srgb'`). `'oklab'` gives
+   * perceptually even blends, `'linear'` mixes like light. Alpha is always
+   * interpolated premultiplied.
+   */
+  space?: ColorSpace
+}
+
+// ============ String interpolation helpers ============
+
+type RGBAColor = ReturnType<typeof parseColorRGBA>
+type StringToken = number | RGBAColor
+
+/** A string split into literal parts around animatable tokens */
+interface ParsedString {
+  parts: string[]
+  tokens: StringToken[]
+}
+
+/** Colors (hex, rgb[a](), hsl[a](), transparent) or numbers inside a string */
+const STRING_TOKEN_REGEX =
+  /#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3,4})\b|(?:rgba?|hsla?)\([^)]*\)|\btransparent\b|-?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?/gi
+
+function parseAnimatableString(value: string): ParsedString {
+  const parts: string[] = []
+  const tokens: StringToken[] = []
+  let last = 0
+  for (const match of value.matchAll(STRING_TOKEN_REGEX)) {
+    const text = match[0]
+    const index = match.index ?? 0
+    parts.push(value.slice(last, index))
+    tokens.push(/^[-.\d]/.test(text) ? parseFloat(text) : parseColorRGBA(text))
+    last = index + text.length
+  }
+  parts.push(value.slice(last))
+  return { parts, tokens }
+}
+
+/** Same literal parts and the same token kinds in the same places */
+function isCompatible(a: ParsedString, b: ParsedString): boolean {
+  return (
+    a.parts.length === b.parts.length &&
+    a.parts.every((part, i) => part === b.parts[i]) &&
+    a.tokens.every((token, i) => typeof token === typeof b.tokens[i])
+  )
+}
+
+/** Round away float noise (and exponent notation, which CSS rejects) */
+const formatNumber = (value: number): string => String(Math.round(value * 1e6) / 1e6 || 0)
+
+function mixParsedStrings(a: ParsedString, b: ParsedString, t: number, space?: ColorSpace): string {
+  let result = a.parts[0] ?? ''
+  for (let i = 0; i < a.tokens.length; i++) {
+    const from = a.tokens[i]!
+    const to = b.tokens[i]!
+    result +=
+      typeof from === 'number'
+        ? formatNumber(from + ((to as number) - from) * t)
+        : formatRGBA(mixColorsRGBA(from, to as RGBAColor, t, space))
+    result += a.parts[i + 1] ?? ''
+  }
+  return result
 }
 
 /**
@@ -147,6 +215,19 @@ export interface UseTransformOptions {
  * Supports two forms:
  * 1. Range mapping: useTransform(value, [0, 100], [0, 1])
  * 2. Function: useTransform(value, (v) => v * 2)
+ *
+ * Range mapping also interpolates string outputs: colors (hex, rgb[a],
+ * hsl[a], `transparent`, alpha-premultiplied, optional `space`), numbers
+ * with units (`'10px'` → `'100px'`) and complex strings whose numbers and
+ * colors line up (`'translateX(0px) rotate(0deg)'`, box shadows). Colors are
+ * output as `rgb()` / `rgba()`. Strings that don't share the same shape
+ * switch at the midpoint of each segment.
+ *
+ * @example Colors and units
+ * ```tsx
+ * const background = useTransform(x, [0, 100], ['#ff0000', 'rgba(0, 0, 255, 0.5)'])
+ * const width = useTransform(x, [0, 100], ['10px', '100px'])
+ * ```
  *
  * @example Range mapping
  * ```tsx
@@ -190,65 +271,67 @@ export function useTransform<O = number>(
 
     const inputRange = inputRangeOrTransform
 
-    // Use core interpolate for numeric outputs
+    /** Segment index and (eased, optionally clamped) progress within it */
+    const locate = (value: number): { i: number; next: number; t: number } => {
+      // Find the segment (values beyond the last stop use the last segment,
+      // so they extrapolate the same way values below the first stop do)
+      let i = 0
+      for (; i < inputRange.length - 2; i++) {
+        const nextVal = inputRange[i + 1]
+        if (nextVal !== undefined && value <= nextVal) break
+      }
+      const next = Math.min(i + 1, inputRange.length - 1)
+
+      const inputMin = inputRange[i] ?? 0
+      const inputMax = inputRange[next] ?? 1
+
+      // Normalize to 0-1
+      let t = inputMax !== inputMin
+        ? (value - inputMin) / (inputMax - inputMin)
+        : 0
+
+      // Apply easing if provided
+      if (options?.ease) {
+        t = options.ease(t)
+      }
+
+      // Clamp if requested
+      if (options?.clamp) {
+        t = Math.max(0, Math.min(1, t))
+      }
+
+      return { i, next, t }
+    }
+
     if (typeof outputRange[0] === 'number') {
       return (value: number): O => {
-        // Find the segment
-        let i = 0
-        for (; i < inputRange.length - 1; i++) {
-          const nextVal = inputRange[i + 1]
-          if (nextVal !== undefined && value <= nextVal) break
-        }
-
-        const inputMin = inputRange[i] ?? 0
-        const inputMax = inputRange[Math.min(i + 1, inputRange.length - 1)] ?? 1
+        const { i, next, t } = locate(value)
         const outputMin = (outputRange[i] ?? 0) as number
-        const outputMax = (outputRange[Math.min(i + 1, outputRange.length - 1)] ?? 1) as number
-
-        // Normalize to 0-1
-        let t = inputMax !== inputMin
-          ? (value - inputMin) / (inputMax - inputMin)
-          : 0
-
-        // Apply easing if provided
-        if (options?.ease) {
-          t = options.ease(t)
-        }
-
-        // Clamp if requested
-        if (options?.clamp) {
-          t = Math.max(0, Math.min(1, t))
-        }
-
-        // Interpolate
+        const outputMax = (outputRange[Math.min(next, outputRange.length - 1)] ?? 1) as number
         return (outputMin + t * (outputMax - outputMin)) as O
       }
     }
 
-    // String interpolation (colors, etc.)
+    // String interpolation: colors, numbers with units and complex strings
+    const strings = (outputRange as Array<string | number>).map(String)
+    const parsed = strings.map(parseAnimatableString)
+    const space = options?.space
+
     return (value: number): O => {
-      // Simple string interpolation - find nearest
-      let i = 0
-      for (; i < inputRange.length - 1; i++) {
-        const nextVal = inputRange[i + 1]
-        if (nextVal !== undefined && value <= nextVal) break
+      const { i, next, t } = locate(value)
+      const j = Math.min(next, strings.length - 1)
+      const from = parsed[i]
+      const to = parsed[j]
+      if (from && to && isCompatible(from, to)) {
+        return mixParsedStrings(from, to, t, space) as O
       }
-
-      const inCurr = inputRange[i] ?? 0
-      const inNext = inputRange[i + 1] ?? 1
-
-      const t = inNext !== inCurr
-        ? (value - inCurr) / (inNext - inCurr)
-        : 0
-
-      // For strings, just return the nearest one
-      // (full color interpolation would require parsing)
-      return (t < 0.5 ? outputRange[i] : outputRange[i + 1]) as O
+      // Incompatible shapes can't be interpolated: switch at the midpoint
+      return (t < 0.5 ? strings[i] : (strings[j] ?? strings[i])) as O
     }
-  }, [inputRangeOrTransform, outputRange, options?.clamp, options?.ease]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [inputRangeOrTransform, outputRange, options?.clamp, options?.ease, options?.space]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Create derived value on first render
-  if (derivedRef.current === null) {
+  if (derivedRef.current === null || derivedRef.current.isDestroyed()) {
     derivedRef.current = createMotionValue(transformFn(source.get()))
   }
 
@@ -264,11 +347,9 @@ export function useTransform<O = number>(
   }, [source, transformFn])
 
   // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      derivedRef.current?.destroy()
-    }
-  }, [])
+  useDestroyOnUnmount(() => {
+    derivedRef.current?.destroy()
+  })
 
   return derivedRef.current
 }
@@ -300,7 +381,7 @@ export function useCombinedTransform<T extends number[], O = number>(
   }
 
   // Create on first render
-  if (derivedRef.current === null) {
+  if (derivedRef.current === null || derivedRef.current.isDestroyed()) {
     derivedRef.current = createMotionValue(transform(getCurrentValues()))
   }
 
@@ -319,11 +400,9 @@ export function useCombinedTransform<T extends number[], O = number>(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sources, transform])
 
-  useEffect(() => {
-    return () => {
-      derivedRef.current?.destroy()
-    }
-  }, [])
+  useDestroyOnUnmount(() => {
+    derivedRef.current?.destroy()
+  })
 
   return derivedRef.current
 }
@@ -391,11 +470,9 @@ export function useVelocityTransform(
     }
   }, [source, transform])
 
-  useEffect(() => {
-    return () => {
-      derivedRef.current?.destroy()
-    }
-  }, [])
+  useDestroyOnUnmount(() => {
+    derivedRef.current?.destroy()
+  })
 
   return derivedRef.current
 }
@@ -425,8 +502,9 @@ export function useSpringTransform(
 
   const transform = useMemo(() => {
     return (value: number): number => {
+      // Values beyond the last stop use the last segment
       let i = 0
-      for (; i < inputRange.length - 1; i++) {
+      for (; i < inputRange.length - 2; i++) {
         const nextVal = inputRange[i + 1]
         if (nextVal !== undefined && value <= nextVal) break
       }
@@ -436,12 +514,12 @@ export function useSpringTransform(
       const outCurr = outputRange[i] ?? 0
       const outNext = outputRange[i + 1] ?? 1
 
-      const t = (value - inCurr) / (inNext - inCurr)
+      const t = inNext !== inCurr ? (value - inCurr) / (inNext - inCurr) : 0
       return outCurr + t * (outNext - outCurr)
     }
   }, [inputRange, outputRange])
 
-  if (derivedRef.current === null) {
+  if (derivedRef.current === null || derivedRef.current.isDestroyed()) {
     derivedRef.current = createMotionValue(transform(source.get()), {
       spring: springConfig,
     })
@@ -458,11 +536,9 @@ export function useSpringTransform(
     }
   }, [source, transform])
 
-  useEffect(() => {
-    return () => {
-      derivedRef.current?.destroy()
-    }
-  }, [])
+  useDestroyOnUnmount(() => {
+    derivedRef.current?.destroy()
+  })
 
   return derivedRef.current
 }
@@ -522,12 +598,21 @@ export function useMotionTemplate(
     return result
   }, [])
 
-  if (templateRef.current === null) {
+  if (templateRef.current === null || templateRef.current.isDestroyed()) {
     templateRef.current = createMotionValue(buildString()) as MotionValue<string>
   }
 
-  // Use values.length as stable dependency instead of array reference
-  const valuesLength = values.length
+  // Rest parameters are a new array on every render: bump a version only when
+  // the MotionValues themselves change (identity or count), and use it as the
+  // effect dependency so a swapped MotionValue gets (re)subscribed
+  const subscribedValuesRef = useRef(values)
+  const valuesVersionRef = useRef(0)
+  const prevValues = subscribedValuesRef.current
+  if (prevValues.length !== values.length || values.some((v, i) => v !== prevValues[i])) {
+    subscribedValuesRef.current = values
+    valuesVersionRef.current++
+  }
+  const valuesVersion = valuesVersionRef.current
 
   useEffect(() => {
     // Clear previous subscriptions
@@ -544,13 +629,11 @@ export function useMotionTemplate(
       unsubscribesRef.current.forEach((unsub) => unsub())
       unsubscribesRef.current = []
     }
-  }, [valuesLength, buildString])
+  }, [valuesVersion, buildString])
 
-  useEffect(() => {
-    return () => {
-      templateRef.current?.destroy()
-    }
-  }, [])
+  useDestroyOnUnmount(() => {
+    templateRef.current?.destroy()
+  })
 
   return templateRef.current as MotionValue<string>
 }
@@ -586,7 +669,7 @@ export function useTime(): MotionValue<number> {
   const frameRef = useRef<number | null>(null)
   const startTimeRef = useRef<number | null>(null)
 
-  if (timeRef.current === null) {
+  if (timeRef.current === null || timeRef.current.isDestroyed()) {
     timeRef.current = createMotionValue(0)
   }
 
@@ -614,11 +697,9 @@ export function useTime(): MotionValue<number> {
     }
   }, [])
 
-  useEffect(() => {
-    return () => {
-      timeRef.current?.destroy()
-    }
-  }, [])
+  useDestroyOnUnmount(() => {
+    timeRef.current?.destroy()
+  })
 
   return timeRef.current
 }
@@ -725,7 +806,7 @@ export function useWillChange(
   const propertiesRef = useRef(properties)
   propertiesRef.current = properties
 
-  if (willChangeRef.current === null) {
+  if (willChangeRef.current === null || willChangeRef.current.isDestroyed()) {
     willChangeRef.current = createMotionValue('auto') as MotionValue<string>
   }
 
@@ -764,11 +845,9 @@ export function useWillChange(
     }
   }, [sourcesLength])
 
-  useEffect(() => {
-    return () => {
-      willChangeRef.current?.destroy()
-    }
-  }, [])
+  useDestroyOnUnmount(() => {
+    willChangeRef.current?.destroy()
+  })
 
   return willChangeRef.current as MotionValue<string>
 }
@@ -873,7 +952,7 @@ export function useSmooth(
   const smoothedRef = useRef<MotionValue<number> | null>(null)
   const currentRef = useRef(source.get())
 
-  if (smoothedRef.current === null) {
+  if (smoothedRef.current === null || smoothedRef.current.isDestroyed()) {
     smoothedRef.current = createMotionValue(source.get())
   }
 
@@ -886,11 +965,9 @@ export function useSmooth(
     return unsub
   }, [source, factor])
 
-  useEffect(() => {
-    return () => {
-      smoothedRef.current?.destroy()
-    }
-  }, [])
+  useDestroyOnUnmount(() => {
+    smoothedRef.current?.destroy()
+  })
 
   return smoothedRef.current
 }
@@ -911,12 +988,18 @@ export function useDelay(
   const delayedRef = useRef<MotionValue<number> | null>(null)
   const bufferRef = useRef<number[]>([])
 
-  if (delayedRef.current === null) {
+  if (delayedRef.current === null || delayedRef.current.isDestroyed()) {
     delayedRef.current = createMotionValue(source.get())
     bufferRef.current = Array(frames).fill(source.get())
   }
 
   useEffect(() => {
+    // Resize the buffer when the frame count changes
+    const buffer = bufferRef.current
+    const safeFrames = Math.max(0, Math.floor(frames) || 0)
+    while (buffer.length > safeFrames) buffer.shift()
+    while (buffer.length < safeFrames) buffer.unshift(buffer[0] ?? source.get())
+
     const unsub = source.subscribe((value) => {
       bufferRef.current.push(value)
       const delayed = bufferRef.current.shift()
@@ -928,11 +1011,9 @@ export function useDelay(
     return unsub
   }, [source, frames])
 
-  useEffect(() => {
-    return () => {
-      delayedRef.current?.destroy()
-    }
-  }, [])
+  useDestroyOnUnmount(() => {
+    delayedRef.current?.destroy()
+  })
 
   return delayedRef.current
 }

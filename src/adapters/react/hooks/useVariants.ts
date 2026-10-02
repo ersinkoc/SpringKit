@@ -1,11 +1,13 @@
 /**
  * React hooks for Variants System
  */
-import { useRef, useCallback, useMemo, createContext, useContext, type ReactNode } from 'react'
+import { useRef, useCallback, useEffect, useMemo, useState, createContext, useContext, type ReactNode } from 'react'
 import * as React from 'react'
 import {
   getVariant,
   calculateStaggerDelays,
+  buildTransformString,
+  isTransformProperty,
   type Variants,
   type AnimationValues,
   type VariantTransition,
@@ -81,7 +83,7 @@ export interface UseVariantsReturn {
  *   visible: {
  *     opacity: 1,
  *     y: 0,
- *     transition: { staggerChildren: 0.1 }
+ *     transition: { staggerChildren: 100 } // ms
  *   },
  * }
  *
@@ -118,8 +120,22 @@ export function useVariants(options: UseVariantsOptions): UseVariantsReturn {
   const currentVariantRef = useRef<string | undefined>(undefined)
   const isAnimatingRef = useRef<boolean>(false)
 
+  // Variant requested imperatively via setVariant(). It applies until the
+  // `animate` option changes (the prop then takes over again).
+  const [variantOverride, setVariantOverride] = useState<{
+    name: string
+    animate: UseVariantsOptions['animate']
+  } | null>(null)
+  const animateRef = useRef(animate)
+  animateRef.current = animate
+  const overrideName =
+    variantOverride && variantOverride.animate === animate ? variantOverride.name : undefined
+
   // Determine the target variant
   const targetVariant = useMemo(() => {
+    if (overrideName !== undefined) {
+      return overrideName
+    }
     // If animate is a string, use it
     if (typeof animate === 'string') {
       return animate
@@ -129,7 +145,7 @@ export function useVariants(options: UseVariantsOptions): UseVariantsReturn {
       return parentContext.variant
     }
     return undefined
-  }, [animate, inherit, parentContext.variant])
+  }, [overrideName, animate, inherit, parentContext.variant])
 
   // Resolve initial values
   const initialValues = useMemo(() => {
@@ -148,14 +164,14 @@ export function useVariants(options: UseVariantsOptions): UseVariantsReturn {
 
   // Resolve target values
   const targetValues = useMemo(() => {
-    if (typeof animate === 'object') {
+    if (typeof animate === 'object' && overrideName === undefined) {
       return animate
     }
     if (targetVariant && variants) {
       return getVariant(variants, targetVariant, custom).values
     }
     return initialValues
-  }, [animate, targetVariant, variants, custom, initialValues])
+  }, [animate, overrideName, targetVariant, variants, custom, initialValues])
 
   // Get transition settings
   const transition = useMemo(() => {
@@ -165,16 +181,23 @@ export function useVariants(options: UseVariantsOptions): UseVariantsReturn {
     return parentContext.transition || {}
   }, [targetVariant, variants, custom, parentContext.transition])
 
-  // Calculate delay from stagger
+  // Calculate delay from stagger (ms). staggerChildren/delayChildren are
+  // orchestration settings of the PARENT's transition; fall back to this
+  // element's own transition for backward compatibility.
   const staggerDelay = useMemo(() => {
-    if (parentContext.staggerIndex !== undefined && transition.staggerChildren) {
-      return (
-        (parentContext.staggerIndex * transition.staggerChildren) +
-        (transition.delayChildren || 0)
-      )
+    const parentTransition = parentContext.transition
+    const staggerChildren = parentTransition?.staggerChildren ?? transition.staggerChildren
+    const delayChildren = parentTransition?.delayChildren ?? transition.delayChildren
+    const staggerDirection = parentTransition?.staggerDirection ?? transition.staggerDirection
+    const index = parentContext.staggerIndex
+    if (index !== undefined && staggerChildren) {
+      const count = parentContext.staggerCount
+      const position =
+        staggerDirection === -1 && count !== undefined ? count - 1 - index : index
+      return position * staggerChildren + (delayChildren || 0)
     }
     return transition.delay || 0
-  }, [parentContext.staggerIndex, transition])
+  }, [parentContext.staggerIndex, parentContext.staggerCount, parentContext.transition, transition])
 
   // Helper to convert string/number values to numbers for spring
   const toNumber = (val: string | number | undefined, fallback: number): number => {
@@ -212,11 +235,32 @@ export function useVariants(options: UseVariantsOptions): UseVariantsReturn {
   // Use a ref to track if we've done the initial setup
   const hasInitializedRef = useRef(false)
 
+  // With a (stagger) delay the spring keeps its previous target until the
+  // delay has elapsed. null = nothing released yet (still at the initial values)
+  const [releasedTarget, setReleasedTarget] = useState<typeof animatedTargetValues | null>(null)
+  const latestTargetRef = useRef(animatedTargetValues)
+  latestTargetRef.current = animatedTargetValues
+  const hasDelay = staggerDelay > 0
+  const { x: tx, y: ty, scale: ts, scaleX: tsx, scaleY: tsy, rotate: tr, opacity: to } = animatedTargetValues
+
+  useEffect(() => {
+    if (!hasDelay) return
+    const timer = setTimeout(() => {
+      setReleasedTarget(latestTargetRef.current)
+    }, staggerDelay)
+    return () => clearTimeout(timer)
+    // Keyed on the target's contents (not identity) so inline `variants`
+    // objects don't keep postponing the start
+  }, [hasDelay, staggerDelay, tx, ty, ts, tsx, tsy, tr, to])
+
   // Spring values for animation
   // On first render, use initial values to prevent unwanted animation
-  // After that, use target values
+  // After that, use target values (released after the delay, if any)
+  const springTarget = hasDelay
+    ? (releasedTarget ?? initialSpringValues)
+    : hasInitializedRef.current ? animatedTargetValues : initialSpringValues
   const springValues = useSpring(
-    hasInitializedRef.current ? animatedTargetValues : initialSpringValues,
+    springTarget,
     {
       stiffness: springConfig?.stiffness ?? transition.spring?.stiffness ?? 100,
       damping: springConfig?.damping ?? transition.spring?.damping ?? 15,
@@ -260,7 +304,7 @@ export function useVariants(options: UseVariantsOptions): UseVariantsReturn {
   }, [targetVariant, staggerDelay, onAnimationComplete, springConfig?.stiffness, springConfig?.damping, springConfig?.mass])
 
   const setVariant = useCallback((name: string) => {
-    currentVariantRef.current = name
+    setVariantOverride({ name, animate: animateRef.current })
   }, [])
 
   return {
@@ -287,7 +331,18 @@ export interface VariantProviderProps {
 }
 
 /**
- * Provide variant context to children
+ * Provide variant context to children.
+ *
+ * Each direct child receives its position (`staggerIndex`) and the number of
+ * children (`staggerCount`), so `transition.staggerChildren` /
+ * `staggerDirection` stagger a list of `useVariants` children:
+ *
+ * @example
+ * ```tsx
+ * <VariantProvider variant="visible" transition={{ staggerChildren: 80 }}>
+ *   {items.map((item) => <Item key={item.id} {...item} />)}
+ * </VariantProvider>
+ * ```
  */
 export function VariantProvider({
   children,
@@ -295,12 +350,23 @@ export function VariantProvider({
   custom,
   transition,
 }: VariantProviderProps): React.ReactElement {
-  const value = useMemo(
-    () => ({ variant, custom, transition }),
-    [variant, custom, transition]
-  )
+  const items = React.Children.toArray(children)
+  const count = items.length
 
-  return React.createElement(VariantContext.Provider, { value }, children)
+  return React.createElement(
+    React.Fragment,
+    null,
+    items.map((child, index) =>
+      React.createElement(
+        VariantContext.Provider,
+        {
+          key: React.isValidElement(child) && child.key !== null ? child.key : index,
+          value: { variant, custom, transition, staggerIndex: index, staggerCount: count },
+        },
+        child
+      )
+    )
+  )
 }
 
 // ============ useStaggerChildren ============
@@ -368,31 +434,98 @@ export interface CreateMotionComponentOptions {
   spring?: { stiffness?: number; damping?: number; mass?: number }
 }
 
+/** Props added by {@link createMotionComponent} */
+export type MotionComponentProps = Omit<UseVariantsOptions, 'variants' | 'spring'> & {
+  /** Variants (defaults to the ones passed to createMotionComponent) */
+  variants?: Variants
+  /** Spring config (defaults to the one passed to createMotionComponent) */
+  spring?: UseVariantsOptions['spring']
+}
+
 /**
- * Create a motion-enabled component
+ * Turn `values` from {@link useVariants} into inline styles: transform
+ * shorthands (x, y, scale, rotate...) become one `transform`, everything else
+ * (opacity, colors...) is applied as-is.
+ */
+function variantValuesToStyle(
+  values: AnimationValues,
+  baseTransform: unknown
+): React.CSSProperties {
+  const style: Record<string, string | number> = {}
+  const transformValues: AnimationValues = {}
+  for (const [key, value] of Object.entries(values)) {
+    if (key === 'transition' || (typeof value !== 'number' && typeof value !== 'string')) continue
+    if (isTransformProperty(key)) {
+      ;(transformValues as Record<string, unknown>)[key] = value
+    } else {
+      style[key] = value
+    }
+  }
+  const transform = buildTransformString(transformValues)
+  const base = typeof baseTransform === 'string' && baseTransform !== 'none' ? baseTransform : ''
+  if (transform || base) style.transform = [base, transform].filter(Boolean).join(' ')
+  return style as React.CSSProperties
+}
+
+/**
+ * Create a variant-driven component for an HTML/SVG element.
+ *
+ * The component accepts the element's own props plus `variants`, `initial`,
+ * `animate`, `custom`, `inherit`, `spring` and `onAnimationComplete`, and
+ * inherits the variant from a parent {@link VariantProvider}.
  *
  * @example
  * ```tsx
- * const MotionDiv = createMotionComponent('div', {
+ * const MotionLi = createMotionComponent('li', {
  *   variants: {
- *     hidden: { opacity: 0 },
- *     visible: { opacity: 1 },
+ *     hidden: { opacity: 0, y: 12 },
+ *     visible: { opacity: 1, y: 0 },
  *   },
  * })
  *
- * <MotionDiv animate="visible" />
+ * <VariantProvider variant="visible" transition={{ staggerChildren: 60 }}>
+ *   {items.map((item) => <MotionLi key={item.id} initial="hidden">{item.label}</MotionLi>)}
+ * </VariantProvider>
  * ```
  */
 export function createMotionComponent<T extends keyof React.JSX.IntrinsicElements>(
-  _element: T,
-  _options: CreateMotionComponentOptions = {}
+  element: T,
+  options: CreateMotionComponentOptions = {}
 ) {
-  // This is a placeholder - the actual implementation would create
-  // a component that uses useVariants internally
-  // For now, users should use the Animated component or useVariants directly
-  throw new Error(
-    'createMotionComponent is not yet implemented. Use useVariants hook or Animated component instead.'
-  )
+  type ElementProps = React.ComponentPropsWithoutRef<T>
+  type Props = Omit<ElementProps, keyof MotionComponentProps> & MotionComponentProps
+
+  const Component = React.forwardRef<Element, Props>(function MotionComponent(props, ref) {
+    const {
+      variants = options.variants,
+      spring = options.spring,
+      animate,
+      initial,
+      custom,
+      inherit,
+      onAnimationComplete,
+      ...rest
+    } = props as MotionComponentProps & { style?: React.CSSProperties } & Record<string, unknown>
+    const { style, ...elementProps } = rest as { style?: React.CSSProperties } & Record<string, unknown>
+
+    const { values } = useVariants({
+      variants,
+      spring,
+      animate,
+      initial,
+      custom,
+      inherit,
+      onAnimationComplete,
+    })
+
+    return React.createElement(element, {
+      ...elementProps,
+      ref,
+      style: { ...style, ...variantValuesToStyle(values, style?.transform) },
+    })
+  })
+  Component.displayName = `Motion(${String(element)})`
+  return Component
 }
 
 // ============ Export Context ============

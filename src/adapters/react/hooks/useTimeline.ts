@@ -1,7 +1,7 @@
 /**
  * React hook for Timeline API
  */
-import { useRef, useCallback, useMemo } from 'react'
+import { useRef, useCallback, useMemo, useState } from 'react'
 import {
   createTimeline,
   type TimelineConfig,
@@ -30,8 +30,13 @@ export interface UseTimelineReturn {
   reverse: () => void
   /** Restart from beginning */
   restart: () => void
-  /** Seek to a specific progress (0-1) or time */
-  seek: (progress: number) => void
+  /**
+   * Seek to a time position in seconds, or to a label (same as `Timeline.seek`).
+   * Use `seekProgress` to seek by progress (0-1).
+   */
+  seek: (position: number | string) => void
+  /** Seek to a progress (0-1) of the timeline's total duration */
+  seekProgress: (progress: number) => void
   /** Add a .to() animation */
   to: (target: TimelineTarget, props: TimelineProps, position?: TimelinePosition) => UseTimelineReturn
   /** Add a .from() animation */
@@ -59,8 +64,8 @@ export interface UseTimelineReturn {
  *   const box1 = useRef<HTMLDivElement>(null)
  *   const box2 = useRef<HTMLDivElement>(null)
  *
+ *   // Timelines don't autoplay unless `autoplay: true`
  *   const { timeline, play } = useTimeline({
- *     paused: true,
  *     onComplete: () => console.log('Done!'),
  *   })
  *
@@ -68,7 +73,7 @@ export interface UseTimelineReturn {
  *     if (timeline && box1.current && box2.current) {
  *       timeline
  *         .to(box1.current, { x: 100, opacity: 1 })
- *         .to(box2.current, { x: 100, opacity: 1 }, '-=200')
+ *         .to(box2.current, { x: 100, opacity: 1 }, '-=0.2') // positions are in seconds
  *     }
  *   }, [timeline])
  *
@@ -98,14 +103,23 @@ export function useTimeline(
   options: UseTimelineOptions = {}
 ): UseTimelineReturn {
   const timelineRef = useRef<Timeline | null>(null)
+  // Mirror the instance in state so consumers re-render with the created
+  // timeline (a ref alone would leave `timeline` null after mount)
+  const [timeline, setTimeline] = useState<Timeline | null>(null)
+  const optionsRef = useRef(options)
+  optionsRef.current = options
 
   // Create timeline on mount
   useIsomorphicLayoutEffect(() => {
-    const timeline = createTimeline(options)
-    timelineRef.current = timeline
+    const instance = createTimeline(optionsRef.current)
+    timelineRef.current = instance
+    setTimeline(instance)
 
     return () => {
-      timeline.kill()
+      instance.kill()
+      if (timelineRef.current === instance) {
+        timelineRef.current = null
+      }
     }
   }, [])
 
@@ -129,8 +143,15 @@ export function useTimeline(
     timelineRef.current?.restart()
   }, [])
 
-  const seek = useCallback((progress: number) => {
-    timelineRef.current?.seek(progress)
+  const seek = useCallback((position: number | string) => {
+    timelineRef.current?.seek(position)
+  }, [])
+
+  const seekProgress = useCallback((progress: number) => {
+    const instance = timelineRef.current
+    if (!instance || !Number.isFinite(progress)) return
+    const clamped = Math.min(1, Math.max(0, progress))
+    instance.seek(clamped * instance.duration())
   }, [])
 
   const kill = useCallback(() => {
@@ -140,13 +161,14 @@ export function useTimeline(
   // Chainable methods that return the hook result
   const returnValue = useMemo(() => {
     const result: UseTimelineReturn = {
-      timeline: timelineRef.current,
+      timeline,
       play,
       pause,
       resume,
       reverse,
       restart,
       seek,
+      seekProgress,
       kill,
       get isPlaying() {
         return timelineRef.current?.isPlaying() ?? false
@@ -176,7 +198,7 @@ export function useTimeline(
       },
     }
     return result
-  }, [play, pause, resume, reverse, restart, seek, kill])
+  }, [timeline, play, pause, resume, reverse, restart, seek, seekProgress, kill])
 
   return returnValue
 }
@@ -214,19 +236,33 @@ export interface UseTimelineStateReturn {
 export function useTimelineState(
   timeline: Timeline | null
 ): UseTimelineStateReturn {
-  const progressRef = useRef(0)
-  const isPlayingRef = useRef(false)
-  const isPausedRef = useRef(true)
-  const isReversedRef = useRef(false)
+  const [state, setState] = useState<UseTimelineStateReturn>({
+    progress: 0,
+    isPlaying: false,
+    isPaused: true,
+    isReversed: false,
+  })
 
   useIsomorphicLayoutEffect(() => {
     if (!timeline) return
 
+    // Only re-render when something actually changed
     const updateState = () => {
-      progressRef.current = timeline.progress()
-      isPlayingRef.current = timeline.isPlaying()
-      isPausedRef.current = !timeline.isPlaying()
-      isReversedRef.current = timeline.isReversed()
+      const isPlaying = timeline.isPlaying()
+      const next: UseTimelineStateReturn = {
+        progress: timeline.progress(),
+        isPlaying,
+        isPaused: !isPlaying,
+        isReversed: timeline.isReversed(),
+      }
+      setState((prev) =>
+        prev.progress === next.progress &&
+        prev.isPlaying === next.isPlaying &&
+        prev.isPaused === next.isPaused &&
+        prev.isReversed === next.isReversed
+          ? prev
+          : next
+      )
     }
 
     // Update initially
@@ -253,18 +289,5 @@ export function useTimelineState(
     }
   }, [timeline])
 
-  return {
-    get progress() {
-      return progressRef.current
-    },
-    get isPlaying() {
-      return isPlayingRef.current
-    },
-    get isPaused() {
-      return isPausedRef.current
-    },
-    get isReversed() {
-      return isReversedRef.current
-    },
-  }
+  return state
 }

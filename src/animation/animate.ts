@@ -64,6 +64,15 @@ const pxProperties = new Set([
   'fontSize', 'letterSpacing', 'lineHeight',
 ])
 
+/**
+ * Last applied transform values per element. CSS transforms are a single
+ * property, so without this a second animate() call (e.g. { scale }) would
+ * wipe transforms set by a previous one (e.g. { x }), and transform
+ * properties would always restart from their default instead of their
+ * current value (the computed matrix is not parsed).
+ */
+const elementTransforms = new WeakMap<Element, Map<string, number>>()
+
 function buildTransform(values: Map<string, number>): string {
   const parts: string[] = []
 
@@ -120,7 +129,13 @@ function applyStylesToElement(element: Element, values: Map<string, number>): vo
   })
 
   if (transformValues.size > 0) {
-    el.style.transform = buildTransform(transformValues)
+    let stored = elementTransforms.get(element)
+    if (!stored) {
+      stored = new Map()
+      elementTransforms.set(element, stored)
+    }
+    transformValues.forEach((value, property) => stored!.set(property, value))
+    el.style.transform = buildTransform(stored)
   }
 
   Object.entries(styleValues).forEach(([prop, val]) => {
@@ -133,10 +148,17 @@ function parseCurrentValue(element: Element, property: string): number {
   const computed = getComputedStyle(el)
 
   if (property === 'opacity') {
-    return parseFloat(computed.opacity) || 1
+    // Note: `|| 1` would turn a legitimate opacity of 0 into 1
+    const opacity = parseFloat(computed.opacity)
+    return Number.isNaN(opacity) ? 1 : opacity
   }
 
   if (transformProperties.has(property)) {
+    // Prefer the value last applied by animate() on this element
+    const stored = elementTransforms.get(element)?.get(property)
+    if (stored !== undefined) {
+      return stored
+    }
     // Parse from transform matrix - simplified, return 0 as default
     const transform = computed.transform
     if (transform === 'none') {
@@ -181,6 +203,9 @@ function parseCurrentValue(element: Element, property: string): number {
  *
  * @example Keyframes
  * ```ts
+ * // An array is `[from, ...keyframes]`: the property jumps to the FIRST
+ * // entry, then springs through the remaining entries in order
+ * // (here 0 -> 1 -> 0.5 -> 1). A single-entry array is a plain target.
  * animate(element, { opacity: [0, 1, 0.5, 1] })
  * ```
  *
@@ -211,12 +236,13 @@ export function animate(
 
   const springs = new Map<string, SpringValue>()
   const currentValues = new Map<string, number>()
+  // Current keyframe target per property (used to resume after pause)
+  const currentTargets = new Map<string, number>()
   let isRunning = true
   let isPaused = false
   let resolveFinished: () => void
-  // Track RAF IDs and timeout IDs separately for proper cleanup
+  // Track RAF IDs for proper cleanup
   const rafIds = new Set<number>()
-  const timeoutIds = new Set<ReturnType<typeof setTimeout>>()
   let delayTimeoutId: ReturnType<typeof setTimeout> | null = null
 
   const finished = new Promise<void>((resolve, _reject) => {
@@ -239,9 +265,32 @@ export function animate(
     let completedCount = 0
     const totalAnimations = entries.length
 
+    // Nothing to animate: complete immediately instead of never resolving
+    if (totalAnimations === 0) {
+      if (isRunning) {
+        isRunning = false
+        try {
+          onComplete?.()
+        } catch {
+          // Ignore callback errors
+        }
+        resolveFinished()
+      }
+      return
+    }
+
+    const toNumber = (v: number | string) =>
+      typeof v === 'string' ? parseFloat(v) || 0 : v
+
     entries.forEach(([property, value]) => {
-      const values = Array.isArray(value) ? value : [value]
-      const startValue = parseCurrentValue(element, property)
+      // `[from, ...rest]`: a multi-entry array starts at its first entry
+      // (applied immediately) and springs through the rest
+      const list: Array<number | string> = Array.isArray(value) ? value : [value]
+      const hasFrom = list.length > 1
+      const values = hasFrom ? list.slice(1) : list
+      const startValue = hasFrom
+        ? toNumber(list[0]!)
+        : parseCurrentValue(element, property)
 
       // Create spring for this property
       const spring = createSpringValue(startValue, {
@@ -274,35 +323,29 @@ export function animate(
           // Early exit if stopped
           if (!isRunning) break
 
-          const numValue = typeof targetValue === 'string'
-            ? parseFloat(targetValue) || 0
-            : targetValue
+          const numValue = toNumber(targetValue)
 
           await new Promise<void>((resolve) => {
-            spring.set(numValue)
+            currentTargets.set(property, numValue)
+            // If paused, resume() will start the spring toward this target
+            if (!isPaused) {
+              spring.set(numValue)
+            }
 
             let checkId: number | null = null
             const checkDone = () => {
               // Clear previous ID from tracking
               if (checkId !== null) {
                 rafIds.delete(checkId)
-                timeoutIds.delete(checkId as unknown as ReturnType<typeof setTimeout>)
               }
 
-              // If stopped or animation complete, resolve and cleanup
-              if (!isRunning || !spring.isAnimating()) {
+              // Stopped: resolve and cleanup. While paused the spring is
+              // halted, so don't mistake "not animating" for "done".
+              if (!isRunning || (!isPaused && !spring.isAnimating())) {
                 resolve()
-              } else if (!isPaused) {
+              } else {
                 checkId = requestAnimationFrame(checkDone)
                 rafIds.add(checkId)
-              } else {
-                // If paused, schedule check later instead of RAF loop
-                const timeoutId = setTimeout(() => {
-                  timeoutIds.delete(timeoutId)
-                  checkDone()
-                }, 100)
-                checkId = timeoutId as unknown as number
-                timeoutIds.add(timeoutId)
               }
             }
             // Initial check after one frame
@@ -340,10 +383,6 @@ export function animate(
       cancelAnimationFrame(id)
     })
     rafIds.clear()
-    timeoutIds.forEach((id) => {
-      clearTimeout(id)
-    })
-    timeoutIds.clear()
     if (delayTimeoutId !== null) {
       clearTimeout(delayTimeoutId)
       delayTimeoutId = null
@@ -358,12 +397,19 @@ export function animate(
       resolveFinished()
     },
     pause: () => {
+      if (!isRunning || isPaused) return
       isPaused = true
-      // Note: SpringValue doesn't have pause, we just set flag to skip updates
+      // Halt the springs at their current position (SpringValue has no pause)
+      springs.forEach((spring) => spring.stop())
     },
     resume: () => {
+      if (!isPaused) return
       isPaused = false
-      // Resume by allowing updates to continue
+      if (!isRunning) return
+      // Continue toward the current keyframe target from where we halted
+      currentTargets.forEach((value, property) => {
+        springs.get(property)?.set(value)
+      })
     },
     getProgress: () => {
       // Simplified progress calculation

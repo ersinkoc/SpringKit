@@ -1,8 +1,28 @@
 "use client";
 
 // src/adapters/react/hooks/useSpring.ts
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect as useEffect2, useRef as useRef2, useState, useCallback } from "react";
 import { createSpringGroup } from "@oxog/springkit";
+
+// src/adapters/react/hooks/useDestroyOnUnmount.ts
+import { useEffect, useRef } from "react";
+function useDestroyOnUnmount(destroy) {
+  const destroyRef = useRef(destroy);
+  destroyRef.current = destroy;
+  const mountIdRef = useRef(0);
+  useEffect(() => {
+    const mountIds = mountIdRef;
+    const mountId = ++mountIds.current;
+    return () => {
+      queueMicrotask(() => {
+        if (mountIds.current !== mountId) return;
+        destroyRef.current();
+      });
+    };
+  }, []);
+}
+
+// src/adapters/react/hooks/useSpring.ts
 function shallowEqual(a, b) {
   const keysA = Object.keys(a);
   const keysB = Object.keys(b);
@@ -13,26 +33,26 @@ function shallowEqual(a, b) {
   return true;
 }
 function useSpring(values, config = {}) {
-  const springRef = useRef(null);
-  const isMounted = useRef(false);
-  const configRef = useRef(config);
-  const prevValuesRef = useRef(values);
+  const springRef = useRef2(null);
+  const isMounted = useRef2(false);
+  const configRef = useRef2(config);
+  const prevValuesRef = useRef2(values);
   configRef.current = config;
   if (!springRef.current || springRef.current.isDestroyed()) {
     springRef.current = createSpringGroup(values, config);
     prevValuesRef.current = values;
   }
   const getSpringValues = useCallback(() => {
-    const spring = springRef.current;
-    if (!spring) return values;
-    return spring.get();
+    const spring2 = springRef.current;
+    if (!spring2) return values;
+    return spring2.get();
   }, []);
   const [currentValues, setCurrentValues] = useState(getSpringValues);
-  useEffect(() => {
+  useEffect2(() => {
     isMounted.current = true;
-    const spring = springRef.current;
-    if (!spring) return;
-    const unsubscribe = spring.subscribe((newValues) => {
+    const spring2 = springRef.current;
+    if (!spring2) return;
+    const unsubscribe = spring2.subscribe((newValues) => {
       if (isMounted.current) {
         setCurrentValues(newValues);
       }
@@ -42,44 +62,48 @@ function useSpring(values, config = {}) {
       unsubscribe();
     };
   }, []);
-  useEffect(() => {
-    const spring = springRef.current;
-    if (!spring) return;
+  useEffect2(() => {
+    const spring2 = springRef.current;
+    if (!spring2) return;
     if (!shallowEqual(values, prevValuesRef.current)) {
       prevValuesRef.current = values;
-      spring.set(values, configRef.current);
+      spring2.set(values, configRef.current);
     }
   });
-  useEffect(() => {
-    return () => {
-      springRef.current?.destroy();
-      springRef.current = null;
-    };
-  }, []);
+  useDestroyOnUnmount(() => {
+    springRef.current?.destroy();
+    springRef.current = null;
+  });
   return currentValues;
 }
 
 // src/adapters/react/hooks/useSpringValue.ts
-import { useEffect as useEffect2, useRef as useRef2 } from "react";
+import { useRef as useRef3 } from "react";
 import { createSpringValue } from "@oxog/springkit";
 function useSpringValue(initial, config = {}) {
-  const springRef = useRef2(null);
+  const springRef = useRef3(null);
   if (!springRef.current || springRef.current.isDestroyed()) {
     springRef.current = createSpringValue(initial, config);
   }
-  useEffect2(() => {
-    return () => springRef.current?.destroy();
-  }, []);
+  useDestroyOnUnmount(() => springRef.current?.destroy());
   return springRef.current;
 }
 
 // src/adapters/react/hooks/useSprings.ts
-import { useEffect as useEffect3, useRef as useRef3, useState as useState2, useCallback as useCallback2 } from "react";
+import { useEffect as useEffect3, useRef as useRef4, useState as useState2, useCallback as useCallback2 } from "react";
 import { createSpringGroup as createSpringGroup2 } from "@oxog/springkit";
+function shallowEqual2(a, b) {
+  const keysA = Object.keys(a);
+  if (keysA.length !== Object.keys(b).length) return false;
+  for (const key of keysA) {
+    if (a[key] !== b[key]) return false;
+  }
+  return true;
+}
 function useSprings(count, items, defaultConfig = {}) {
-  const springsRef = useRef3([]);
-  const isMountedRef = useRef3(false);
-  const itemsRef = useRef3(items);
+  const springsRef = useRef4([]);
+  const isMountedRef = useRef4(false);
+  const itemsRef = useRef4(items);
   itemsRef.current = items;
   const getInitialValues = useCallback2(() => {
     const result = [];
@@ -90,22 +114,38 @@ function useSprings(count, items, defaultConfig = {}) {
     return result;
   }, [count]);
   const [currentValues, setCurrentValues] = useState2(getInitialValues);
+  const defaultConfigRef = useRef4(defaultConfig);
+  defaultConfigRef.current = defaultConfig;
+  const defaultConfigKey = JSON.stringify(defaultConfig);
+  const lastTargetsRef = useRef4([]);
+  const timeoutsRef = useRef4(/* @__PURE__ */ new Map());
+  const scheduleSet = useCallback2((index, values, delay, config) => {
+    const timeouts = timeoutsRef.current;
+    const pending = timeouts.get(index);
+    if (pending !== void 0) clearTimeout(pending);
+    const timeoutId = setTimeout(() => {
+      timeouts.delete(index);
+      springsRef.current[index]?.set(values, config);
+    }, delay);
+    timeouts.set(index, timeoutId);
+  }, []);
   useEffect3(() => {
     isMountedRef.current = true;
     springsRef.current.forEach((s) => s?.destroy());
     springsRef.current = [];
-    const timeoutIds = [];
+    lastTargetsRef.current = [];
     const unsubscribers = [];
+    setCurrentValues((prev) => prev.length > count ? prev.slice(0, count) : prev);
     for (let i = 0; i < count; i++) {
       const item = itemsRef.current(i);
       const initialValues = item.from ?? item.values;
-      const spring = createSpringGroup2(initialValues, {
-        ...defaultConfig,
+      const spring2 = createSpringGroup2(initialValues, {
+        ...defaultConfigRef.current,
         ...item.config
       });
-      springsRef.current.push(spring);
+      springsRef.current.push(spring2);
       const index = i;
-      const unsubscribe = spring.subscribe((values) => {
+      const unsubscribe = spring2.subscribe((values) => {
         if (isMountedRef.current) {
           setCurrentValues((prev) => {
             const prevValues = prev[index];
@@ -129,33 +169,44 @@ function useSprings(count, items, defaultConfig = {}) {
         }
       });
       unsubscribers.push(unsubscribe);
-      const timeoutId = setTimeout(() => {
-        spring.set(item.values);
-      }, item.delay ?? 0);
-      timeoutIds.push(timeoutId);
+      lastTargetsRef.current[i] = item.values;
+      scheduleSet(i, item.values, item.delay ?? 0);
     }
+    const timeouts = timeoutsRef.current;
     return () => {
       isMountedRef.current = false;
       unsubscribers.forEach((unsub) => unsub());
-      timeoutIds.forEach(clearTimeout);
+      timeouts.forEach(clearTimeout);
+      timeouts.clear();
       springsRef.current.forEach((s) => s?.destroy());
     };
-  }, [count, defaultConfig]);
+  }, [count, defaultConfigKey, scheduleSet]);
+  useEffect3(() => {
+    for (let i = 0; i < springsRef.current.length; i++) {
+      const spring2 = springsRef.current[i];
+      if (!spring2 || spring2.isDestroyed()) continue;
+      const item = itemsRef.current(i);
+      const prevTarget = lastTargetsRef.current[i];
+      if (prevTarget && shallowEqual2(prevTarget, item.values)) continue;
+      lastTargetsRef.current[i] = item.values;
+      scheduleSet(i, item.values, item.delay ?? 0, item.config);
+    }
+  });
   return currentValues;
 }
 
 // src/adapters/react/hooks/useTrail.ts
-import { useEffect as useEffect4, useRef as useRef4, useState as useState3 } from "react";
+import { useEffect as useEffect4, useRef as useRef5, useState as useState3 } from "react";
 import { createSpringValue as createSpringValue2 } from "@oxog/springkit";
 function useTrail(count, values, config = {}) {
-  const springsRef = useRef4(null);
-  const isMountedRef = useRef4(false);
+  const springsRef = useRef5(null);
+  const isMountedRef = useRef5(false);
   const [currentValues, setCurrentValues] = useState3(
     () => Array.from({ length: count }, () => ({ ...values }))
   );
-  const isFirstRender = useRef4(true);
-  const prevValuesRef = useRef4(JSON.stringify(values));
-  const timeoutsRef = useRef4([]);
+  const isFirstRender = useRef5(true);
+  const prevValuesRef = useRef5(JSON.stringify(values));
+  const timeoutsRef = useRef5([]);
   useEffect4(() => {
     isMountedRef.current = true;
     const keys = Object.keys(values);
@@ -167,16 +218,17 @@ function useTrail(count, values, config = {}) {
       const existingPropSprings = existingSprings?.get(key);
       for (let i = 0; i < count; i++) {
         const existingSpring = existingPropSprings?.[i];
-        const spring = existingSpring && !existingSpring.isDestroyed() ? existingSpring : createSpringValue2(initialValue, config);
-        propSprings.push(spring);
+        const spring2 = existingSpring && !existingSpring.isDestroyed() ? existingSpring : createSpringValue2(initialValue, config);
+        propSprings.push(spring2);
       }
       springs.set(key, propSprings);
     });
     springsRef.current = springs;
+    setCurrentValues((prev) => prev.length > count ? prev.slice(0, count) : prev);
     const unsubscribers = [];
     springs.forEach((propSprings, _key) => {
-      propSprings.forEach((spring, index) => {
-        const unsub = spring.subscribe(() => {
+      propSprings.forEach((spring2, index) => {
+        const unsub = spring2.subscribe(() => {
           if (!isMountedRef.current) return;
           setCurrentValues((prev) => {
             const next = [...prev];
@@ -198,7 +250,7 @@ function useTrail(count, values, config = {}) {
       isMountedRef.current = false;
       unsubscribers.forEach((unsub) => unsub());
       springs.forEach((propSprings) => {
-        propSprings.forEach((spring) => spring.destroy());
+        propSprings.forEach((spring2) => spring2.destroy());
       });
       springs.clear();
       springsRef.current = null;
@@ -222,9 +274,9 @@ function useTrail(count, values, config = {}) {
       const propSprings = springsRef.current?.get(key);
       if (!propSprings) return;
       const targetValue = values[key];
-      propSprings.forEach((spring, index) => {
+      propSprings.forEach((spring2, index) => {
         const timeoutId = setTimeout(() => {
-          spring.set(targetValue, config);
+          spring2.set(targetValue, config);
         }, index * staggerDelay);
         timeoutsRef.current.push(timeoutId);
       });
@@ -238,21 +290,21 @@ function useTrail(count, values, config = {}) {
 }
 
 // src/adapters/react/hooks/useDrag.ts
-import { useEffect as useEffect5, useRef as useRef5, useState as useState4 } from "react";
+import { useCallback as useCallback3, useEffect as useEffect5, useRef as useRef6, useState as useState4 } from "react";
 import { createDragSpring } from "@oxog/springkit";
 function useDrag(config = {}) {
-  const dragSpringRef = useRef5(null);
-  const positionRef = useRef5({ x: 0, y: 0 });
+  const dragSpringRef = useRef6(null);
+  const positionRef = useRef6({ x: 0, y: 0 });
   const [element, setElement] = useState4(null);
   const [isDragging, setIsDragging] = useState4(false);
   const [, forceUpdate] = useState4({});
-  const configRef = useRef5(config);
-  const rafIdRef = useRef5(null);
-  const pendingUpdateRef = useRef5(false);
+  const configRef = useRef6(config);
+  const rafIdRef = useRef6(null);
+  const pendingUpdateRef = useRef6(false);
   configRef.current = config;
-  const refCallback = (el) => {
+  const refCallback = useCallback3((el) => {
     setElement(el);
-  };
+  }, []);
   const throttledUpdate = () => {
     if (rafIdRef.current === null) {
       rafIdRef.current = requestAnimationFrame(() => {
@@ -322,9 +374,9 @@ function useDrag(config = {}) {
 }
 
 // src/adapters/react/hooks/useGesture.ts
-import { useRef as useRef6 } from "react";
+import { useRef as useRef7 } from "react";
 function useGesture(handlers) {
-  const stateRef = useRef6({
+  const stateRef = useRef7({
     isDragging: false,
     startX: 0,
     startY: 0,
@@ -332,6 +384,11 @@ function useGesture(handlers) {
     currentY: 0
   });
   const onPointerDown = (e) => {
+    try {
+      const target = e.currentTarget;
+      target?.setPointerCapture?.(e.pointerId);
+    } catch {
+    }
     stateRef.current = {
       isDragging: true,
       startX: e.clientX,
@@ -398,24 +455,60 @@ function usePresenceCustom() {
 }
 
 // src/adapters/react/hooks/useAnimate.ts
-import { useRef as useRef7, useCallback as useCallback3, useEffect as useEffect6 } from "react";
+import { useRef as useRef8, useCallback as useCallback4, useEffect as useEffect6 } from "react";
 import { createSpringValue as createSpringValue3 } from "@oxog/springkit";
+var TRANSFORM_DEFAULTS = {
+  x: 0,
+  y: 0,
+  z: 0,
+  scale: 1,
+  scaleX: 1,
+  scaleY: 1,
+  rotate: 0,
+  rotateX: 0,
+  rotateY: 0,
+  rotateZ: 0
+};
+function readInitialValue(element, property) {
+  const transformDefault = TRANSFORM_DEFAULTS[property];
+  if (transformDefault !== void 0) return transformDefault;
+  if (element && typeof getComputedStyle === "function") {
+    const computed = parseFloat(
+      getComputedStyle(element).getPropertyValue(
+        property.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)
+      )
+    );
+    if (Number.isFinite(computed)) return computed;
+  }
+  return property === "opacity" ? 1 : 0;
+}
 function useAnimate() {
-  const scopeRef = useRef7(null);
-  const springsRef = useRef7(/* @__PURE__ */ new Map());
-  const valuesRef = useRef7(/* @__PURE__ */ new Map());
-  const isAnimatingRef = useRef7(false);
-  const cleanupRef = useRef7([]);
-  const rafIdsRef = useRef7(/* @__PURE__ */ new Set());
-  const timeoutIdsRef = useRef7(/* @__PURE__ */ new Set());
-  const isDestroyedRef = useRef7(false);
+  const scopeRef = useRef8(null);
+  const springsRef = useRef8(/* @__PURE__ */ new Map());
+  const valuesRef = useRef8(/* @__PURE__ */ new Map());
+  const isAnimatingRef = useRef8(false);
+  const cleanupRef = useRef8([]);
+  const rafIdsRef = useRef8(/* @__PURE__ */ new Set());
+  const timeoutIdsRef = useRef8(/* @__PURE__ */ new Set());
+  const isDestroyedRef = useRef8(false);
+  const pendingResolversRef = useRef8(/* @__PURE__ */ new Set());
+  const trackedPromise = useCallback4((executor) => {
+    return new Promise((resolve) => {
+      const done = () => {
+        pendingResolversRef.current.delete(done);
+        resolve();
+      };
+      pendingResolversRef.current.add(done);
+      executor(done);
+    });
+  }, []);
   useEffect6(() => {
     isDestroyedRef.current = false;
   }, []);
-  const _getPropertyStyle = useCallback3((_property, _value) => {
+  const _getPropertyStyle = useCallback4((_property, _value) => {
     return null;
   }, []);
-  const applyStyles = useCallback3(() => {
+  const applyStyles = useCallback4(() => {
     const element = scopeRef.current;
     if (!element) return;
     const transforms = [];
@@ -464,11 +557,11 @@ function useAnimate() {
       element.style.setProperty(prop, val);
     });
   }, []);
-  const animate = useCallback3(async (target, options = {}) => {
+  const animate = useCallback4(async (target, options = {}) => {
     const { config = {}, delay = 0, onComplete } = options;
     try {
       if (delay > 0) {
-        await new Promise((resolve) => {
+        await trackedPromise((resolve) => {
           const timeoutId = setTimeout(() => {
             timeoutIdsRef.current.delete(timeoutId);
             resolve();
@@ -484,17 +577,20 @@ function useAnimate() {
         let animationPromise = Promise.resolve();
         for (const targetValue of targetValues) {
           animationPromise = animationPromise.then(() => {
-            return new Promise((resolve) => {
+            return trackedPromise((resolve) => {
               if (isDestroyedRef.current) {
                 resolve();
                 return;
               }
               try {
-                let spring = springsRef.current.get(property);
-                if (!spring) {
-                  spring = createSpringValue3(valuesRef.current.get(property) ?? 0, config);
-                  springsRef.current.set(property, spring);
-                  const unsubscribe = spring.subscribe((v) => {
+                let spring2 = springsRef.current.get(property);
+                if (!spring2) {
+                  spring2 = createSpringValue3(
+                    valuesRef.current.get(property) ?? readInitialValue(scopeRef.current, property),
+                    config
+                  );
+                  springsRef.current.set(property, spring2);
+                  const unsubscribe = spring2.subscribe((v) => {
                     if (!isDestroyedRef.current) {
                       valuesRef.current.set(property, v);
                       applyStyles();
@@ -503,15 +599,15 @@ function useAnimate() {
                   cleanupRef.current.push(unsubscribe);
                 }
                 if (config.stiffness || config.damping || config.mass) {
-                  spring.setConfig(config);
+                  spring2.setConfig(config);
                 }
-                spring.set(targetValue);
+                spring2.set(targetValue);
                 let rafId = null;
                 const checkComplete = () => {
                   if (rafId !== null) {
                     rafIdsRef.current.delete(rafId);
                   }
-                  if (isDestroyedRef.current || !spring || !spring.isAnimating()) {
+                  if (isDestroyedRef.current || !spring2 || !spring2.isAnimating()) {
                     resolve();
                   } else {
                     rafId = requestAnimationFrame(checkComplete);
@@ -538,18 +634,18 @@ function useAnimate() {
       console.error("[SpringKit] animate() error:", error);
       isAnimatingRef.current = false;
     }
-  }, [applyStyles]);
+  }, [applyStyles, trackedPromise]);
   const controls = {
-    stop: useCallback3(() => {
-      springsRef.current.forEach((spring) => {
-        spring.stop();
+    stop: useCallback4(() => {
+      springsRef.current.forEach((spring2) => {
+        spring2.stop();
       });
       isAnimatingRef.current = false;
     }, []),
-    get: useCallback3((property) => {
+    get: useCallback4((property) => {
       return valuesRef.current.get(property);
     }, []),
-    isAnimating: useCallback3(() => {
+    isAnimating: useCallback4(() => {
       return isAnimatingRef.current;
     }, [])
   };
@@ -558,6 +654,7 @@ function useAnimate() {
     const timeoutIds = timeoutIdsRef.current;
     const cleanup = cleanupRef.current;
     const springs = springsRef.current;
+    const pendingResolvers = pendingResolversRef.current;
     return () => {
       isDestroyedRef.current = true;
       rafIds.forEach((id) => cancelAnimationFrame(id));
@@ -565,26 +662,26 @@ function useAnimate() {
       timeoutIds.forEach((id) => clearTimeout(id));
       timeoutIds.clear();
       cleanup.forEach((c) => c());
-      springs.forEach((spring) => spring.destroy());
+      springs.forEach((spring2) => spring2.destroy());
       springs.clear();
+      Array.from(pendingResolvers).forEach((resolve) => resolve());
+      pendingResolvers.clear();
     };
   }, []);
   return [scopeRef, animate, controls];
 }
 
 // src/adapters/react/hooks/useMotionValue.ts
-import { useRef as useRef8, useEffect as useEffect7, useState as useState5 } from "react";
+import { useRef as useRef9, useEffect as useEffect7, useState as useState5 } from "react";
 import { createMotionValue } from "@oxog/springkit";
 function useMotionValue(initialValue, options) {
-  const motionValueRef = useRef8(null);
+  const motionValueRef = useRef9(null);
   if (motionValueRef.current === null || motionValueRef.current.isDestroyed()) {
     motionValueRef.current = createMotionValue(initialValue, options);
   }
-  useEffect7(() => {
-    return () => {
-      motionValueRef.current?.destroy();
-    };
-  }, []);
+  useDestroyOnUnmount(() => {
+    motionValueRef.current?.destroy();
+  });
   return motionValueRef.current;
 }
 function useMotionValueState(motionValue) {
@@ -607,7 +704,7 @@ function useMotionValueSync(externalValue, options) {
   return motionValue;
 }
 function useMotionValues(initialValues, options) {
-  const motionValuesRef = useRef8(null);
+  const motionValuesRef = useRef9(null);
   const needsRecreate = motionValuesRef.current === null || Object.values(motionValuesRef.current).some((mv) => mv.isDestroyed());
   if (needsRecreate) {
     const values = {};
@@ -619,29 +716,32 @@ function useMotionValues(initialValues, options) {
     }
     motionValuesRef.current = values;
   }
-  useEffect7(() => {
-    return () => {
-      if (motionValuesRef.current) {
-        const current = motionValuesRef.current;
-        for (const key in current) {
-          if (Object.prototype.hasOwnProperty.call(current, key)) {
-            current[key].destroy();
-          }
+  useDestroyOnUnmount(() => {
+    if (motionValuesRef.current) {
+      const current = motionValuesRef.current;
+      for (const key in current) {
+        if (Object.prototype.hasOwnProperty.call(current, key)) {
+          current[key].destroy();
         }
       }
-    };
-  }, []);
+    }
+  });
   return motionValuesRef.current;
 }
 
 // src/adapters/react/hooks/useTransform.ts
-import { useRef as useRef9, useEffect as useEffect8, useMemo, useCallback as useCallback4 } from "react";
-import { createMotionValue as createMotionValue2 } from "@oxog/springkit";
+import { useRef as useRef10, useEffect as useEffect8, useMemo, useCallback as useCallback5 } from "react";
+import {
+  createMotionValue as createMotionValue2,
+  parseColorRGBA,
+  mixColorsRGBA,
+  formatRGBA
+} from "@oxog/springkit";
 function useVelocity(source) {
-  const velocityRef = useRef9(null);
-  const frameRef = useRef9(null);
-  const lastVelocityRef = useRef9(0);
-  const isRunningRef = useRef9(false);
+  const velocityRef = useRef10(null);
+  const frameRef = useRef10(null);
+  const lastVelocityRef = useRef10(0);
+  const isRunningRef = useRef10(false);
   if (velocityRef.current === null || velocityRef.current.isDestroyed()) {
     velocityRef.current = createMotionValue2(source.getVelocity());
   }
@@ -678,15 +778,13 @@ function useVelocity(source) {
       }
     };
   }, [source]);
-  useEffect8(() => {
-    return () => {
-      velocityRef.current?.destroy();
-    };
-  }, []);
+  useDestroyOnUnmount(() => {
+    velocityRef.current?.destroy();
+  });
   return velocityRef.current;
 }
 function useMotionValueEvent(value, event, callback) {
-  const callbackRef = useRef9(callback);
+  const callbackRef = useRef10(callback);
   callbackRef.current = callback;
   useEffect8(() => {
     if (event === "change") {
@@ -695,9 +793,38 @@ function useMotionValueEvent(value, event, callback) {
     return value.on(event, () => callbackRef.current(value.get()));
   }, [value, event]);
 }
+var STRING_TOKEN_REGEX = /#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3,4})\b|(?:rgba?|hsla?)\([^)]*\)|\btransparent\b|-?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?/gi;
+function parseAnimatableString(value) {
+  const parts = [];
+  const tokens = [];
+  let last = 0;
+  for (const match of value.matchAll(STRING_TOKEN_REGEX)) {
+    const text = match[0];
+    const index = match.index ?? 0;
+    parts.push(value.slice(last, index));
+    tokens.push(/^[-.\d]/.test(text) ? parseFloat(text) : parseColorRGBA(text));
+    last = index + text.length;
+  }
+  parts.push(value.slice(last));
+  return { parts, tokens };
+}
+function isCompatible(a, b) {
+  return a.parts.length === b.parts.length && a.parts.every((part, i) => part === b.parts[i]) && a.tokens.every((token, i) => typeof token === typeof b.tokens[i]);
+}
+var formatNumber = (value) => String(Math.round(value * 1e6) / 1e6 || 0);
+function mixParsedStrings(a, b, t, space) {
+  let result = a.parts[0] ?? "";
+  for (let i = 0; i < a.tokens.length; i++) {
+    const from = a.tokens[i];
+    const to = b.tokens[i];
+    result += typeof from === "number" ? formatNumber(from + (to - from) * t) : formatRGBA(mixColorsRGBA(from, to, t, space));
+    result += a.parts[i + 1] ?? "";
+  }
+  return result;
+}
 function useTransform(source, inputRangeOrTransform, outputRange, options) {
-  const derivedRef = useRef9(null);
-  const unsubscribeRef = useRef9(null);
+  const derivedRef = useRef10(null);
+  const unsubscribeRef = useRef10(null);
   const transformFn = useMemo(() => {
     if (typeof inputRangeOrTransform === "function") {
       return inputRangeOrTransform;
@@ -706,40 +833,47 @@ function useTransform(source, inputRangeOrTransform, outputRange, options) {
       throw new Error("useTransform: outputRange is required when using range mapping");
     }
     const inputRange = inputRangeOrTransform;
-    if (typeof outputRange[0] === "number") {
-      return (value) => {
-        let i = 0;
-        for (; i < inputRange.length - 1; i++) {
-          const nextVal = inputRange[i + 1];
-          if (nextVal !== void 0 && value <= nextVal) break;
-        }
-        const inputMin = inputRange[i] ?? 0;
-        const inputMax = inputRange[Math.min(i + 1, inputRange.length - 1)] ?? 1;
-        const outputMin = outputRange[i] ?? 0;
-        const outputMax = outputRange[Math.min(i + 1, outputRange.length - 1)] ?? 1;
-        let t = inputMax !== inputMin ? (value - inputMin) / (inputMax - inputMin) : 0;
-        if (options?.ease) {
-          t = options.ease(t);
-        }
-        if (options?.clamp) {
-          t = Math.max(0, Math.min(1, t));
-        }
-        return outputMin + t * (outputMax - outputMin);
-      };
-    }
-    return (value) => {
+    const locate = (value) => {
       let i = 0;
-      for (; i < inputRange.length - 1; i++) {
+      for (; i < inputRange.length - 2; i++) {
         const nextVal = inputRange[i + 1];
         if (nextVal !== void 0 && value <= nextVal) break;
       }
-      const inCurr = inputRange[i] ?? 0;
-      const inNext = inputRange[i + 1] ?? 1;
-      const t = inNext !== inCurr ? (value - inCurr) / (inNext - inCurr) : 0;
-      return t < 0.5 ? outputRange[i] : outputRange[i + 1];
+      const next = Math.min(i + 1, inputRange.length - 1);
+      const inputMin = inputRange[i] ?? 0;
+      const inputMax = inputRange[next] ?? 1;
+      let t = inputMax !== inputMin ? (value - inputMin) / (inputMax - inputMin) : 0;
+      if (options?.ease) {
+        t = options.ease(t);
+      }
+      if (options?.clamp) {
+        t = Math.max(0, Math.min(1, t));
+      }
+      return { i, next, t };
     };
-  }, [inputRangeOrTransform, outputRange, options?.clamp, options?.ease]);
-  if (derivedRef.current === null) {
+    if (typeof outputRange[0] === "number") {
+      return (value) => {
+        const { i, next, t } = locate(value);
+        const outputMin = outputRange[i] ?? 0;
+        const outputMax = outputRange[Math.min(next, outputRange.length - 1)] ?? 1;
+        return outputMin + t * (outputMax - outputMin);
+      };
+    }
+    const strings = outputRange.map(String);
+    const parsed = strings.map(parseAnimatableString);
+    const space = options?.space;
+    return (value) => {
+      const { i, next, t } = locate(value);
+      const j = Math.min(next, strings.length - 1);
+      const from = parsed[i];
+      const to = parsed[j];
+      if (from && to && isCompatible(from, to)) {
+        return mixParsedStrings(from, to, t, space);
+      }
+      return t < 0.5 ? strings[i] : strings[j] ?? strings[i];
+    };
+  }, [inputRangeOrTransform, outputRange, options?.clamp, options?.ease, options?.space]);
+  if (derivedRef.current === null || derivedRef.current.isDestroyed()) {
     derivedRef.current = createMotionValue2(transformFn(source.get()));
   }
   useEffect8(() => {
@@ -750,20 +884,18 @@ function useTransform(source, inputRangeOrTransform, outputRange, options) {
       unsubscribeRef.current?.();
     };
   }, [source, transformFn]);
-  useEffect8(() => {
-    return () => {
-      derivedRef.current?.destroy();
-    };
-  }, []);
+  useDestroyOnUnmount(() => {
+    derivedRef.current?.destroy();
+  });
   return derivedRef.current;
 }
 function useCombinedTransform(sources, transform) {
-  const derivedRef = useRef9(null);
-  const unsubscribesRef = useRef9([]);
+  const derivedRef = useRef10(null);
+  const unsubscribesRef = useRef10([]);
   const getCurrentValues = () => {
     return sources.map((source) => source.get());
   };
-  if (derivedRef.current === null) {
+  if (derivedRef.current === null || derivedRef.current.isDestroyed()) {
     derivedRef.current = createMotionValue2(transform(getCurrentValues()));
   }
   useEffect8(() => {
@@ -776,17 +908,15 @@ function useCombinedTransform(sources, transform) {
       unsubscribesRef.current.forEach((unsub) => unsub());
     };
   }, [sources, transform]);
-  useEffect8(() => {
-    return () => {
-      derivedRef.current?.destroy();
-    };
-  }, []);
+  useDestroyOnUnmount(() => {
+    derivedRef.current?.destroy();
+  });
   return derivedRef.current;
 }
 function useVelocityTransform(source, transform) {
-  const derivedRef = useRef9(null);
-  const frameRef = useRef9(null);
-  const isRunningRef = useRef9(false);
+  const derivedRef = useRef10(null);
+  const frameRef = useRef10(null);
+  const isRunningRef = useRef10(false);
   if (derivedRef.current === null || derivedRef.current.isDestroyed()) {
     derivedRef.current = createMotionValue2(transform(source.getVelocity()));
   }
@@ -820,20 +950,18 @@ function useVelocityTransform(source, transform) {
       }
     };
   }, [source, transform]);
-  useEffect8(() => {
-    return () => {
-      derivedRef.current?.destroy();
-    };
-  }, []);
+  useDestroyOnUnmount(() => {
+    derivedRef.current?.destroy();
+  });
   return derivedRef.current;
 }
 function useSpringTransform(source, inputRange, outputRange, springConfig) {
-  const derivedRef = useRef9(null);
-  const unsubscribeRef = useRef9(null);
+  const derivedRef = useRef10(null);
+  const unsubscribeRef = useRef10(null);
   const transform = useMemo(() => {
     return (value) => {
       let i = 0;
-      for (; i < inputRange.length - 1; i++) {
+      for (; i < inputRange.length - 2; i++) {
         const nextVal = inputRange[i + 1];
         if (nextVal !== void 0 && value <= nextVal) break;
       }
@@ -841,11 +969,11 @@ function useSpringTransform(source, inputRange, outputRange, springConfig) {
       const inNext = inputRange[i + 1] ?? 1;
       const outCurr = outputRange[i] ?? 0;
       const outNext = outputRange[i + 1] ?? 1;
-      const t = (value - inCurr) / (inNext - inCurr);
+      const t = inNext !== inCurr ? (value - inCurr) / (inNext - inCurr) : 0;
       return outCurr + t * (outNext - outCurr);
     };
   }, [inputRange, outputRange]);
-  if (derivedRef.current === null) {
+  if (derivedRef.current === null || derivedRef.current.isDestroyed()) {
     derivedRef.current = createMotionValue2(transform(source.get()), {
       spring: springConfig
     });
@@ -858,21 +986,19 @@ function useSpringTransform(source, inputRange, outputRange, springConfig) {
       unsubscribeRef.current?.();
     };
   }, [source, transform]);
-  useEffect8(() => {
-    return () => {
-      derivedRef.current?.destroy();
-    };
-  }, []);
+  useDestroyOnUnmount(() => {
+    derivedRef.current?.destroy();
+  });
   return derivedRef.current;
 }
 function useMotionTemplate(strings, ...values) {
-  const templateRef = useRef9(null);
-  const unsubscribesRef = useRef9([]);
-  const valuesRef = useRef9(values);
+  const templateRef = useRef10(null);
+  const unsubscribesRef = useRef10([]);
+  const valuesRef = useRef10(values);
   valuesRef.current = values;
-  const stringsRef = useRef9(strings);
+  const stringsRef = useRef10(strings);
   stringsRef.current = strings;
-  const buildString = useCallback4(() => {
+  const buildString = useCallback5(() => {
     let result = "";
     stringsRef.current.forEach((str, i) => {
       result += str;
@@ -882,10 +1008,17 @@ function useMotionTemplate(strings, ...values) {
     });
     return result;
   }, []);
-  if (templateRef.current === null) {
+  if (templateRef.current === null || templateRef.current.isDestroyed()) {
     templateRef.current = createMotionValue2(buildString());
   }
-  const valuesLength = values.length;
+  const subscribedValuesRef = useRef10(values);
+  const valuesVersionRef = useRef10(0);
+  const prevValues = subscribedValuesRef.current;
+  if (prevValues.length !== values.length || values.some((v, i) => v !== prevValues[i])) {
+    subscribedValuesRef.current = values;
+    valuesVersionRef.current++;
+  }
+  const valuesVersion = valuesVersionRef.current;
   useEffect8(() => {
     unsubscribesRef.current.forEach((unsub) => unsub());
     unsubscribesRef.current = valuesRef.current.map(
@@ -897,19 +1030,17 @@ function useMotionTemplate(strings, ...values) {
       unsubscribesRef.current.forEach((unsub) => unsub());
       unsubscribesRef.current = [];
     };
-  }, [valuesLength, buildString]);
-  useEffect8(() => {
-    return () => {
-      templateRef.current?.destroy();
-    };
-  }, []);
+  }, [valuesVersion, buildString]);
+  useDestroyOnUnmount(() => {
+    templateRef.current?.destroy();
+  });
   return templateRef.current;
 }
 function useTime() {
-  const timeRef = useRef9(null);
-  const frameRef = useRef9(null);
-  const startTimeRef = useRef9(null);
-  if (timeRef.current === null) {
+  const timeRef = useRef10(null);
+  const frameRef = useRef10(null);
+  const startTimeRef = useRef10(null);
+  if (timeRef.current === null || timeRef.current.isDestroyed()) {
     timeRef.current = createMotionValue2(0);
   }
   useEffect8(() => {
@@ -931,17 +1062,15 @@ function useTime() {
       }
     };
   }, []);
-  useEffect8(() => {
-    return () => {
-      timeRef.current?.destroy();
-    };
-  }, []);
+  useDestroyOnUnmount(() => {
+    timeRef.current?.destroy();
+  });
   return timeRef.current;
 }
 function useAnimationFrame(callback) {
-  const callbackRef = useRef9(callback);
-  const frameRef = useRef9(null);
-  const lastTimeRef = useRef9(null);
+  const callbackRef = useRef10(callback);
+  const frameRef = useRef10(null);
+  const lastTimeRef = useRef10(null);
   callbackRef.current = callback;
   useEffect8(() => {
     const update = (timestamp) => {
@@ -959,15 +1088,15 @@ function useAnimationFrame(callback) {
   }, []);
 }
 function useWillChange(sources, properties = ["transform", "opacity"]) {
-  const willChangeRef = useRef9(null);
-  const frameRef = useRef9(null);
-  const wasAnimatingRef = useRef9(false);
-  const isDestroyedRef = useRef9(false);
-  const sourcesRef = useRef9(sources);
+  const willChangeRef = useRef10(null);
+  const frameRef = useRef10(null);
+  const wasAnimatingRef = useRef10(false);
+  const isDestroyedRef = useRef10(false);
+  const sourcesRef = useRef10(sources);
   sourcesRef.current = sources;
-  const propertiesRef = useRef9(properties);
+  const propertiesRef = useRef10(properties);
   propertiesRef.current = properties;
-  if (willChangeRef.current === null) {
+  if (willChangeRef.current === null || willChangeRef.current.isDestroyed()) {
     willChangeRef.current = createMotionValue2("auto");
   }
   const sourcesLength = sources.length;
@@ -998,11 +1127,9 @@ function useWillChange(sources, properties = ["transform", "opacity"]) {
       }
     };
   }, [sourcesLength]);
-  useEffect8(() => {
-    return () => {
-      willChangeRef.current?.destroy();
-    };
-  }, []);
+  useDestroyOnUnmount(() => {
+    willChangeRef.current?.destroy();
+  });
   return willChangeRef.current;
 }
 function useSum(...sources) {
@@ -1027,9 +1154,9 @@ function useSnap(source, step) {
   return useTransform(source, (v) => Math.round(v / step) * step);
 }
 function useSmooth(source, factor = 0.1) {
-  const smoothedRef = useRef9(null);
-  const currentRef = useRef9(source.get());
-  if (smoothedRef.current === null) {
+  const smoothedRef = useRef10(null);
+  const currentRef = useRef10(source.get());
+  if (smoothedRef.current === null || smoothedRef.current.isDestroyed()) {
     smoothedRef.current = createMotionValue2(source.get());
   }
   useEffect8(() => {
@@ -1039,21 +1166,23 @@ function useSmooth(source, factor = 0.1) {
     });
     return unsub;
   }, [source, factor]);
-  useEffect8(() => {
-    return () => {
-      smoothedRef.current?.destroy();
-    };
-  }, []);
+  useDestroyOnUnmount(() => {
+    smoothedRef.current?.destroy();
+  });
   return smoothedRef.current;
 }
 function useDelay(source, frames) {
-  const delayedRef = useRef9(null);
-  const bufferRef = useRef9([]);
-  if (delayedRef.current === null) {
+  const delayedRef = useRef10(null);
+  const bufferRef = useRef10([]);
+  if (delayedRef.current === null || delayedRef.current.isDestroyed()) {
     delayedRef.current = createMotionValue2(source.get());
     bufferRef.current = Array(frames).fill(source.get());
   }
   useEffect8(() => {
+    const buffer = bufferRef.current;
+    const safeFrames = Math.max(0, Math.floor(frames) || 0);
+    while (buffer.length > safeFrames) buffer.shift();
+    while (buffer.length < safeFrames) buffer.unshift(buffer[0] ?? source.get());
     const unsub = source.subscribe((value) => {
       bufferRef.current.push(value);
       const delayed = bufferRef.current.shift();
@@ -1063,21 +1192,19 @@ function useDelay(source, frames) {
     });
     return unsub;
   }, [source, frames]);
-  useEffect8(() => {
-    return () => {
-      delayedRef.current?.destroy();
-    };
-  }, []);
+  useDestroyOnUnmount(() => {
+    delayedRef.current?.destroy();
+  });
   return delayedRef.current;
 }
 
 // src/adapters/react/hooks/useDragControls.ts
-import { useRef as useRef10, useCallback as useCallback5 } from "react";
+import { useRef as useRef11, useCallback as useCallback6, useMemo as useMemo2 } from "react";
 function useDragControls() {
-  const isDraggingRef = useRef10(false);
-  const listenerRef = useRef10(null);
-  const stopRef = useRef10(null);
-  const start = useCallback5((event, options) => {
+  const isDraggingRef = useRef11(false);
+  const listenerRef = useRef11(null);
+  const stopRef = useRef11(null);
+  const start = useCallback6((event, options) => {
     isDraggingRef.current = true;
     event.preventDefault();
     if (listenerRef.current) {
@@ -1085,16 +1212,16 @@ function useDragControls() {
       listenerRef.current(pointerEvent, options);
     }
   }, []);
-  const stop = useCallback5(() => {
+  const stop = useCallback6(() => {
     isDraggingRef.current = false;
     if (stopRef.current) {
       stopRef.current();
     }
   }, []);
-  const isDragging = useCallback5(() => {
+  const isDragging = useCallback6(() => {
     return isDraggingRef.current;
   }, []);
-  const controls = {
+  const controls = useMemo2(() => ({
     start,
     stop,
     isDragging,
@@ -1104,45 +1231,50 @@ function useDragControls() {
     _setStopHandler: (handler) => {
       stopRef.current = handler;
     },
+    // Called by the dragged component when a drag starts / ends, including
+    // drags started by its own pointer listener
+    _notifyDragStart: () => {
+      isDraggingRef.current = true;
+    },
     _notifyDragEnd: () => {
       isDraggingRef.current = false;
     }
-  };
+  }), [start, stop, isDragging]);
   return controls;
 }
 
 // src/adapters/react/hooks/useInstantTransition.ts
-import { useCallback as useCallback6, useRef as useRef11, useTransition, startTransition } from "react";
+import { useCallback as useCallback7, useRef as useRef12, useTransition } from "react";
 import { useState as useState6 } from "react";
 function useInstantTransition() {
-  const [isPending, _setIsPending] = useTransition();
-  const startInstantTransition = useCallback6((callback) => {
+  const [isPending, startTransition] = useTransition();
+  const startInstantTransition = useCallback7((callback) => {
     startTransition(() => {
       callback();
     });
-  }, []);
+  }, [startTransition]);
   return [startInstantTransition, isPending];
 }
 function useForceUpdate() {
   const [, setTick] = useState6(0);
-  return useCallback6(() => {
+  return useCallback7(() => {
     setTick((t) => t + 1);
   }, []);
 }
 function useLayoutMeasure() {
-  const beforeRef = useRef11(null);
-  const measureBefore = useCallback6((element) => {
+  const beforeRef = useRef12(null);
+  const measureBefore = useCallback7((element) => {
     if (element) {
       beforeRef.current = element.getBoundingClientRect();
     }
   }, []);
-  const measureAfter = useCallback6((element) => {
+  const measureAfter = useCallback7((element) => {
     if (element) {
       return element.getBoundingClientRect();
     }
     return null;
   }, []);
-  const getLayoutDelta = useCallback6((element) => {
+  const getLayoutDelta = useCallback7((element) => {
     if (!element || !beforeRef.current) {
       return { x: 0, y: 0, scaleX: 1, scaleY: 1 };
     }
@@ -1159,7 +1291,7 @@ function useLayoutMeasure() {
 }
 
 // src/adapters/react/hooks/useInView.ts
-import { useState as useState7, useRef as useRef12, useEffect as useEffect10 } from "react";
+import { useState as useState7, useRef as useRef14, useEffect as useEffect11, useCallback as useCallback8 } from "react";
 
 // src/adapters/react/utils/ssr.ts
 import { useLayoutEffect, useEffect as useEffect9 } from "react";
@@ -1182,6 +1314,34 @@ function safeCancelAnimationFrame(id) {
   }
 }
 
+// src/adapters/react/hooks/useElementEffect.ts
+import { useEffect as useEffect10, useRef as useRef13 } from "react";
+function sameDeps(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    if (!Object.is(a[i], b[i])) return false;
+  }
+  return true;
+}
+function useElementEffect(effect, getDeps) {
+  const stateRef = useRef13(null);
+  useEffect10(() => {
+    const deps = getDeps();
+    const previous = stateRef.current;
+    if (previous && sameDeps(previous.deps, deps)) return;
+    previous?.cleanup?.();
+    stateRef.current = { deps, cleanup: void 0 };
+    stateRef.current.cleanup = effect(deps) || void 0;
+  });
+  useEffect10(() => {
+    const state = stateRef;
+    return () => {
+      state.current?.cleanup?.();
+      state.current = null;
+    };
+  }, []);
+}
+
 // src/adapters/react/hooks/useInView.ts
 function useInView(options = {}) {
   const {
@@ -1190,11 +1350,11 @@ function useInView(options = {}) {
     margin = "0px",
     root
   } = options;
-  const ref = useRef12(null);
+  const ref = useRef14(null);
   const [inView, setInView] = useState7(false);
   const [entry, setEntry] = useState7();
-  const hasTriggered = useRef12(false);
-  useEffect10(() => {
+  const hasTriggered = useRef14(false);
+  useElementEffect(() => {
     if (!isBrowser) return;
     const element = ref.current;
     if (!element) return;
@@ -1230,16 +1390,16 @@ function useInView(options = {}) {
     return () => {
       observer.disconnect();
     };
-  }, [once, amount, margin, root]);
+  }, () => [ref.current, root?.current ?? null, once, amount, margin]);
   return { ref, inView, entry };
 }
 function useInViewCallback(callback, options = {}) {
-  const ref = useRef12(null);
-  const callbackRef = useRef12(callback);
-  const hasTriggered = useRef12(false);
+  const ref = useRef14(null);
+  const callbackRef = useRef14(callback);
+  const hasTriggered = useRef14(false);
   callbackRef.current = callback;
   const { once = false, amount = "some", margin = "0px", root } = options;
-  useEffect10(() => {
+  useElementEffect(() => {
     if (!isBrowser) return;
     const element = ref.current;
     if (!element) return;
@@ -1271,15 +1431,19 @@ function useInViewCallback(callback, options = {}) {
     );
     observer.observe(element);
     return () => observer.disconnect();
-  }, [once, amount, margin, root]);
+  }, () => [ref.current, root?.current ?? null, once, amount, margin]);
   return ref;
 }
 function useInViewMultiple(options = {}) {
-  const elementsRef = useRef12(/* @__PURE__ */ new Map());
+  const elementsRef = useRef14(/* @__PURE__ */ new Map());
   const [inViewMap, setInViewMap] = useState7(/* @__PURE__ */ new Map());
-  const observerRef = useRef12(null);
+  const observerRef = useRef14(null);
+  const detachedRef = useRef14(/* @__PURE__ */ new Map());
+  const triggeredRef = useRef14(/* @__PURE__ */ new Set());
   const { once = false, amount = "some", margin = "0px", root } = options;
-  useEffect10(() => {
+  const onceRef = useRef14(once);
+  onceRef.current = once;
+  useEffect11(() => {
     if (!isBrowser) return;
     let threshold;
     if (amount === "some") {
@@ -1289,19 +1453,23 @@ function useInViewMultiple(options = {}) {
     } else {
       threshold = amount;
     }
-    observerRef.current = new IntersectionObserver(
+    const observer = new IntersectionObserver(
       (entries) => {
+        const updates = [];
+        entries.forEach((entry) => {
+          const id = entry.target.dataset.inviewId;
+          if (!id) return;
+          updates.push([id, entry.isIntersecting]);
+          if (entry.isIntersecting && once) {
+            triggeredRef.current.add(id);
+            observer.unobserve(entry.target);
+          }
+        });
+        if (updates.length === 0) return;
         setInViewMap((prev) => {
+          if (updates.every(([id, value]) => prev.get(id) === value)) return prev;
           const next = new Map(prev);
-          entries.forEach((entry) => {
-            const id = entry.target.dataset.inviewId;
-            if (id) {
-              next.set(id, entry.isIntersecting);
-              if (entry.isIntersecting && once) {
-                observerRef.current?.unobserve(entry.target);
-              }
-            }
-          });
+          updates.forEach(([id, value]) => next.set(id, value));
           return next;
         });
       },
@@ -1311,31 +1479,57 @@ function useInViewMultiple(options = {}) {
         threshold
       }
     );
-    elementsRef.current.forEach((element) => {
-      observerRef.current?.observe(element);
+    observerRef.current = observer;
+    elementsRef.current.forEach((element, id) => {
+      if (once && triggeredRef.current.has(id)) return;
+      observer.observe(element);
     });
     return () => {
-      observerRef.current?.disconnect();
+      observer.disconnect();
+      if (observerRef.current === observer) {
+        observerRef.current = null;
+      }
     };
   }, [once, amount, margin, root]);
-  const setRef = (id, element) => {
+  const setRef = useCallback8((id, element) => {
+    const elements = elementsRef.current;
+    const detached = detachedRef.current;
     if (element) {
-      element.dataset.inviewId = id;
-      elementsRef.current.set(id, element);
-      observerRef.current?.observe(element);
-    } else {
-      const existing = elementsRef.current.get(id);
-      if (existing) {
-        observerRef.current?.unobserve(existing);
-        elementsRef.current.delete(id);
-        setInViewMap((prev) => {
-          const next = new Map(prev);
-          next.delete(id);
-          return next;
-        });
+      const pending = detached.get(id);
+      if (pending !== void 0) {
+        detached.delete(id);
+        if (pending === element) {
+          elements.set(id, element);
+          return;
+        }
+        observerRef.current?.unobserve(pending);
       }
+      const existing2 = elements.get(id);
+      if (existing2 === element) return;
+      if (existing2) observerRef.current?.unobserve(existing2);
+      element.dataset.inviewId = id;
+      elements.set(id, element);
+      if (!(onceRef.current && triggeredRef.current.has(id))) {
+        observerRef.current?.observe(element);
+      }
+      return;
     }
-  };
+    const existing = elements.get(id);
+    if (!existing) return;
+    elements.delete(id);
+    detached.set(id, existing);
+    queueMicrotask(() => {
+      if (detached.get(id) !== existing) return;
+      detached.delete(id);
+      observerRef.current?.unobserve(existing);
+      setInViewMap((prev) => {
+        if (!prev.has(id)) return prev;
+        const next = new Map(prev);
+        next.delete(id);
+        return next;
+      });
+    });
+  }, []);
   const getInView = (id) => {
     return inViewMap.get(id) ?? false;
   };
@@ -1343,27 +1537,30 @@ function useInViewMultiple(options = {}) {
 }
 
 // src/adapters/react/hooks/useScroll.ts
-import { useRef as useRef13, useEffect as useEffect11 } from "react";
+import { useRef as useRef15, useEffect as useEffect12 } from "react";
 import { createMotionValue as createMotionValue3 } from "@oxog/springkit";
 function useScroll(options = {}) {
   const { target, container, offset = ["start start", "end end"], axis = "y" } = options;
-  const scrollXRef = useRef13(null);
-  const scrollYRef = useRef13(null);
-  const scrollXProgressRef = useRef13(null);
-  const scrollYProgressRef = useRef13(null);
+  const [offsetStart, offsetEnd] = offset;
+  const scrollXRef = useRef15(null);
+  const scrollYRef = useRef15(null);
+  const scrollXProgressRef = useRef15(null);
+  const scrollYProgressRef = useRef15(null);
   if (scrollXRef.current === null || scrollXRef.current.isDestroyed()) {
     scrollXRef.current = createMotionValue3(0);
     scrollYRef.current = createMotionValue3(0);
     scrollXProgressRef.current = createMotionValue3(0);
     scrollYProgressRef.current = createMotionValue3(0);
   }
-  useEffect11(() => {
+  useElementEffect(() => {
     if (!isBrowser) return;
     const scrollX = scrollXRef.current;
     const scrollY = scrollYRef.current;
     const scrollXProgress = scrollXProgressRef.current;
     const scrollYProgress = scrollYProgressRef.current;
-    const scrollContainer = container?.current ?? (target?.current ?? window);
+    const containerEl = container?.current ?? null;
+    const targetEl = target?.current ?? null;
+    const scrollContainer = containerEl ?? targetEl ?? window;
     const isWindow = scrollContainer === window;
     const getScrollPosition = () => {
       if (isWindow) {
@@ -1399,24 +1596,22 @@ function useScroll(options = {}) {
       scrollXProgress.jump(size.width > 0 ? position.x / size.width : 0);
       scrollYProgress.jump(size.height > 0 ? position.y / size.height : 0);
     };
-    const calculateTargetProgress = () => {
-      const targetEl = target?.current;
-      if (!targetEl) {
-        calculateProgress();
-        return;
-      }
+    const calculateTargetProgress = (targetEl2) => {
       const position = getScrollPosition();
       scrollX.jump(position.x);
       scrollY.jump(position.y);
-      const rect = targetEl.getBoundingClientRect();
-      const viewportHeight = window.innerHeight;
-      const viewportWidth = window.innerWidth;
-      const [startOffset, endOffset] = offset;
-      const startPoint = parseOffset(startOffset, rect, viewportHeight, viewportWidth, "start");
-      const endPoint = parseOffset(endOffset, rect, viewportHeight, viewportWidth, "end");
-      const current = axis === "y" ? rect.top : rect.left;
-      const range = endPoint - startPoint;
-      const progress = range !== 0 ? (startPoint - current) / range : 0;
+      const rect = targetEl2.getBoundingClientRect();
+      let viewStart = 0;
+      let viewSize = axis === "x" ? window.innerWidth : window.innerHeight;
+      if (containerEl) {
+        const containerRect = containerEl.getBoundingClientRect();
+        viewStart = axis === "x" ? containerRect.left : containerRect.top;
+        viewSize = axis === "x" ? containerEl.clientWidth : containerEl.clientHeight;
+      }
+      const startPoint = parseOffset(offsetStart, rect, viewStart, viewSize, axis);
+      const endPoint = parseOffset(offsetEnd, rect, viewStart, viewSize, axis);
+      const range = startPoint - endPoint;
+      const progress = range !== 0 ? startPoint / range : 0;
       const clampedProgress = Math.max(0, Math.min(1, progress));
       if (axis === "y") {
         scrollYProgress.jump(clampedProgress);
@@ -1430,8 +1625,8 @@ function useScroll(options = {}) {
       if (rafId !== null) return;
       rafId = requestAnimationFrame(() => {
         if (!isActive) return;
-        if (target?.current) {
-          calculateTargetProgress();
+        if (targetEl) {
+          calculateTargetProgress(targetEl);
         } else {
           calculateProgress();
         }
@@ -1441,24 +1636,29 @@ function useScroll(options = {}) {
     handleScroll();
     const scrollTarget = isWindow ? window : scrollContainer;
     scrollTarget.addEventListener("scroll", handleScroll, { passive: true });
+    const listenToWindowScroll = !isWindow && !containerEl && !!targetEl;
+    if (listenToWindowScroll) {
+      window.addEventListener("scroll", handleScroll, { passive: true });
+    }
     window.addEventListener("resize", handleScroll, { passive: true });
     return () => {
       isActive = false;
       scrollTarget.removeEventListener("scroll", handleScroll);
+      if (listenToWindowScroll) {
+        window.removeEventListener("scroll", handleScroll);
+      }
       window.removeEventListener("resize", handleScroll);
       if (rafId !== null) {
         cancelAnimationFrame(rafId);
       }
     };
-  }, [target, container, offset, axis]);
-  useEffect11(() => {
-    return () => {
-      scrollXRef.current?.destroy();
-      scrollYRef.current?.destroy();
-      scrollXProgressRef.current?.destroy();
-      scrollYProgressRef.current?.destroy();
-    };
-  }, []);
+  }, () => [container?.current ?? null, target?.current ?? null, offsetStart, offsetEnd, axis]);
+  useDestroyOnUnmount(() => {
+    scrollXRef.current?.destroy();
+    scrollYRef.current?.destroy();
+    scrollXProgressRef.current?.destroy();
+    scrollYProgressRef.current?.destroy();
+  });
   return {
     scrollX: scrollXRef.current,
     scrollY: scrollYRef.current,
@@ -1466,79 +1666,88 @@ function useScroll(options = {}) {
     scrollYProgress: scrollYProgressRef.current
   };
 }
-function parseOffset(offset, rect, viewportHeight, _viewportWidth, _type) {
+function parseOffset(offset, rect, viewStart, viewSize, axis) {
   const parts = offset.split(" ");
   const elementPart = parts[0] || "start";
   const viewportPart = parts[1] || "start";
+  const elementStart = axis === "x" ? rect.left : rect.top;
+  const elementSize = axis === "x" ? rect.width : rect.height;
   let elementPos;
   if (elementPart === "start") {
-    elementPos = rect.top;
+    elementPos = elementStart;
   } else if (elementPart === "center") {
-    elementPos = rect.top + rect.height / 2;
+    elementPos = elementStart + elementSize / 2;
   } else if (elementPart === "end") {
-    elementPos = rect.bottom;
+    elementPos = elementStart + elementSize;
   } else if (elementPart.endsWith("px")) {
-    elementPos = rect.top + parseFloat(elementPart);
+    elementPos = elementStart + parseFloat(elementPart);
   } else if (elementPart.endsWith("%")) {
-    elementPos = rect.top + rect.height * parseFloat(elementPart) / 100;
+    elementPos = elementStart + elementSize * parseFloat(elementPart) / 100;
   } else {
-    elementPos = rect.top;
+    elementPos = elementStart;
   }
   let viewportPos;
   if (viewportPart === "start") {
     viewportPos = 0;
   } else if (viewportPart === "center") {
-    viewportPos = viewportHeight / 2;
+    viewportPos = viewSize / 2;
   } else if (viewportPart === "end") {
-    viewportPos = viewportHeight;
+    viewportPos = viewSize;
   } else if (viewportPart.endsWith("px")) {
     viewportPos = parseFloat(viewportPart);
   } else if (viewportPart.endsWith("%")) {
-    viewportPos = viewportHeight * parseFloat(viewportPart) / 100;
+    viewportPos = viewSize * parseFloat(viewportPart) / 100;
   } else {
     viewportPos = 0;
   }
-  return viewportPos - elementPos;
+  return viewStart + viewportPos - elementPos;
 }
 function useScrollVelocity(axis = "y") {
-  const velocityRef = useRef13(null);
-  const lastScrollRef = useRef13(0);
-  const lastTimeRef = useRef13(Date.now());
+  const velocityRef = useRef15(null);
   if (velocityRef.current === null || velocityRef.current.isDestroyed()) {
     velocityRef.current = createMotionValue3(0);
   }
-  useEffect11(() => {
+  useEffect12(() => {
     if (!isBrowser) return;
     const velocity = velocityRef.current;
+    const readScroll = () => axis === "y" ? window.scrollY || window.pageYOffset : window.scrollX || window.pageXOffset;
+    let lastScroll = readScroll();
+    let lastTime = performance.now();
+    let idleTimer = null;
     const handleScroll = () => {
-      const now = Date.now();
-      const currentScroll = axis === "y" ? window.scrollY || window.pageYOffset : window.scrollX || window.pageXOffset;
-      const deltaTime = now - lastTimeRef.current;
-      const deltaScroll = currentScroll - lastScrollRef.current;
+      const now2 = performance.now();
+      const currentScroll = readScroll();
+      const deltaTime = now2 - lastTime;
+      const deltaScroll = currentScroll - lastScroll;
       if (deltaTime > 0) {
         velocity.jump(deltaScroll / deltaTime * 1e3);
       }
-      lastScrollRef.current = currentScroll;
-      lastTimeRef.current = now;
+      lastScroll = currentScroll;
+      lastTime = now2;
+      if (idleTimer !== null) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        idleTimer = null;
+        velocity.jump(0);
+      }, SCROLL_VELOCITY_IDLE_MS);
     };
     window.addEventListener("scroll", handleScroll, { passive: true });
     return () => {
       window.removeEventListener("scroll", handleScroll);
+      if (idleTimer !== null) clearTimeout(idleTimer);
     };
   }, [axis]);
-  useEffect11(() => {
-    return () => {
-      velocityRef.current?.destroy();
-    };
-  }, []);
+  useDestroyOnUnmount(() => {
+    velocityRef.current?.destroy();
+  });
   return velocityRef.current;
 }
+var SCROLL_VELOCITY_IDLE_MS = 100;
 
 // src/adapters/react/hooks/useGestureState.ts
 import {
   useState as useState8,
-  useRef as useRef14,
-  useEffect as useEffect12
+  useRef as useRef16,
+  useEffect as useEffect13
 } from "react";
 function useGestureState(options = {}) {
   const {
@@ -1547,7 +1756,7 @@ function useGestureState(options = {}) {
     focus = true,
     drag = false
   } = options;
-  const ref = useRef14(null);
+  const ref = useRef16(null);
   const [state, setState] = useState8({
     isHovered: false,
     isPressed: false,
@@ -1574,7 +1783,7 @@ function useGestureState(options = {}) {
       onDragEnd: () => setState((s) => ({ ...s, isDragging: false }))
     }
   };
-  useEffect12(() => {
+  useEffect13(() => {
     if (!press || !isBrowser) return;
     const handleGlobalMouseUp = () => {
       setState((s) => s.isPressed ? { ...s, isPressed: false } : s);
@@ -1593,7 +1802,7 @@ function useGestureState(options = {}) {
   };
 }
 function useHover() {
-  const ref = useRef14(null);
+  const ref = useRef16(null);
   const [isHovered, setIsHovered] = useState8(false);
   const handlers = {
     onMouseEnter: () => setIsHovered(true),
@@ -1602,7 +1811,7 @@ function useHover() {
   return { ref, isHovered, handlers };
 }
 function useTap() {
-  const ref = useRef14(null);
+  const ref = useRef16(null);
   const [isPressed, setIsPressed] = useState8(false);
   const handlers = {
     onMouseDown: () => setIsPressed(true),
@@ -1611,7 +1820,7 @@ function useTap() {
     onTouchStart: () => setIsPressed(true),
     onTouchEnd: () => setIsPressed(false)
   };
-  useEffect12(() => {
+  useEffect13(() => {
     if (!isBrowser) return;
     const handleUp = () => setIsPressed(false);
     window.addEventListener("mouseup", handleUp);
@@ -1624,7 +1833,7 @@ function useTap() {
   return { ref, isPressed, handlers };
 }
 function useFocus() {
-  const ref = useRef14(null);
+  const ref = useRef16(null);
   const [isFocused, setIsFocused] = useState8(false);
   const handlers = {
     onFocus: () => setIsFocused(true),
@@ -1668,11 +1877,11 @@ function useGestureAnimation(states) {
 }
 
 // src/adapters/react/hooks/useReducedMotion.ts
-import { useState as useState9, useEffect as useEffect13 } from "react";
+import { useState as useState9, useEffect as useEffect14 } from "react";
 function useReducedMotion() {
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState9(false);
-  useEffect13(() => {
-    if (!isBrowser) return;
+  const [prefersReducedMotion2, setPrefersReducedMotion] = useState9(false);
+  useEffect14(() => {
+    if (!isBrowser || typeof window.matchMedia !== "function") return;
     const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     setPrefersReducedMotion(mediaQuery.matches);
     const handleChange = (event) => {
@@ -1685,26 +1894,26 @@ function useReducedMotion() {
     mediaQuery.addListener(handleChange);
     return () => mediaQuery.removeListener(handleChange);
   }, []);
-  return prefersReducedMotion;
+  return prefersReducedMotion2;
 }
 function getReducedMotionPreference() {
-  if (!isBrowser) return false;
+  if (!isBrowser || typeof window.matchMedia !== "function") return false;
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 function useReducedMotionConfig(configs) {
-  const prefersReducedMotion = useReducedMotion();
-  return prefersReducedMotion ? configs.reduced : configs.default;
+  const prefersReducedMotion2 = useReducedMotion();
+  return prefersReducedMotion2 ? configs.reduced : configs.default;
 }
 function useShouldAnimate() {
   return !useReducedMotion();
 }
 function useReducedMotionValue(animatedValue, reducedValue) {
-  const prefersReducedMotion = useReducedMotion();
-  return prefersReducedMotion ? reducedValue : animatedValue;
+  const prefersReducedMotion2 = useReducedMotion();
+  return prefersReducedMotion2 ? reducedValue : animatedValue;
 }
 
 // src/adapters/react/hooks/useScrollLinked.ts
-import { useRef as useRef15, useState as useState10 } from "react";
+import { useRef as useRef17, useState as useState10 } from "react";
 import {
   createScrollProgress,
   createParallax,
@@ -1713,6 +1922,7 @@ import {
 } from "@oxog/springkit";
 function useScrollProgress(options = {}) {
   const { target, offset, smooth } = options;
+  const smoothKey = JSON.stringify(smooth ?? null);
   const [progress, setProgress] = useState10(0);
   const [info, setInfo] = useState10({
     progress: 0,
@@ -1722,7 +1932,7 @@ function useScrollProgress(options = {}) {
     isInView: true,
     visibleRatio: 1
   });
-  const scrollProgressRef = useRef15(null);
+  const scrollProgressRef = useRef17(null);
   useIsomorphicLayoutEffect(() => {
     const element = target?.current ?? null;
     const scrollProgress = createScrollProgress(element, { offset, smooth });
@@ -1735,7 +1945,7 @@ function useScrollProgress(options = {}) {
       unsubscribe();
       scrollProgress.destroy();
     };
-  }, [target?.current, offset?.[0], offset?.[1], smooth]);
+  }, [target?.current, offset?.[0], offset?.[1], smoothKey]);
   return {
     progress,
     info,
@@ -1743,7 +1953,7 @@ function useScrollProgress(options = {}) {
   };
 }
 function useParallax(options = {}) {
-  const ref = useRef15(null);
+  const ref = useRef17(null);
   const [offset, setOffset] = useState10(0);
   useIsomorphicLayoutEffect(() => {
     if (!ref.current) return;
@@ -1767,7 +1977,7 @@ function useParallax(options = {}) {
   return { ref, offset };
 }
 function useScrollTrigger(options = {}) {
-  const ref = useRef15(null);
+  const ref = useRef17(null);
   const [isActive, setIsActive] = useState10(false);
   const [progress, setProgress] = useState10(0);
   const [hasEntered, setHasEntered] = useState10(false);
@@ -1794,9 +2004,14 @@ function useScrollTrigger(options = {}) {
 }
 function useScrollLinkedValue(scrollProgress, config) {
   const [value, setValue] = useState10(config.outputRange[0] ?? 0);
+  const configRef = useRef17(config);
+  configRef.current = config;
+  const inputRangeKey = JSON.stringify(config.inputRange);
+  const outputRangeKey = JSON.stringify(config.outputRange);
+  const smoothKey = JSON.stringify(config.smooth ?? null);
   useIsomorphicLayoutEffect(() => {
     if (!scrollProgress) return;
-    const linkedValue = createScrollLinkedValue(scrollProgress, config);
+    const linkedValue = createScrollLinkedValue(scrollProgress, configRef.current);
     const unsubscribe = linkedValue.subscribe((newValue) => {
       setValue(newValue);
     });
@@ -1804,54 +2019,68 @@ function useScrollLinkedValue(scrollProgress, config) {
       unsubscribe();
       linkedValue.destroy();
     };
-  }, [scrollProgress, config.inputRange, config.outputRange, config.clamp, config.smooth]);
+  }, [scrollProgress, inputRangeKey, outputRangeKey, config.clamp, smoothKey]);
   return value;
 }
 
 // src/adapters/react/hooks/useTimeline.ts
-import { useRef as useRef16, useCallback as useCallback7, useMemo as useMemo2 } from "react";
+import { useRef as useRef18, useCallback as useCallback9, useMemo as useMemo3, useState as useState11 } from "react";
 import {
   createTimeline
 } from "@oxog/springkit";
 function useTimeline(options = {}) {
-  const timelineRef = useRef16(null);
+  const timelineRef = useRef18(null);
+  const [timeline, setTimeline] = useState11(null);
+  const optionsRef = useRef18(options);
+  optionsRef.current = options;
   useIsomorphicLayoutEffect(() => {
-    const timeline = createTimeline(options);
-    timelineRef.current = timeline;
+    const instance = createTimeline(optionsRef.current);
+    timelineRef.current = instance;
+    setTimeline(instance);
     return () => {
-      timeline.kill();
+      instance.kill();
+      if (timelineRef.current === instance) {
+        timelineRef.current = null;
+      }
     };
   }, []);
-  const play = useCallback7(() => {
+  const play = useCallback9(() => {
     timelineRef.current?.play();
   }, []);
-  const pause = useCallback7(() => {
+  const pause = useCallback9(() => {
     timelineRef.current?.pause();
   }, []);
-  const resume = useCallback7(() => {
+  const resume = useCallback9(() => {
     timelineRef.current?.resume();
   }, []);
-  const reverse = useCallback7(() => {
+  const reverse = useCallback9(() => {
     timelineRef.current?.reverse();
   }, []);
-  const restart = useCallback7(() => {
+  const restart = useCallback9(() => {
     timelineRef.current?.restart();
   }, []);
-  const seek = useCallback7((progress) => {
-    timelineRef.current?.seek(progress);
+  const seek = useCallback9((position) => {
+    timelineRef.current?.seek(position);
   }, []);
-  const kill = useCallback7(() => {
+  const seekProgress = useCallback9((progress) => {
+    const instance = timelineRef.current;
+    if (!instance || !Number.isFinite(progress)) return;
+    const clamped = Math.min(1, Math.max(0, progress));
+    instance.seek(clamped * instance.duration());
+  }, []);
+  const kill = useCallback9(() => {
     timelineRef.current?.kill();
   }, []);
-  const returnValue = useMemo2(() => {
+  const returnValue = useMemo3(() => {
     const result = {
-      timeline: timelineRef.current,
+      timeline,
       play,
       pause,
       resume,
       reverse,
       restart,
       seek,
+      seekProgress,
       kill,
       get isPlaying() {
         return timelineRef.current?.isPlaying() ?? false;
@@ -1880,21 +2109,29 @@ function useTimeline(options = {}) {
       }
     };
     return result;
-  }, [play, pause, resume, reverse, restart, seek, kill]);
+  }, [timeline, play, pause, resume, reverse, restart, seek, seekProgress, kill]);
   return returnValue;
 }
 function useTimelineState(timeline) {
-  const progressRef = useRef16(0);
-  const isPlayingRef = useRef16(false);
-  const isPausedRef = useRef16(true);
-  const isReversedRef = useRef16(false);
+  const [state, setState] = useState11({
+    progress: 0,
+    isPlaying: false,
+    isPaused: true,
+    isReversed: false
+  });
   useIsomorphicLayoutEffect(() => {
     if (!timeline) return;
     const updateState = () => {
-      progressRef.current = timeline.progress();
-      isPlayingRef.current = timeline.isPlaying();
-      isPausedRef.current = !timeline.isPlaying();
-      isReversedRef.current = timeline.isReversed();
+      const isPlaying = timeline.isPlaying();
+      const next = {
+        progress: timeline.progress(),
+        isPlaying,
+        isPaused: !isPlaying,
+        isReversed: timeline.isReversed()
+      };
+      setState(
+        (prev) => prev.progress === next.progress && prev.isPlaying === next.isPlaying && prev.isPaused === next.isPaused && prev.isReversed === next.isReversed ? prev : next
+      );
     };
     updateState();
     let currentRafId = null;
@@ -1913,77 +2150,81 @@ function useTimelineState(timeline) {
       }
     };
   }, [timeline]);
-  return {
-    get progress() {
-      return progressRef.current;
-    },
-    get isPlaying() {
-      return isPlayingRef.current;
-    },
-    get isPaused() {
-      return isPausedRef.current;
-    },
-    get isReversed() {
-      return isReversedRef.current;
-    }
-  };
+  return state;
 }
 
 // src/adapters/react/hooks/useMorph.ts
-import { useState as useState11, useRef as useRef17, useCallback as useCallback8 } from "react";
+import { useState as useState12, useRef as useRef19, useCallback as useCallback10 } from "react";
 import {
   createMorph,
   createMorphSequence
 } from "@oxog/springkit";
 function useMorph(initialPath, options = {}) {
-  const [path, setPath] = useState11(initialPath);
-  const [progress, setProgressState] = useState11(0);
-  const morphRef = useRef17(null);
-  const isMountedRef = useRef17(false);
-  const optionsRef = useRef17(options);
+  const [path, setPath] = useState12(initialPath);
+  const [progress, setProgressState] = useState12(0);
+  const morphRef = useRef19(null);
+  const activeRef = useRef19(null);
+  const isMountedRef = useRef19(false);
+  const optionsRef = useRef19(options);
   optionsRef.current = options;
+  if (morphRef.current === null || morphRef.current.path !== initialPath) {
+    morphRef.current = {
+      path: initialPath,
+      controller: createMorph(initialPath, {
+        ...optionsRef.current,
+        onProgress: (p) => {
+          if (!isMountedRef.current) return;
+          setProgressState(p);
+          optionsRef.current.onProgress?.(p);
+        }
+      })
+    };
+  }
+  const controller = morphRef.current.controller;
   useIsomorphicLayoutEffect(() => {
+    const morph = morphRef.current?.controller;
+    if (!morph) return;
+    if (activeRef.current !== null && activeRef.current !== morph) {
+      activeRef.current.destroy();
+    }
+    activeRef.current = morph;
     isMountedRef.current = true;
-    const currentOptions = optionsRef.current;
-    const morph = createMorph(initialPath, {
-      ...currentOptions,
-      onProgress: (p) => {
-        if (!isMountedRef.current) return;
-        setProgressState(p);
-        currentOptions.onProgress?.(p);
-      }
-    });
     const unsubscribe = morph.subscribe((newPath) => {
       if (!isMountedRef.current) return;
       setPath(newPath);
     });
-    morphRef.current = morph;
     return () => {
       isMountedRef.current = false;
       unsubscribe();
-      morph.destroy();
     };
   }, [initialPath]);
-  const morphTo = useCallback8((targetPath) => {
-    morphRef.current?.morphTo(targetPath);
+  useDestroyOnUnmount(() => {
+    const current = morphRef.current?.controller ?? null;
+    current?.destroy();
+    if (activeRef.current !== current) activeRef.current?.destroy();
+    morphRef.current = null;
+    activeRef.current = null;
+  });
+  const morphTo = useCallback10((targetPath) => {
+    morphRef.current?.controller.morphTo(targetPath);
   }, []);
-  const setProgress = useCallback8((p) => {
-    morphRef.current?.setProgress(p);
+  const setProgress = useCallback10((p) => {
+    morphRef.current?.controller.setProgress(p);
   }, []);
   return {
     path,
     progress,
     morphTo,
     setProgress,
-    controller: morphRef.current
+    controller
   };
 }
 function useMorphSequence(paths, options = {}) {
-  const [path, setPath] = useState11(paths[0] ?? "");
-  const [currentIndex, setCurrentIndex] = useState11(0);
-  const isMountedRef = useRef17(false);
-  const sequenceRef = useRef17(null);
-  const optionsRef = useRef17(options);
+  const [path, setPath] = useState12(paths[0] ?? "");
+  const [currentIndex, setCurrentIndex] = useState12(0);
+  const isMountedRef = useRef19(false);
+  const sequenceRef = useRef19(null);
+  const optionsRef = useRef19(options);
   optionsRef.current = options;
   const pathsKey = paths.join("|");
   useIsomorphicLayoutEffect(() => {
@@ -2002,13 +2243,13 @@ function useMorphSequence(paths, options = {}) {
       sequence.destroy();
     };
   }, [pathsKey]);
-  const morphToIndex = useCallback8((index) => {
+  const morphToIndex = useCallback10((index) => {
     sequenceRef.current?.morphToIndex(index);
   }, []);
-  const morphToNext = useCallback8(() => {
+  const morphToNext = useCallback10(() => {
     sequenceRef.current?.morphToNext();
   }, []);
-  const morphToPrevious = useCallback8(() => {
+  const morphToPrevious = useCallback10(() => {
     sequenceRef.current?.morphToPrevious();
   }, []);
   return {
@@ -2020,11 +2261,13 @@ function useMorphSequence(paths, options = {}) {
   };
 }
 function useMorphRef(initialPath, options = {}) {
-  const [progress, setProgressState] = useState11(0);
-  const morphRef = useRef17(null);
-  const elementRef = useRef17(null);
-  const unsubscribeRef = useRef17(null);
-  const pathRef = useCallback8(
+  const [progress, setProgressState] = useState12(0);
+  const morphRef = useRef19(null);
+  const elementRef = useRef19(null);
+  const unsubscribeRef = useRef19(null);
+  const optionsRef = useRef19(options);
+  optionsRef.current = options;
+  const pathRef = useCallback10(
     (element) => {
       unsubscribeRef.current?.();
       unsubscribeRef.current = null;
@@ -2036,10 +2279,10 @@ function useMorphRef(initialPath, options = {}) {
       }
       elementRef.current = element;
       const morph = createMorph(initialPath, {
-        ...options,
+        ...optionsRef.current,
         onProgress: (p) => {
           setProgressState(p);
-          options.onProgress?.(p);
+          optionsRef.current.onProgress?.(p);
         }
       });
       unsubscribeRef.current = morph.subscribe((path) => {
@@ -2047,14 +2290,12 @@ function useMorphRef(initialPath, options = {}) {
       });
       morphRef.current = morph;
     },
-    // options used only on initialization
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [initialPath]
   );
-  const morphTo = useCallback8((targetPath) => {
+  const morphTo = useCallback10((targetPath) => {
     morphRef.current?.morphTo(targetPath);
   }, []);
-  const setProgress = useCallback8((p) => {
+  const setProgress = useCallback10((p) => {
     morphRef.current?.setProgress(p);
   }, []);
   return {
@@ -2066,61 +2307,53 @@ function useMorphRef(initialPath, options = {}) {
 }
 
 // src/adapters/react/hooks/useLayoutAnimation.ts
-import { useRef as useRef18, useCallback as useCallback9, createContext as createContext2 } from "react";
+import { useRef as useRef20, useCallback as useCallback11, useState as useState13, createContext as createContext2 } from "react";
 import * as React from "react";
 import {
   createLayoutGroup,
   createSharedLayoutContext,
   createAutoLayout,
   measureElement,
-  flip
+  flip,
+  createFlip
 } from "@oxog/springkit";
 var LayoutGroupContext = createContext2(null);
 var SharedLayoutContextReact = createContext2(null);
 function useLayoutGroup(options = {}) {
-  const layoutGroupRef = useRef18(null);
-  useIsomorphicLayoutEffect(() => {
-    const layoutGroup = createLayoutGroup(options);
-    layoutGroupRef.current = layoutGroup;
-    return () => {
-      layoutGroup.destroy();
-    };
-  }, []);
-  const register = useCallback9((id, element) => {
-    layoutGroupRef.current?.register(id, element);
-  }, []);
-  const unregister = useCallback9((id, element) => {
-    layoutGroupRef.current?.unregister(id, element);
-  }, []);
-  const update = useCallback9(() => {
-    layoutGroupRef.current?.update();
-  }, []);
-  const forceUpdate = useCallback9(() => {
-    layoutGroupRef.current?.forceUpdate();
-  }, []);
+  const [layoutGroup] = useState13(() => createLayoutGroup(options));
+  useDestroyOnUnmount(() => {
+    layoutGroup.destroy();
+  });
+  const register = useCallback11((id, element) => {
+    layoutGroup.register(id, element);
+  }, [layoutGroup]);
+  const unregister = useCallback11((id, element) => {
+    layoutGroup.unregister(id, element);
+  }, [layoutGroup]);
+  const update = useCallback11(() => {
+    layoutGroup.update();
+  }, [layoutGroup]);
+  const forceUpdate = useCallback11(() => {
+    layoutGroup.forceUpdate();
+  }, [layoutGroup]);
   return {
     register,
     unregister,
     update,
     forceUpdate,
-    layoutGroup: layoutGroupRef.current
+    layoutGroup
   };
 }
 function useLayoutId(layoutId, options = {}) {
   const { group, ...config } = options;
-  const elementRef = useRef18(null);
-  const localGroupRef = useRef18(null);
-  useIsomorphicLayoutEffect(() => {
-    if (!group) {
-      localGroupRef.current = createLayoutGroup(config);
-      return () => {
-        localGroupRef.current?.destroy();
-      };
-    }
-  }, [group]);
-  const ref = useCallback9(
+  const elementRef = useRef20(null);
+  const [localGroup] = useState13(() => createLayoutGroup(config));
+  useDestroyOnUnmount(() => {
+    localGroup.destroy();
+  });
+  const ref = useCallback11(
     (element) => {
-      const activeGroup = group ?? localGroupRef.current;
+      const activeGroup = group ?? localGroup;
       if (elementRef.current && activeGroup) {
         activeGroup.unregister(layoutId, elementRef.current);
       }
@@ -2129,50 +2362,66 @@ function useLayoutId(layoutId, options = {}) {
         activeGroup.register(layoutId, element);
       }
     },
-    [layoutId, group]
+    [layoutId, group, localGroup]
   );
-  const update = useCallback9(() => {
-    const activeGroup = group ?? localGroupRef.current;
-    activeGroup?.update();
-  }, [group]);
+  const update = useCallback11(() => {
+    const activeGroup = group ?? localGroup;
+    activeGroup.update();
+  }, [group, localGroup]);
   return { ref, update };
 }
 function useFlip(options = {}) {
-  const elementRef = useRef18(null);
-  const lastMeasurementRef = useRef18(null);
-  const ref = useCallback9((element) => {
+  const elementRef = useRef20(null);
+  const lastMeasurementRef = useRef20(null);
+  const optionsRef = useRef20(options);
+  optionsRef.current = options;
+  const ref = useCallback11((element) => {
     if (element) {
       lastMeasurementRef.current = measureElement(element);
     }
     elementRef.current = element;
   }, []);
-  const flipFn = useCallback9(async (mutate) => {
-    if (!elementRef.current) return;
-    await flip(elementRef.current, mutate ?? (() => {
-    }), options);
-    lastMeasurementRef.current = measureElement(elementRef.current);
-  }, [options]);
-  const measure = useCallback9(() => {
+  const flipFn = useCallback11(async (mutate) => {
+    const element = elementRef.current;
+    if (!element) return;
+    if (mutate) {
+      await flip(element, mutate, optionsRef.current);
+    } else {
+      const first = lastMeasurementRef.current ?? measureElement(element);
+      const last = measureElement(element);
+      await createFlip(element, first, last, optionsRef.current).play();
+    }
+    if (elementRef.current) {
+      lastMeasurementRef.current = measureElement(elementRef.current);
+    }
+  }, []);
+  const measure = useCallback11(() => {
     if (!elementRef.current) return null;
     return measureElement(elementRef.current);
   }, []);
   return { ref, flip: flipFn, measure };
 }
 function useAutoLayout(options = {}) {
-  const autoLayoutRef = useRef18(null);
-  const containerRef = useCallback9((element) => {
+  const autoLayoutRef = useRef20(null);
+  const optionsRef = useRef20(options);
+  optionsRef.current = options;
+  const containerRef = useCallback11((element) => {
     if (autoLayoutRef.current) {
       autoLayoutRef.current.destroy();
       autoLayoutRef.current = null;
     }
     if (element) {
-      autoLayoutRef.current = createAutoLayout(options);
+      const currentOptions = optionsRef.current;
+      autoLayoutRef.current = createAutoLayout({
+        ...currentOptions,
+        root: currentOptions.root ?? element
+      });
     }
   }, []);
-  const update = useCallback9(() => {
+  const update = useCallback11(() => {
     autoLayoutRef.current?.update();
   }, []);
-  const forceUpdate = useCallback9(() => {
+  const forceUpdate = useCallback11(() => {
     autoLayoutRef.current?.forceUpdate();
   }, []);
   return { containerRef, update, forceUpdate };
@@ -2181,42 +2430,38 @@ function LayoutGroupProvider({
   children,
   config
 }) {
-  const layoutGroupRef = useRef18(null);
-  useIsomorphicLayoutEffect(() => {
-    layoutGroupRef.current = createLayoutGroup(config);
-    return () => {
-      layoutGroupRef.current?.destroy();
-    };
-  }, []);
+  const [layoutGroup] = useState13(() => createLayoutGroup(config));
+  useDestroyOnUnmount(() => {
+    layoutGroup.destroy();
+  });
   return React.createElement(
     LayoutGroupContext.Provider,
-    { value: layoutGroupRef.current },
+    { value: layoutGroup },
     children
   );
 }
 function SharedLayoutProvider({
   children
 }) {
-  const sharedContextRef = useRef18(null);
-  useIsomorphicLayoutEffect(() => {
-    sharedContextRef.current = createSharedLayoutContext();
-    return () => {
-      sharedContextRef.current?.destroy();
-    };
-  }, []);
+  const [sharedContext] = useState13(() => createSharedLayoutContext());
+  useDestroyOnUnmount(() => {
+    sharedContext.destroy();
+  });
   return React.createElement(
     SharedLayoutContextReact.Provider,
-    { value: sharedContextRef.current },
+    { value: sharedContext },
     children
   );
 }
 
 // src/adapters/react/hooks/useVariants.ts
-import { useRef as useRef19, useCallback as useCallback10, useMemo as useMemo3, createContext as createContext3, useContext as useContext2 } from "react";
+import { useRef as useRef21, useCallback as useCallback12, useEffect as useEffect15, useMemo as useMemo4, useState as useState14, createContext as createContext3, useContext as useContext2 } from "react";
 import * as React2 from "react";
 import {
   getVariant,
-  calculateStaggerDelays
+  calculateStaggerDelays,
+  buildTransformString,
+  isTransformProperty
 } from "@oxog/springkit";
 var VariantContext = createContext3({
   variant: void 0
@@ -2235,9 +2480,16 @@ function useVariants(options) {
     onAnimationComplete
   } = options;
   const parentContext = useVariantContext();
-  const currentVariantRef = useRef19(void 0);
-  const isAnimatingRef = useRef19(false);
-  const targetVariant = useMemo3(() => {
+  const currentVariantRef = useRef21(void 0);
+  const isAnimatingRef = useRef21(false);
+  const [variantOverride, setVariantOverride] = useState14(null);
+  const animateRef = useRef21(animate);
+  animateRef.current = animate;
+  const overrideName = variantOverride && variantOverride.animate === animate ? variantOverride.name : void 0;
+  const targetVariant = useMemo4(() => {
+    if (overrideName !== void 0) {
+      return overrideName;
+    }
     if (typeof animate === "string") {
       return animate;
     }
@@ -2245,8 +2497,8 @@ function useVariants(options) {
       return parentContext.variant;
     }
     return void 0;
-  }, [animate, inherit, parentContext.variant]);
-  const initialValues = useMemo3(() => {
+  }, [overrideName, animate, inherit, parentContext.variant]);
+  const initialValues = useMemo4(() => {
     if (initial === false) {
       return getVariant(variants, targetVariant, custom).values;
     }
@@ -2258,34 +2510,41 @@ function useVariants(options) {
     }
     return {};
   }, [initial, variants, targetVariant, custom]);
-  const targetValues = useMemo3(() => {
-    if (typeof animate === "object") {
+  const targetValues = useMemo4(() => {
+    if (typeof animate === "object" && overrideName === void 0) {
       return animate;
     }
     if (targetVariant && variants) {
       return getVariant(variants, targetVariant, custom).values;
     }
     return initialValues;
-  }, [animate, targetVariant, variants, custom, initialValues]);
-  const transition = useMemo3(() => {
+  }, [animate, overrideName, targetVariant, variants, custom, initialValues]);
+  const transition = useMemo4(() => {
     if (targetVariant && variants) {
       return getVariant(variants, targetVariant, custom).transition;
     }
     return parentContext.transition || {};
   }, [targetVariant, variants, custom, parentContext.transition]);
-  const staggerDelay = useMemo3(() => {
-    if (parentContext.staggerIndex !== void 0 && transition.staggerChildren) {
-      return parentContext.staggerIndex * transition.staggerChildren + (transition.delayChildren || 0);
+  const staggerDelay = useMemo4(() => {
+    const parentTransition = parentContext.transition;
+    const staggerChildren = parentTransition?.staggerChildren ?? transition.staggerChildren;
+    const delayChildren = parentTransition?.delayChildren ?? transition.delayChildren;
+    const staggerDirection = parentTransition?.staggerDirection ?? transition.staggerDirection;
+    const index = parentContext.staggerIndex;
+    if (index !== void 0 && staggerChildren) {
+      const count = parentContext.staggerCount;
+      const position = staggerDirection === -1 && count !== void 0 ? count - 1 - index : index;
+      return position * staggerChildren + (delayChildren || 0);
     }
     return transition.delay || 0;
-  }, [parentContext.staggerIndex, transition]);
+  }, [parentContext.staggerIndex, parentContext.staggerCount, parentContext.transition, transition]);
   const toNumber = (val, fallback) => {
     if (val === void 0) return fallback;
     if (typeof val === "number") return val;
     const parsed = parseFloat(val);
     return isNaN(parsed) ? fallback : parsed;
   };
-  const computeSpringValues = useCallback10((values, fallbackValues) => ({
+  const computeSpringValues = useCallback12((values, fallbackValues) => ({
     x: toNumber(values.x ?? fallbackValues?.x, 0),
     y: toNumber(values.y ?? fallbackValues?.y, 0),
     scale: values.scale ?? fallbackValues?.scale ?? 1,
@@ -2294,17 +2553,30 @@ function useVariants(options) {
     rotate: values.rotate ?? fallbackValues?.rotate ?? 0,
     opacity: values.opacity ?? fallbackValues?.opacity ?? 1
   }), []);
-  const initialSpringValues = useMemo3(
+  const initialSpringValues = useMemo4(
     () => computeSpringValues(initialValues),
     [initialValues, computeSpringValues]
   );
-  const animatedTargetValues = useMemo3(
+  const animatedTargetValues = useMemo4(
     () => computeSpringValues(targetValues, initialValues),
     [targetValues, initialValues, computeSpringValues]
   );
-  const hasInitializedRef = useRef19(false);
+  const hasInitializedRef = useRef21(false);
+  const [releasedTarget, setReleasedTarget] = useState14(null);
+  const latestTargetRef = useRef21(animatedTargetValues);
+  latestTargetRef.current = animatedTargetValues;
+  const hasDelay = staggerDelay > 0;
+  const { x: tx, y: ty, scale: ts, scaleX: tsx, scaleY: tsy, rotate: tr, opacity: to } = animatedTargetValues;
+  useEffect15(() => {
+    if (!hasDelay) return;
+    const timer = setTimeout(() => {
+      setReleasedTarget(latestTargetRef.current);
+    }, staggerDelay);
+    return () => clearTimeout(timer);
+  }, [hasDelay, staggerDelay, tx, ty, ts, tsx, tsy, tr, to]);
+  const springTarget = hasDelay ? releasedTarget ?? initialSpringValues : hasInitializedRef.current ? animatedTargetValues : initialSpringValues;
   const springValues = useSpring(
-    hasInitializedRef.current ? animatedTargetValues : initialSpringValues,
+    springTarget,
     {
       stiffness: springConfig?.stiffness ?? transition.spring?.stiffness ?? 100,
       damping: springConfig?.damping ?? transition.spring?.damping ?? 15,
@@ -2333,8 +2605,8 @@ function useVariants(options) {
       return () => clearTimeout(timer);
     }
   }, [targetVariant, staggerDelay, onAnimationComplete, springConfig?.stiffness, springConfig?.damping, springConfig?.mass]);
-  const setVariant = useCallback10((name) => {
-    currentVariantRef.current = name;
+  const setVariant = useCallback12((name) => {
+    setVariantOverride({ name, animate: animateRef.current });
   }, []);
   return {
     values: {
@@ -2352,11 +2624,22 @@ function VariantProvider({
   custom,
   transition
 }) {
-  const value = useMemo3(
-    () => ({ variant, custom, transition }),
-    [variant, custom, transition]
+  const items = React2.Children.toArray(children);
+  const count = items.length;
+  return React2.createElement(
+    React2.Fragment,
+    null,
+    items.map(
+      (child, index) => React2.createElement(
+        VariantContext.Provider,
+        {
+          key: React2.isValidElement(child) && child.key !== null ? child.key : index,
+          value: { variant, custom, transition, staggerIndex: index, staggerCount: count }
+        },
+        child
+      )
+    )
   );
-  return React2.createElement(VariantContext.Provider, { value }, children);
 }
 function useStaggerChildren(options) {
   const {
@@ -2365,18 +2648,18 @@ function useStaggerChildren(options) {
     delayChildren = 0,
     staggerDirection = 1
   } = options;
-  const delays = useMemo3(() => {
+  const delays = useMemo4(() => {
     return calculateStaggerDelays(count, {
       staggerChildren,
       delayChildren,
       staggerDirection
     });
   }, [count, staggerChildren, delayChildren, staggerDirection]);
-  const getDelay = useCallback10(
+  const getDelay = useCallback12(
     (index) => delays[index] || 0,
     [delays]
   );
-  const getChildProps = useCallback10(
+  const getChildProps = useCallback12(
     (index) => ({
       style: { transitionDelay: `${getDelay(index)}ms` }
     }),
@@ -2384,46 +2667,89 @@ function useStaggerChildren(options) {
   );
   return { getDelay, getChildProps, delays };
 }
-function createMotionComponent(_element, _options = {}) {
-  throw new Error(
-    "createMotionComponent is not yet implemented. Use useVariants hook or Animated component instead."
-  );
+function variantValuesToStyle(values, baseTransform) {
+  const style = {};
+  const transformValues = {};
+  for (const [key, value] of Object.entries(values)) {
+    if (key === "transition" || typeof value !== "number" && typeof value !== "string") continue;
+    if (isTransformProperty(key)) {
+      ;
+      transformValues[key] = value;
+    } else {
+      style[key] = value;
+    }
+  }
+  const transform = buildTransformString(transformValues);
+  const base = typeof baseTransform === "string" && baseTransform !== "none" ? baseTransform : "";
+  if (transform || base) style.transform = [base, transform].filter(Boolean).join(" ");
+  return style;
+}
+function createMotionComponent(element, options = {}) {
+  const Component2 = React2.forwardRef(function MotionComponent(props, ref) {
+    const {
+      variants = options.variants,
+      spring: spring2 = options.spring,
+      animate,
+      initial,
+      custom,
+      inherit,
+      onAnimationComplete,
+      ...rest
+    } = props;
+    const { style, ...elementProps } = rest;
+    const { values } = useVariants({
+      variants,
+      spring: spring2,
+      animate,
+      initial,
+      custom,
+      inherit,
+      onAnimationComplete
+    });
+    return React2.createElement(element, {
+      ...elementProps,
+      ref,
+      style: { ...style, ...variantValuesToStyle(values, style?.transform) }
+    });
+  });
+  Component2.displayName = `Motion(${String(element)})`;
+  return Component2;
 }
 
 // src/adapters/react/hooks/usePhysics.ts
-import { useRef as useRef20, useEffect as useEffect14, useCallback as useCallback11, useState as useState12 } from "react";
+import { useRef as useRef22, useEffect as useEffect16, useCallback as useCallback13, useState as useState15 } from "react";
 import { createMotionValue as createMotionValue4 } from "@oxog/springkit";
 import { createSpringValue as createSpringValue4 } from "@oxog/springkit";
 function useSpringState(initialValue = 0, options = {}) {
   const { initial = initialValue, onChange, ...springConfig } = options;
-  const [state, setState] = useState12(initial);
-  const springRef = useRef20(null);
-  const motionValueRef = useRef20(null);
+  const [state, setState] = useState15(initial);
+  const springRef = useRef22(null);
+  const motionValueRef = useRef22(null);
+  const onChangeRef = useRef22(onChange);
+  onChangeRef.current = onChange;
   if (springRef.current === null || springRef.current.isDestroyed()) {
     springRef.current = createSpringValue4(initial, {
       ...springConfig,
       onUpdate: (value) => {
         setState(value);
-        onChange?.(value);
+        onChangeRef.current?.(value);
       }
     });
   }
   if (motionValueRef.current === null || motionValueRef.current.isDestroyed()) {
     motionValueRef.current = createMotionValue4(initial);
   }
-  useEffect14(() => {
+  useEffect16(() => {
     const unsub = springRef.current?.subscribe((v) => {
       motionValueRef.current?.jump(v);
     });
     return () => unsub?.();
   }, []);
-  useEffect14(() => {
-    return () => {
-      springRef.current?.destroy();
-      springRef.current = null;
-    };
-  }, []);
-  const setValue = useCallback11((value) => {
+  useDestroyOnUnmount(() => {
+    springRef.current?.destroy();
+    springRef.current = null;
+  });
+  const setValue = useCallback13((value) => {
     springRef.current?.set(value);
   }, []);
   return [state, setValue, motionValueRef.current];
@@ -2435,66 +2761,70 @@ function useMomentum(options = {}) {
     bounds,
     onRest
   } = options;
-  const valueRef = useRef20(null);
-  const velocityRef = useRef20(null);
-  const frameRef = useRef20(null);
-  const isActiveRef = useRef20(false);
+  const valueRef = useRef22(null);
+  const velocityRef = useRef22(null);
+  const frameRef = useRef22(null);
+  const isActiveRef = useRef22(false);
+  const optionsRef = useRef22({ friction, minVelocity, bounds, onRest });
+  optionsRef.current = { friction, minVelocity, bounds, onRest };
   if (valueRef.current === null || valueRef.current.isDestroyed()) {
     valueRef.current = createMotionValue4(0);
   }
   if (velocityRef.current === null || velocityRef.current.isDestroyed()) {
     velocityRef.current = createMotionValue4(0);
   }
-  const applyBounds = useCallback11((val) => {
-    if (!bounds) return val;
+  const applyBounds = useCallback13((val) => {
+    const { bounds: bounds2 } = optionsRef.current;
+    if (!bounds2) return val;
     let result = val;
-    if (bounds.min !== void 0) result = Math.max(bounds.min, result);
-    if (bounds.max !== void 0) result = Math.min(bounds.max, result);
+    if (bounds2.min !== void 0) result = Math.max(bounds2.min, result);
+    if (bounds2.max !== void 0) result = Math.min(bounds2.max, result);
     return result;
-  }, [bounds]);
-  const tick = useCallback11(() => {
+  }, []);
+  const tick = useCallback13(() => {
     if (!isActiveRef.current) return;
+    const { friction: friction2, minVelocity: minVelocity2, bounds: bounds2, onRest: onRest2 } = optionsRef.current;
     const currentVelocity = velocityRef.current?.get() ?? 0;
     const currentValue = valueRef.current?.get() ?? 0;
-    const newVelocity = currentVelocity * friction;
+    const newVelocity = currentVelocity * friction2;
     const newValue = applyBounds(currentValue + newVelocity);
     valueRef.current?.jump(newValue);
     velocityRef.current?.jump(newVelocity);
-    if (Math.abs(newVelocity) < minVelocity) {
+    if (Math.abs(newVelocity) < minVelocity2) {
       isActiveRef.current = false;
       velocityRef.current?.jump(0);
-      onRest?.();
+      onRest2?.();
       return;
     }
-    if (bounds) {
-      if (bounds.min !== void 0 && newValue <= bounds.min || bounds.max !== void 0 && newValue >= bounds.max) {
+    if (bounds2) {
+      if (bounds2.min !== void 0 && newValue <= bounds2.min || bounds2.max !== void 0 && newValue >= bounds2.max) {
         isActiveRef.current = false;
         velocityRef.current?.jump(0);
-        onRest?.();
+        onRest2?.();
         return;
       }
     }
     frameRef.current = requestAnimationFrame(tick);
-  }, [friction, minVelocity, bounds, applyBounds, onRest]);
-  const push = useCallback11((velocity) => {
+  }, [applyBounds]);
+  const push = useCallback13((velocity) => {
     if (!Number.isFinite(velocity)) return;
     velocityRef.current?.jump(velocity);
     isActiveRef.current = true;
     if (frameRef.current) cancelAnimationFrame(frameRef.current);
     frameRef.current = requestAnimationFrame(tick);
   }, [tick]);
-  const stop = useCallback11(() => {
+  const stop = useCallback13(() => {
     isActiveRef.current = false;
     if (frameRef.current) {
       cancelAnimationFrame(frameRef.current);
     }
     velocityRef.current?.jump(0);
   }, []);
-  const set = useCallback11((value) => {
+  const set = useCallback13((value) => {
     if (!Number.isFinite(value)) return;
     valueRef.current?.jump(applyBounds(value));
   }, [applyBounds]);
-  useEffect14(() => {
+  useEffect16(() => {
     return () => {
       if (frameRef.current) cancelAnimationFrame(frameRef.current);
       isActiveRef.current = false;
@@ -2513,42 +2843,42 @@ function useElastic(options = {}) {
   const {
     elasticity = 0.5,
     maxStretch = 100,
-    spring = { stiffness: 300, damping: 30 }
+    spring: spring2 = { stiffness: 300, damping: 30 }
   } = options;
-  const motionValueRef = useRef20(null);
-  const springRef = useRef20(null);
+  const motionValueRef = useRef22(null);
+  const springRef = useRef22(null);
   if (motionValueRef.current === null || motionValueRef.current.isDestroyed()) {
     motionValueRef.current = createMotionValue4(0);
   }
   if (springRef.current === null || springRef.current.isDestroyed()) {
     springRef.current = createSpringValue4(0, {
-      ...spring,
+      ...spring2,
       onUpdate: (v) => motionValueRef.current?.jump(v)
     });
   }
-  const rawValueRef = useRef20(0);
-  const applyElasticity = useCallback11((input) => {
+  const rawValueRef = useRef22(0);
+  const applyElasticity = useCallback13((input) => {
     const sign = input >= 0 ? 1 : -1;
     const absInput = Math.abs(input);
     const factor = 1 - absInput / (maxStretch * 2) * (1 - elasticity);
     return sign * absInput * Math.max(0.1, factor);
   }, [elasticity, maxStretch]);
-  const stretch = useCallback11((amount) => {
+  const stretch = useCallback13((amount) => {
     if (!Number.isFinite(amount)) return;
     rawValueRef.current = amount;
     const elasticValue = applyElasticity(amount);
     motionValueRef.current?.jump(elasticValue);
   }, [applyElasticity]);
-  const release = useCallback11(() => {
+  const release = useCallback13(() => {
     rawValueRef.current = 0;
     springRef.current?.set(0);
   }, []);
-  const set = useCallback11((value) => {
+  const set = useCallback13((value) => {
     if (!Number.isFinite(value)) return;
     rawValueRef.current = value;
     springRef.current?.set(value);
   }, []);
-  useEffect14(() => {
+  useEffect16(() => {
     return () => {
       springRef.current?.stop();
     };
@@ -2569,38 +2899,41 @@ function useBounce(options = {}) {
     ceiling = 0,
     restitution = 0.7
   } = options;
-  const motionValueRef = useRef20(null);
+  const motionValueRef = useRef22(null);
   if (motionValueRef.current === null || motionValueRef.current.isDestroyed()) {
     motionValueRef.current = createMotionValue4(ceiling);
   }
   const motionValue = motionValueRef.current;
-  const velocityRef = useRef20(0);
-  const frameRef = useRef20(null);
-  const isActiveRef = useRef20(false);
-  const tick = useCallback11(() => {
+  const velocityRef = useRef22(0);
+  const frameRef = useRef22(null);
+  const isActiveRef = useRef22(false);
+  const optionsRef = useRef22({ dampening, gravity, floor, ceiling, restitution });
+  optionsRef.current = { dampening, gravity, floor, ceiling, restitution };
+  const tick = useCallback13(() => {
     if (!isActiveRef.current) return;
+    const { dampening: dampening2, gravity: gravity2, floor: floor2, ceiling: ceiling2, restitution: restitution2 } = optionsRef.current;
     const currentValue = motionValue.get();
-    velocityRef.current += gravity;
-    velocityRef.current *= 1 - dampening;
+    velocityRef.current += gravity2;
+    velocityRef.current *= 1 - dampening2;
     let newValue = currentValue + velocityRef.current;
-    if (newValue >= floor) {
-      newValue = floor;
-      velocityRef.current = -velocityRef.current * restitution;
+    if (newValue >= floor2) {
+      newValue = floor2;
+      velocityRef.current = -velocityRef.current * restitution2;
       if (Math.abs(velocityRef.current) < 0.5) {
         isActiveRef.current = false;
         velocityRef.current = 0;
-        motionValue.jump(floor);
+        motionValue.jump(floor2);
         return;
       }
     }
-    if (newValue <= ceiling) {
-      newValue = ceiling;
-      velocityRef.current = -velocityRef.current * restitution;
+    if (newValue <= ceiling2) {
+      newValue = ceiling2;
+      velocityRef.current = -velocityRef.current * restitution2;
     }
     motionValue.jump(newValue);
     frameRef.current = requestAnimationFrame(tick);
-  }, [motionValue, gravity, dampening, floor, ceiling, restitution]);
-  const drop = useCallback11((fromY = ceiling, initialVelocity = 0) => {
+  }, [motionValue]);
+  const drop = useCallback13((fromY = ceiling, initialVelocity = 0) => {
     const safeFromY = Number.isFinite(fromY) ? fromY : ceiling;
     const safeVelocity = Number.isFinite(initialVelocity) ? initialVelocity : 0;
     motionValue.jump(safeFromY);
@@ -2609,19 +2942,19 @@ function useBounce(options = {}) {
     if (frameRef.current) cancelAnimationFrame(frameRef.current);
     frameRef.current = requestAnimationFrame(tick);
   }, [motionValue, ceiling, tick]);
-  const bounce = useCallback11((velocity) => {
+  const bounce = useCallback13((velocity) => {
     if (!Number.isFinite(velocity)) return;
     velocityRef.current = velocity;
     isActiveRef.current = true;
     if (frameRef.current) cancelAnimationFrame(frameRef.current);
     frameRef.current = requestAnimationFrame(tick);
   }, [tick]);
-  const stop = useCallback11(() => {
+  const stop = useCallback13(() => {
     isActiveRef.current = false;
     if (frameRef.current) cancelAnimationFrame(frameRef.current);
     velocityRef.current = 0;
   }, []);
-  useEffect14(() => {
+  useEffect16(() => {
     return () => {
       if (frameRef.current) cancelAnimationFrame(frameRef.current);
       isActiveRef.current = false;
@@ -2645,8 +2978,8 @@ function useGravity(options = {}) {
     bounds,
     bounciness = 0.7
   } = options;
-  const xRef = useRef20(null);
-  const yRef = useRef20(null);
+  const xRef = useRef22(null);
+  const yRef = useRef22(null);
   if (xRef.current === null || xRef.current.isDestroyed()) {
     xRef.current = createMotionValue4(0);
   }
@@ -2655,35 +2988,38 @@ function useGravity(options = {}) {
   }
   const xMotion = xRef.current;
   const yMotion = yRef.current;
-  const velocityRef = useRef20({ x: 0, y: 0 });
-  const frameRef = useRef20(null);
-  const isActiveRef = useRef20(false);
-  const tick = useCallback11(() => {
+  const velocityRef = useRef22({ x: 0, y: 0 });
+  const frameRef = useRef22(null);
+  const isActiveRef = useRef22(false);
+  const optionsRef = useRef22({ gravity, drag, bounds, bounciness });
+  optionsRef.current = { gravity, drag, bounds, bounciness };
+  const tick = useCallback13(() => {
     if (!isActiveRef.current) return;
+    const { gravity: gravity2, drag: drag2, bounds: bounds2, bounciness: bounciness2 } = optionsRef.current;
     const currentX = xMotion.get();
     const currentY = yMotion.get();
-    velocityRef.current.x += gravity.x;
-    velocityRef.current.y += gravity.y;
-    velocityRef.current.x *= 1 - drag;
-    velocityRef.current.y *= 1 - drag;
+    velocityRef.current.x += gravity2.x;
+    velocityRef.current.y += gravity2.y;
+    velocityRef.current.x *= 1 - drag2;
+    velocityRef.current.y *= 1 - drag2;
     let newX = currentX + velocityRef.current.x;
     let newY = currentY + velocityRef.current.y;
-    if (bounds) {
-      if (bounds.left !== void 0 && newX <= bounds.left) {
-        newX = bounds.left;
-        velocityRef.current.x = -velocityRef.current.x * bounciness;
+    if (bounds2) {
+      if (bounds2.left !== void 0 && newX <= bounds2.left) {
+        newX = bounds2.left;
+        velocityRef.current.x = -velocityRef.current.x * bounciness2;
       }
-      if (bounds.right !== void 0 && newX >= bounds.right) {
-        newX = bounds.right;
-        velocityRef.current.x = -velocityRef.current.x * bounciness;
+      if (bounds2.right !== void 0 && newX >= bounds2.right) {
+        newX = bounds2.right;
+        velocityRef.current.x = -velocityRef.current.x * bounciness2;
       }
-      if (bounds.top !== void 0 && newY <= bounds.top) {
-        newY = bounds.top;
-        velocityRef.current.y = -velocityRef.current.y * bounciness;
+      if (bounds2.top !== void 0 && newY <= bounds2.top) {
+        newY = bounds2.top;
+        velocityRef.current.y = -velocityRef.current.y * bounciness2;
       }
-      if (bounds.bottom !== void 0 && newY >= bounds.bottom) {
-        newY = bounds.bottom;
-        velocityRef.current.y = -velocityRef.current.y * bounciness;
+      if (bounds2.bottom !== void 0 && newY >= bounds2.bottom) {
+        newY = bounds2.bottom;
+        velocityRef.current.y = -velocityRef.current.y * bounciness2;
         if (Math.abs(velocityRef.current.y) < 0.5 && Math.abs(velocityRef.current.x) < 0.1) {
           velocityRef.current.y = 0;
         }
@@ -2692,14 +3028,14 @@ function useGravity(options = {}) {
     xMotion.jump(newX);
     yMotion.jump(newY);
     const totalVelocity = Math.abs(velocityRef.current.x) + Math.abs(velocityRef.current.y);
-    const isAtRestOnGround = bounds?.bottom !== void 0 && Math.abs(newY - bounds.bottom) < 0.5 && totalVelocity < 0.01;
+    const isAtRestOnGround = bounds2?.bottom !== void 0 && Math.abs(newY - bounds2.bottom) < 0.5 && totalVelocity < 0.01;
     if (totalVelocity > 0.01 || !isAtRestOnGround) {
       frameRef.current = requestAnimationFrame(tick);
     } else {
       isActiveRef.current = false;
     }
-  }, [xMotion, yMotion, gravity, drag, bounds, bounciness]);
-  const launch = useCallback11((velocity) => {
+  }, [xMotion, yMotion]);
+  const launch = useCallback13((velocity) => {
     const safeX = Number.isFinite(velocity.x) ? velocity.x : 0;
     const safeY = Number.isFinite(velocity.y) ? velocity.y : 0;
     velocityRef.current = { x: safeX, y: safeY };
@@ -2707,26 +3043,26 @@ function useGravity(options = {}) {
     if (frameRef.current) cancelAnimationFrame(frameRef.current);
     frameRef.current = requestAnimationFrame(tick);
   }, [tick]);
-  const setPosition = useCallback11((pos) => {
+  const setPosition = useCallback13((pos) => {
     const safeX = Number.isFinite(pos.x) ? pos.x : xMotion.get();
     const safeY = Number.isFinite(pos.y) ? pos.y : yMotion.get();
     xMotion.jump(safeX);
     yMotion.jump(safeY);
   }, [xMotion, yMotion]);
-  const stop = useCallback11(() => {
+  const stop = useCallback13(() => {
     isActiveRef.current = false;
     if (frameRef.current) cancelAnimationFrame(frameRef.current);
     frameRef.current = null;
     velocityRef.current = { x: 0, y: 0 };
   }, []);
-  const start = useCallback11(() => {
+  const start = useCallback13(() => {
     if (!isActiveRef.current) {
       isActiveRef.current = true;
       if (frameRef.current) cancelAnimationFrame(frameRef.current);
       frameRef.current = requestAnimationFrame(tick);
     }
   }, [tick]);
-  useEffect14(() => {
+  useEffect16(() => {
     return () => {
       if (frameRef.current) cancelAnimationFrame(frameRef.current);
       isActiveRef.current = false;
@@ -2744,21 +3080,22 @@ function useGravity(options = {}) {
   };
 }
 function useChain(steps, initialValues = {}) {
-  const valuesRef = useRef20({});
-  const springsRef = useRef20({});
-  const [currentStep, setCurrentStep] = useState12(-1);
-  const [isPlaying, setIsPlaying] = useState12(false);
-  const timeoutRef = useRef20(null);
-  useEffect14(() => {
+  const valuesRef = useRef22({});
+  const springsRef = useRef22({});
+  const [currentStep, setCurrentStep] = useState15(-1);
+  const [isPlaying, setIsPlaying] = useState15(false);
+  const timeoutRef = useRef22(null);
+  useEffect16(() => {
     const allKeys = /* @__PURE__ */ new Set();
     steps.forEach((step) => {
       Object.keys(step.to).forEach((key) => allKeys.add(key));
     });
     allKeys.forEach((key) => {
       if (!valuesRef.current[key] || valuesRef.current[key].isDestroyed()) {
-        const initial = initialValues[key] ?? 0;
-        valuesRef.current[key] = createMotionValue4(initial);
-        springsRef.current[key] = createSpringValue4(initial, {
+        valuesRef.current[key] = createMotionValue4(initialValues[key] ?? 0);
+      }
+      if (!springsRef.current[key] || springsRef.current[key].isDestroyed()) {
+        springsRef.current[key] = createSpringValue4(valuesRef.current[key].get(), {
           onUpdate: (v) => valuesRef.current[key]?.jump(v)
         });
       }
@@ -2769,7 +3106,7 @@ function useChain(steps, initialValues = {}) {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, []);
-  const runStep = useCallback11((stepIndex) => {
+  const runStep = useCallback13((stepIndex) => {
     if (stepIndex >= steps.length) {
       setIsPlaying(false);
       setCurrentStep(-1);
@@ -2780,12 +3117,12 @@ function useChain(steps, initialValues = {}) {
     const execute = () => {
       setCurrentStep(stepIndex);
       Object.entries(step.to).forEach(([key, value]) => {
-        const spring = springsRef.current[key];
-        if (spring) {
+        const spring2 = springsRef.current[key];
+        if (spring2) {
           if (step.config) {
-            spring.setConfig(step.config);
+            spring2.setConfig(step.config);
           }
-          spring.set(value);
+          spring2.set(value);
         }
       });
       const estimatedDuration = step.config?.stiffness ? Math.max(300, 1e3 / (step.config.stiffness / 100)) : 500;
@@ -2799,12 +3136,12 @@ function useChain(steps, initialValues = {}) {
       execute();
     }
   }, [steps]);
-  const play = useCallback11(() => {
+  const play = useCallback13(() => {
     if (isPlaying) return;
     setIsPlaying(true);
     runStep(0);
   }, [isPlaying, runStep]);
-  const reset = useCallback11(() => {
+  const reset = useCallback13(() => {
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
     }
@@ -2815,13 +3152,13 @@ function useChain(steps, initialValues = {}) {
       springsRef.current[key]?.jump(initial);
     });
   }, [initialValues]);
-  const stop = useCallback11(() => {
+  const stop = useCallback13(() => {
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
     }
     setIsPlaying(false);
   }, []);
-  useEffect14(() => {
+  useEffect16(() => {
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
@@ -2837,21 +3174,22 @@ function useChain(steps, initialValues = {}) {
 }
 function usePointer(options = {}) {
   const { target, smooth = 0, hoverOnly = false } = options;
-  const xRef = useRef20(null);
-  const yRef = useRef20(null);
-  const rawXRef = useRef20(0);
-  const rawYRef = useRef20(0);
-  const [isHovering, setIsHovering] = useState12(false);
-  const frameRef = useRef20(null);
+  const xRef = useRef22(null);
+  const yRef = useRef22(null);
+  const rawXRef = useRef22(0);
+  const rawYRef = useRef22(0);
+  const [isHovering, setIsHovering] = useState15(false);
+  const frameRef = useRef22(null);
   if (xRef.current === null || xRef.current.isDestroyed()) xRef.current = createMotionValue4(0);
   if (yRef.current === null || yRef.current.isDestroyed()) yRef.current = createMotionValue4(0);
-  useEffect14(() => {
-    const element = target?.current ?? window;
+  useElementEffect(() => {
+    const targetElement = target?.current ?? null;
+    const element = targetElement ?? window;
     const handleMove = (e) => {
       let newX;
       let newY;
-      if (target?.current) {
-        const rect = target.current.getBoundingClientRect();
+      if (targetElement) {
+        const rect = targetElement.getBoundingClientRect();
         newX = e.clientX - rect.left;
         newY = e.clientY - rect.top;
       } else {
@@ -2879,18 +3217,17 @@ function usePointer(options = {}) {
       };
       frameRef.current = requestAnimationFrame(smoothLoop);
     }
-    if (hoverOnly && target?.current) {
-      target.current.addEventListener("pointermove", handleMove);
-      target.current.addEventListener("pointerenter", handleEnter);
-      target.current.addEventListener("pointerleave", handleLeave);
+    if (hoverOnly && targetElement) {
+      targetElement.addEventListener("pointermove", handleMove);
+      targetElement.addEventListener("pointerenter", handleEnter);
+      targetElement.addEventListener("pointerleave", handleLeave);
     } else {
       element.addEventListener("pointermove", handleMove);
-      if (target?.current) {
-        target.current.addEventListener("pointerenter", handleEnter);
-        target.current.addEventListener("pointerleave", handleLeave);
+      if (targetElement) {
+        targetElement.addEventListener("pointerenter", handleEnter);
+        targetElement.addEventListener("pointerleave", handleLeave);
       }
     }
-    const targetElement = target?.current;
     return () => {
       if (frameRef.current) cancelAnimationFrame(frameRef.current);
       if (hoverOnly && targetElement) {
@@ -2905,8 +3242,8 @@ function usePointer(options = {}) {
         }
       }
     };
-  }, [target, smooth, hoverOnly]);
-  useEffect14(() => {
+  }, () => [target?.current ?? null, smooth, hoverOnly]);
+  useEffect16(() => {
     return () => {
       xRef.current?.stop();
       yRef.current?.stop();
@@ -2920,18 +3257,18 @@ function usePointer(options = {}) {
 }
 function useGyroscope(options = {}) {
   const { multiplier = 1, clamp = 45, smooth = 0.1 } = options;
-  const tiltXRef = useRef20(null);
-  const tiltYRef = useRef20(null);
-  const rawXRef = useRef20(0);
-  const rawYRef = useRef20(0);
-  const [isSupported, setIsSupported] = useState12(false);
-  const frameRef = useRef20(null);
+  const tiltXRef = useRef22(null);
+  const tiltYRef = useRef22(null);
+  const rawXRef = useRef22(0);
+  const rawYRef = useRef22(0);
+  const [isSupported, setIsSupported] = useState15(false);
+  const frameRef = useRef22(null);
   if (tiltXRef.current === null || tiltXRef.current.isDestroyed()) tiltXRef.current = createMotionValue4(0);
   if (tiltYRef.current === null || tiltYRef.current.isDestroyed()) tiltYRef.current = createMotionValue4(0);
-  const clampValue = useCallback11((value) => {
+  const clampValue2 = useCallback13((value) => {
     return Math.max(-clamp, Math.min(clamp, value * multiplier));
   }, [clamp, multiplier]);
-  useEffect14(() => {
+  useEffect16(() => {
     const hasOrientation = "DeviceOrientationEvent" in window;
     const smoothLoop = () => {
       const currentX = tiltXRef.current?.get() ?? 0;
@@ -2943,32 +3280,51 @@ function useGyroscope(options = {}) {
       frameRef.current = requestAnimationFrame(smoothLoop);
     };
     frameRef.current = requestAnimationFrame(smoothLoop);
+    const handleMouse = (e) => {
+      const centerX = window.innerWidth / 2;
+      const centerY = window.innerHeight / 2;
+      rawXRef.current = clampValue2((e.clientX - centerX) / centerX * 45);
+      rawYRef.current = clampValue2((e.clientY - centerY) / centerY * 45);
+    };
+    let usingMouse = false;
+    const enableMouseFallback = () => {
+      if (usingMouse) return;
+      usingMouse = true;
+      window.addEventListener("mousemove", handleMouse);
+    };
+    let fallbackTimer = null;
+    let handleOrientation = null;
     if (hasOrientation) {
-      const handleOrientation = (e) => {
+      handleOrientation = (e) => {
+        if (e.gamma == null || e.beta == null) return;
+        if (fallbackTimer !== null) {
+          clearTimeout(fallbackTimer);
+          fallbackTimer = null;
+        }
+        if (usingMouse) {
+          usingMouse = false;
+          window.removeEventListener("mousemove", handleMouse);
+        }
         setIsSupported(true);
-        rawXRef.current = clampValue(e.gamma ?? 0);
-        rawYRef.current = clampValue(e.beta ?? 0);
+        rawXRef.current = clampValue2(e.gamma);
+        rawYRef.current = clampValue2(e.beta);
       };
       window.addEventListener("deviceorientation", handleOrientation);
-      return () => {
-        if (frameRef.current) cancelAnimationFrame(frameRef.current);
-        window.removeEventListener("deviceorientation", handleOrientation);
-      };
+      fallbackTimer = setTimeout(() => {
+        fallbackTimer = null;
+        enableMouseFallback();
+      }, GYROSCOPE_FALLBACK_MS);
     } else {
-      const handleMouse = (e) => {
-        const centerX = window.innerWidth / 2;
-        const centerY = window.innerHeight / 2;
-        rawXRef.current = clampValue((e.clientX - centerX) / centerX * 45);
-        rawYRef.current = clampValue((e.clientY - centerY) / centerY * 45);
-      };
-      window.addEventListener("mousemove", handleMouse);
-      return () => {
-        if (frameRef.current) cancelAnimationFrame(frameRef.current);
-        window.removeEventListener("mousemove", handleMouse);
-      };
+      enableMouseFallback();
     }
-  }, [clampValue, smooth]);
-  useEffect14(() => {
+    return () => {
+      if (frameRef.current) cancelAnimationFrame(frameRef.current);
+      if (fallbackTimer !== null) clearTimeout(fallbackTimer);
+      if (handleOrientation) window.removeEventListener("deviceorientation", handleOrientation);
+      if (usingMouse) window.removeEventListener("mousemove", handleMouse);
+    };
+  }, [clampValue2, smooth]);
+  useEffect16(() => {
     return () => {
       tiltXRef.current?.stop();
       tiltYRef.current?.stop();
@@ -2980,47 +3336,642 @@ function useGyroscope(options = {}) {
     isSupported
   };
 }
+var GYROSCOPE_FALLBACK_MS = 500;
 
 // src/adapters/react/components/Spring.tsx
-import { useEffect as useEffect15, useRef as useRef21, useState as useState13 } from "react";
+import { useEffect as useEffect17, useRef as useRef24, useState as useState16 } from "react";
 import { createSpringGroup as createSpringGroup3 } from "@oxog/springkit";
-import { Fragment, jsx } from "react/jsx-runtime";
+
+// src/adapters/react/utils/config.ts
+import { useRef as useRef23 } from "react";
+var PHYSICS_KEYS = [
+  "stiffness",
+  "damping",
+  "mass",
+  "velocity",
+  "restSpeed",
+  "restDelta",
+  "clamp"
+];
+function samePhysics(a, b) {
+  return PHYSICS_KEYS.every((key) => a[key] === b[key]);
+}
+function useStableSpringConfig(config, fallback) {
+  const next = config ?? fallback;
+  const ref = useRef23(next);
+  if (!samePhysics(ref.current, next)) {
+    ref.current = next;
+  }
+  return ref.current;
+}
+
+// src/adapters/react/components/Spring.tsx
+import { Fragment as Fragment2, jsx } from "react/jsx-runtime";
+var DEFAULT_SPRING_CONFIG = {};
 var Spring = ({
   from,
   to,
-  config = {},
+  config: configProp,
   onRest,
   children
 }) => {
-  const springRef = useRef21(null);
-  const [values, setValues] = useState13(from);
-  useEffect15(() => {
-    const spring = createSpringGroup3(from, config);
-    spring.subscribe(setValues);
-    springRef.current = spring;
-    requestAnimationFrame(() => {
-      spring.set(to, { ...config, onRest });
+  const config = useStableSpringConfig(configProp, DEFAULT_SPRING_CONFIG);
+  const springRef = useRef24(null);
+  const [values, setValues] = useState16(from);
+  const toRef = useRef24(to);
+  toRef.current = to;
+  const onRestRef = useRef24(onRest);
+  onRestRef.current = onRest;
+  const handleRest = useRef24(() => onRestRef.current?.()).current;
+  const toSignature = Object.keys(to).map((key) => `${key}:${to[key]}`).join("|");
+  useEffect17(() => {
+    const spring2 = createSpringGroup3(from, config);
+    const unsubscribe = spring2.subscribe(setValues);
+    springRef.current = spring2;
+    const rafId = requestAnimationFrame(() => {
+      spring2.set(toRef.current, { ...config, onRest: handleRest });
     });
-    return () => spring.destroy();
+    return () => {
+      cancelAnimationFrame(rafId);
+      unsubscribe();
+      spring2.destroy();
+      springRef.current = null;
+    };
   }, []);
-  useEffect15(() => {
-    springRef.current?.set(to, { ...config, onRest });
-  }, [to, config, onRest]);
-  return /* @__PURE__ */ jsx(Fragment, { children: children(values) });
+  const isFirstUpdateRef = useRef24(true);
+  useEffect17(() => {
+    if (isFirstUpdateRef.current) {
+      isFirstUpdateRef.current = false;
+      return;
+    }
+    springRef.current?.set(toRef.current, { ...config, onRest: handleRest });
+  }, [toSignature, config, handleRest]);
+  return /* @__PURE__ */ jsx(Fragment2, { children: children(values) });
 };
 
 // src/adapters/react/components/Animated.tsx
 import * as React3 from "react";
-import { useEffect as useEffect16, useRef as useRef22, useState as useState14, useContext as useContext3, useCallback as useCallback12, memo } from "react";
+import { useEffect as useEffect20, useRef as useRef26, useState as useState19, useContext as useContext5, useCallback as useCallback15, memo } from "react";
 import { createSpringGroup as createSpringGroup4 } from "@oxog/springkit";
-function extractNumericValues(style) {
-  const result = {};
-  for (const key in style) {
-    if (typeof style[key] === "number") {
-      result[key] = style[key];
+
+// src/adapters/react/components/MotionConfig.tsx
+import { createContext as createContext4, useContext as useContext3, useMemo as useMemo5, useState as useState17, useEffect as useEffect18 } from "react";
+import { jsx as jsx2 } from "react/jsx-runtime";
+var EMPTY_CONFIG = {};
+var REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+var defaultContext = {
+  config: {},
+  reducedMotion: "user",
+  initial: true,
+  isReducedMotion: false
+};
+var MotionContext = createContext4(defaultContext);
+function useMotionConfig() {
+  return useContext3(MotionContext);
+}
+function checkReducedMotion() {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia?.(REDUCED_MOTION_QUERY)?.matches ?? false;
+}
+function usePrefersReducedMotion(enabled) {
+  const [prefersReducedMotion2, setPrefersReducedMotion] = useState17(checkReducedMotion);
+  useEffect18(() => {
+    if (!enabled || typeof window === "undefined" || !window.matchMedia) return;
+    const mediaQuery = window.matchMedia(REDUCED_MOTION_QUERY);
+    if (!mediaQuery) return;
+    const update = () => setPrefersReducedMotion(mediaQuery.matches);
+    update();
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", update);
+      return () => mediaQuery.removeEventListener("change", update);
     }
+    mediaQuery.addListener?.(update);
+    return () => mediaQuery.removeListener?.(update);
+  }, [enabled]);
+  return prefersReducedMotion2;
+}
+function MotionConfig({
+  config: configProp,
+  reducedMotion: reducedMotionProp,
+  initial: initialProp,
+  children
+}) {
+  const parentContext = useContext3(MotionContext);
+  const reducedMotion = reducedMotionProp ?? parentContext.reducedMotion;
+  const initial = initialProp ?? parentContext.initial;
+  const config = useStableSpringConfig(configProp, EMPTY_CONFIG);
+  const prefersReducedMotion2 = usePrefersReducedMotion(reducedMotion === "user");
+  const value = useMemo5(() => {
+    let isReducedMotion = false;
+    switch (reducedMotion) {
+      case "always":
+        isReducedMotion = true;
+        break;
+      case "never":
+        isReducedMotion = false;
+        break;
+      case "user":
+      default:
+        isReducedMotion = prefersReducedMotion2;
+    }
+    return {
+      config: { ...parentContext.config, ...config },
+      reducedMotion,
+      initial,
+      isReducedMotion
+    };
+  }, [config, reducedMotion, initial, parentContext.config, prefersReducedMotion2]);
+  return /* @__PURE__ */ jsx2(MotionContext.Provider, { value, children });
+}
+
+// src/adapters/react/components/useAnimatedDrag.ts
+import { useCallback as useCallback14, useContext as useContext4, useEffect as useEffect19, useRef as useRef25, useState as useState18 } from "react";
+import { decay, spring } from "@oxog/springkit";
+var ZERO = { x: 0, y: 0 };
+var UNBOUNDED = [-Infinity, Infinity];
+var DEFAULT_ELASTIC = 0.5;
+var VELOCITY_WINDOW_MS = 100;
+var DIRECTION_LOCK_THRESHOLD = 3;
+var DEFAULT_BOUNCE_STIFFNESS = 200;
+var DEFAULT_BOUNCE_DAMPING = 40;
+function now() {
+  return typeof performance !== "undefined" ? performance.now() : Date.now();
+}
+function prefersReducedMotion() {
+  if (!isBrowser || typeof window.matchMedia !== "function") return false;
+  try {
+    return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  } catch {
+    return false;
+  }
+}
+function finiteOr(value, fallback) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+function clampValue(value, [min, max]) {
+  return value < min ? min : value > max ? max : value;
+}
+function clampElastic(value) {
+  return value < 0 ? 0 : value > 1 ? 1 : value;
+}
+function resolveElastic(elastic) {
+  if (elastic === void 0 || elastic === true) {
+    return { x: [DEFAULT_ELASTIC, DEFAULT_ELASTIC], y: [DEFAULT_ELASTIC, DEFAULT_ELASTIC] };
+  }
+  if (elastic === false) return { x: [0, 0], y: [0, 0] };
+  if (typeof elastic === "number") {
+    const e = clampElastic(finiteOr(elastic, DEFAULT_ELASTIC));
+    return { x: [e, e], y: [e, e] };
+  }
+  const side = (value) => clampElastic(finiteOr(value, 0));
+  return {
+    x: [side(elastic.left), side(elastic.right)],
+    y: [side(elastic.top), side(elastic.bottom)]
+  };
+}
+function orderedRange(min, max) {
+  return min > max ? [max, min] : [min, max];
+}
+function isRefConstraints(constraints) {
+  return "current" in constraints;
+}
+function resolveBounds(constraints, element, offset) {
+  if (!constraints) return { x: UNBOUNDED, y: UNBOUNDED };
+  if (!isRefConstraints(constraints)) {
+    return {
+      x: orderedRange(finiteOr(constraints.left, -Infinity), finiteOr(constraints.right, Infinity)),
+      y: orderedRange(finiteOr(constraints.top, -Infinity), finiteOr(constraints.bottom, Infinity))
+    };
+  }
+  const container = constraints.current;
+  if (!container || !element) return { x: UNBOUNDED, y: UNBOUNDED };
+  const box = element.getBoundingClientRect();
+  const area = container.getBoundingClientRect();
+  const left = box.left - offset.x;
+  const top = box.top - offset.y;
+  const axisRange = (areaMin, areaMax, min, size) => {
+    const lower = areaMin - min;
+    const upper = areaMax - (min + size);
+    return upper < lower ? [upper, lower] : [lower, upper];
+  };
+  return {
+    x: axisRange(area.left, area.right, left, box.width),
+    y: axisRange(area.top, area.bottom, top, box.height)
+  };
+}
+function applyElastic(value, [min, max], [eMin, eMax]) {
+  if (value < min) return min + (value - min) * eMin;
+  if (value > max) return max + (value - max) * eMax;
+  return value;
+}
+function removeElastic(value, [min, max], [eMin, eMax]) {
+  if (value < min && eMin > 0) return min + (value - min) / eMin;
+  if (value > max && eMax > 0) return max + (value - max) / eMax;
+  return value;
+}
+function computeVelocity(samples, time) {
+  const last = samples[samples.length - 1];
+  if (!last || time - last.t > VELOCITY_WINDOW_MS) return ZERO;
+  let base = last;
+  for (let i = samples.length - 2; i >= 0; i--) {
+    const sample = samples[i];
+    if (last.t - sample.t > VELOCITY_WINDOW_MS) break;
+    base = sample;
+  }
+  const dt = last.t - base.t;
+  if (dt <= 0) return ZERO;
+  const vx = (last.x - base.x) / dt * 1e3;
+  const vy = (last.y - base.y) / dt * 1e3;
+  return { x: Number.isFinite(vx) ? vx : 0, y: Number.isFinite(vy) ? vy : 0 };
+}
+function safeCall(fn, ...args) {
+  if (!fn) return;
+  try {
+    fn(...args);
+  } catch (error) {
+    console.error("[SpringKit] Error in drag callback:", error);
+  }
+}
+function useAnimatedDrag(props, elementRef) {
+  const { drag, dragControls } = props;
+  const motionConfig = useContext4(MotionContext);
+  const [dragOffset, setDragOffset] = useState18(ZERO);
+  const [isDragging, setIsDragging] = useState18(false);
+  const offsetRef = useRef25(ZERO);
+  const activeRef = useRef25(null);
+  const animationsRef = useRef25({
+    x: null,
+    y: null
+  });
+  const boundsRef = useRef25({ x: UNBOUNDED, y: UNBOUNDED });
+  const lockedAxisRef = useRef25(null);
+  const mountedRef = useRef25(false);
+  const propsRef = useRef25(props);
+  propsRef.current = props;
+  const motionConfigRef = useRef25(motionConfig);
+  motionConfigRef.current = motionConfig;
+  const shouldReduceMotion = useCallback14(() => {
+    const config = motionConfigRef.current;
+    if (config.reducedMotion === "always") return true;
+    if (config.reducedMotion === "never") return false;
+    return config.isReducedMotion || prefersReducedMotion();
+  }, []);
+  const setOffset = useCallback14((next) => {
+    offsetRef.current = next;
+    if (mountedRef.current) setDragOffset(next);
+  }, []);
+  const setAxis = useCallback14((axis, value) => {
+    setOffset({ ...offsetRef.current, [axis]: value });
+  }, [setOffset]);
+  const stopAnimation = useCallback14((axis) => {
+    const animation = animationsRef.current[axis];
+    animationsRef.current[axis] = null;
+    animation?.destroy();
+  }, []);
+  const stopAnimations = useCallback14(() => {
+    stopAnimation("x");
+    stopAnimation("y");
+  }, [stopAnimation]);
+  const detach = useCallback14(() => {
+    const active = activeRef.current;
+    if (!active) return null;
+    activeRef.current = null;
+    active.removeListeners();
+    if (mountedRef.current) setIsDragging(false);
+    propsRef.current.dragControls?._notifyDragEnd?.();
+    return active;
+  }, []);
+  const getAxes = useCallback14(() => {
+    const axis = propsRef.current.drag;
+    if (!axis) return [];
+    if (axis === "x" || axis === "y") return [axis];
+    return ["x", "y"];
+  }, []);
+  const springAxis = useCallback14((axis, from, to, velocity) => {
+    const transition = propsRef.current.dragTransition;
+    let starting = true;
+    const animation = spring(from, to, {
+      stiffness: finiteOr(transition?.bounceStiffness, DEFAULT_BOUNCE_STIFFNESS),
+      damping: finiteOr(transition?.bounceDamping, DEFAULT_BOUNCE_DAMPING),
+      velocity,
+      restDelta: 0.1,
+      restSpeed: 1,
+      onUpdate: (value) => {
+        if (!starting) setAxis(axis, value);
+      },
+      onComplete: () => {
+        if (animationsRef.current[axis] === animation) animationsRef.current[axis] = null;
+      }
+    });
+    animationsRef.current[axis] = animation;
+    animation.start();
+    starting = false;
+  }, [setAxis]);
+  const decayAxis = useCallback14((axis, from, velocity, range, elastic) => {
+    const transition = propsRef.current.dragTransition;
+    let starting = true;
+    const animation = decay({
+      from,
+      velocity,
+      deceleration: transition?.deceleration,
+      modifyTarget: transition?.modifyTarget,
+      onUpdate: (value) => {
+        if (starting || animationsRef.current[axis] !== animation) return;
+        if (value >= range[0] && value <= range[1]) {
+          setAxis(axis, value);
+          return;
+        }
+        const boundary = value < range[0] ? range[0] : range[1];
+        const sideElastic = value < range[0] ? elastic[0] : elastic[1];
+        const currentVelocity = animation.getVelocity();
+        animationsRef.current[axis] = null;
+        animation.destroy();
+        if (sideElastic > 0 && !shouldReduceMotion()) {
+          setAxis(axis, value);
+          springAxis(axis, value, boundary, currentVelocity);
+        } else {
+          setAxis(axis, boundary);
+        }
+      },
+      onComplete: () => {
+        if (animationsRef.current[axis] === animation) animationsRef.current[axis] = null;
+      }
+    });
+    animationsRef.current[axis] = animation;
+    animation.start();
+    starting = false;
+  }, [setAxis, springAxis, shouldReduceMotion]);
+  const settle = useCallback14((velocity, allowMomentum, allowAnimation) => {
+    const { dragSnapToOrigin, dragMomentum = true, dragTransition, dragElastic } = propsRef.current;
+    const bounds = boundsRef.current;
+    const elastic = resolveElastic(dragElastic);
+    const animate = allowAnimation && !shouldReduceMotion();
+    const lockedAxis = lockedAxisRef.current;
+    for (const axis of getAxes()) {
+      stopAnimation(axis);
+      const from = offsetRef.current[axis];
+      const range = bounds[axis];
+      const axisVelocity = lockedAxis && lockedAxis !== axis ? 0 : velocity[axis];
+      let target = null;
+      if (dragSnapToOrigin) {
+        target = 0;
+      } else if (from < range[0] || from > range[1]) {
+        target = clampValue(from, range);
+      } else if (allowMomentum && dragMomentum && axisVelocity !== 0) {
+        if (animate) {
+          decayAxis(axis, from, axisVelocity, range, elastic[axis]);
+          continue;
+        }
+        const probe = decay({
+          from,
+          velocity: axisVelocity,
+          deceleration: dragTransition?.deceleration,
+          modifyTarget: dragTransition?.modifyTarget
+        });
+        target = clampValue(probe.target, range);
+        probe.destroy();
+      }
+      if (target === null || target === from) continue;
+      if (animate) {
+        springAxis(axis, from, target, axisVelocity);
+      } else {
+        setAxis(axis, target);
+      }
+    }
+  }, [getAxes, stopAnimation, decayAxis, springAxis, setAxis, shouldReduceMotion]);
+  const finishDrag = useCallback14((event, info, withMomentum) => {
+    const active = detach();
+    if (!active) return;
+    const endInfo = info ?? { ...active.lastInfo, velocity: ZERO };
+    settle(endInfo.velocity, withMomentum, event !== null);
+    safeCall(propsRef.current.onDragEnd, event ?? active.lastEvent, endInfo);
+  }, [detach, settle]);
+  const startDrag = useCallback14((event, options) => {
+    const axisProp = propsRef.current.drag;
+    if (!axisProp || !isBrowser) return;
+    detach();
+    stopAnimations();
+    const axes = getAxes();
+    const element = elementRef.current;
+    const { dragConstraints, dragElastic, dragDirectionLock } = propsRef.current;
+    const elastic = resolveElastic(dragElastic);
+    const bounds = resolveBounds(dragConstraints, element, offsetRef.current);
+    boundsRef.current = bounds;
+    lockedAxisRef.current = null;
+    const useDirectionLock = Boolean(dragDirectionLock) && axes.length === 2;
+    let origin = offsetRef.current;
+    if (options?.snapToCursor && element) {
+      const rect = element.getBoundingClientRect();
+      const dx = event.clientX - (options.cursorOffset?.x ?? 0) - (rect.left + rect.width / 2);
+      const dy = event.clientY - (options.cursorOffset?.y ?? 0) - (rect.top + rect.height / 2);
+      origin = {
+        x: axes.includes("x") ? applyElastic(origin.x + dx, bounds.x, elastic.x) : origin.x,
+        y: axes.includes("y") ? applyElastic(origin.y + dy, bounds.y, elastic.y) : origin.y
+      };
+      setOffset(origin);
+    }
+    const rawOrigin = {
+      x: removeElastic(origin.x, bounds.x, elastic.x),
+      y: removeElastic(origin.y, bounds.y, elastic.y)
+    };
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const pointerId = event.pointerId;
+    const samples = [{ x: startX, y: startY, t: now() }];
+    let lastPoint = { x: startX, y: startY };
+    const isOtherPointer = (e) => pointerId !== void 0 && e.pointerId !== void 0 && e.pointerId !== pointerId;
+    const makeInfo = (point, time) => {
+      const info = {
+        point,
+        delta: { x: point.x - lastPoint.x, y: point.y - lastPoint.y },
+        offset: { x: point.x - startX, y: point.y - startY },
+        velocity: computeVelocity(samples, time)
+      };
+      lastPoint = point;
+      return info;
+    };
+    const record = (point, time) => {
+      const last = samples[samples.length - 1];
+      if (last && last.x === point.x && last.y === point.y) return;
+      samples.push({ x: point.x, y: point.y, t: time });
+      while (samples.length > 2 && time - samples[0].t > VELOCITY_WINDOW_MS * 2) samples.shift();
+    };
+    const handleMove = (e) => {
+      const active = activeRef.current;
+      if (!active || isOtherPointer(e)) return;
+      const time = now();
+      const point = { x: e.clientX, y: e.clientY };
+      record(point, time);
+      const info = makeInfo(point, time);
+      active.lastEvent = e;
+      active.lastInfo = info;
+      if (useDirectionLock && lockedAxisRef.current === null) {
+        const ax = Math.abs(info.offset.x);
+        const ay = Math.abs(info.offset.y);
+        if (Math.max(ax, ay) <= DIRECTION_LOCK_THRESHOLD) return;
+        const locked2 = ay > ax ? "y" : "x";
+        lockedAxisRef.current = locked2;
+        safeCall(propsRef.current.onDirectionLock, locked2);
+      }
+      const locked = lockedAxisRef.current;
+      const move = (axis) => axes.includes(axis) && (!locked || locked === axis);
+      const currentElastic = resolveElastic(propsRef.current.dragElastic);
+      setOffset({
+        x: move("x") ? applyElastic(rawOrigin.x + info.offset.x, bounds.x, currentElastic.x) : offsetRef.current.x,
+        y: move("y") ? applyElastic(rawOrigin.y + info.offset.y, bounds.y, currentElastic.y) : offsetRef.current.y
+      });
+      safeCall(propsRef.current.onDrag, e, info);
+    };
+    const handleUp = (e) => {
+      const active = activeRef.current;
+      if (!active || isOtherPointer(e)) return;
+      const time = now();
+      const point = { x: e.clientX, y: e.clientY };
+      let info;
+      if (Number.isFinite(point.x) && Number.isFinite(point.y)) {
+        record(point, time);
+        info = makeInfo(point, time);
+      } else {
+        info = { ...active.lastInfo, delta: ZERO, velocity: computeVelocity(samples, time) };
+      }
+      finishDrag(e, info, true);
+    };
+    const handleCancel = (e) => {
+      const active = activeRef.current;
+      if (!active || isOtherPointer(e)) return;
+      finishDrag(e, { ...active.lastInfo, delta: ZERO, velocity: ZERO }, false);
+    };
+    window.addEventListener("pointermove", handleMove);
+    window.addEventListener("pointerup", handleUp);
+    window.addEventListener("pointercancel", handleCancel);
+    const startInfo = {
+      point: { x: startX, y: startY },
+      delta: ZERO,
+      offset: ZERO,
+      velocity: ZERO
+    };
+    activeRef.current = {
+      removeListeners: () => {
+        window.removeEventListener("pointermove", handleMove);
+        window.removeEventListener("pointerup", handleUp);
+        window.removeEventListener("pointercancel", handleCancel);
+      },
+      lastEvent: event,
+      lastInfo: startInfo
+    };
+    setIsDragging(true);
+    propsRef.current.dragControls?._notifyDragStart?.();
+    safeCall(propsRef.current.onDragStart, event, startInfo);
+  }, [detach, stopAnimations, getAxes, elementRef, setOffset, finishDrag]);
+  const stopDrag = useCallback14(() => {
+    if (activeRef.current) {
+      finishDrag(null, null, false);
+    } else {
+      settle(ZERO, false, false);
+    }
+  }, [finishDrag, settle]);
+  useEffect19(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      detach();
+      stopAnimations();
+    };
+  }, [detach, stopAnimations]);
+  const isDragEnabled = Boolean(drag);
+  useEffect19(() => {
+    if (isDragEnabled) return;
+    detach();
+    stopAnimations();
+  }, [isDragEnabled, detach, stopAnimations]);
+  useEffect19(() => {
+    const controls = dragControls;
+    if (!controls || !isDragEnabled) return;
+    controls._setDragHandler?.(startDrag);
+    controls._setStopHandler?.(stopDrag);
+    return () => {
+      controls._setDragHandler?.(null);
+      controls._setStopHandler?.(null);
+    };
+  }, [dragControls, isDragEnabled, startDrag, stopDrag]);
+  return { dragOffset, isDragging, startDrag };
+}
+
+// src/adapters/react/components/Animated.tsx
+var EMPTY_STYLE = {};
+var EMPTY_CONFIG2 = {};
+var TRANSFORM_KEYS = [
+  "x",
+  "y",
+  "z",
+  "translateX",
+  "translateY",
+  "translateZ",
+  "scale",
+  "scaleX",
+  "scaleY",
+  "rotate",
+  "rotateX",
+  "rotateY",
+  "rotateZ",
+  "skewX",
+  "skewY"
+];
+var TRANSFORM_KEY_SET = new Set(TRANSFORM_KEYS);
+var DEFAULT_VALUES = {
+  opacity: 1,
+  scale: 1,
+  scaleX: 1,
+  scaleY: 1
+};
+function getNumber(source, key) {
+  if (!source) return void 0;
+  const value = source[key];
+  return typeof value === "number" ? value : void 0;
+}
+function pickKeys(values, keys) {
+  const result = {};
+  for (const key of keys) {
+    const value = values[key];
+    if (value !== void 0) result[key] = value;
   }
   return result;
+}
+function shallowEqualValues(a, b) {
+  if (!a) return false;
+  const aKeys = Object.keys(a);
+  if (aKeys.length !== Object.keys(b).length) return false;
+  return aKeys.every((key) => a[key] === b[key]);
+}
+function isIdentityTransform(key, value) {
+  if (typeof value === "string") return false;
+  return key.startsWith("scale") ? value === 1 : value === 0;
+}
+function formatTransform(key, value) {
+  const fn = key === "x" ? "translateX" : key === "y" ? "translateY" : key === "z" ? "translateZ" : key;
+  if (typeof value === "string") return `${fn}(${value})`;
+  const unit = key.startsWith("scale") ? "" : key.startsWith("rotate") || key.startsWith("skew") ? "deg" : "px";
+  return `${fn}(${value}${unit})`;
+}
+function buildStyle(values, staticTransform) {
+  const style = {};
+  const transforms = [];
+  let hasNonIdentity = false;
+  for (const key of TRANSFORM_KEYS) {
+    const value = values[key];
+    if (value === void 0) continue;
+    transforms.push(formatTransform(key, value));
+    if (!isIdentityTransform(key, value)) hasNonIdentity = true;
+  }
+  for (const key in values) {
+    if (!TRANSFORM_KEY_SET.has(key)) {
+      style[key] = values[key];
+    }
+  }
+  if (hasNonIdentity) {
+    style.transform = typeof staticTransform === "string" && staticTransform ? `${transforms.join(" ")} ${staticTransform}` : transforms.join(" ");
+  }
+  return style;
 }
 function extractStringValues(style) {
   const result = {};
@@ -3035,8 +3986,8 @@ function createAnimatedComponent(tag) {
   const AnimatedComponent = React3.forwardRef(
     ({
       children,
-      style = {},
-      config = {},
+      style = EMPTY_STYLE,
+      config = EMPTY_CONFIG2,
       initial,
       animate,
       exit,
@@ -3052,8 +4003,22 @@ function createAnimatedComponent(tag) {
       onTapStart,
       onTap,
       onTapCancel,
+      drag,
+      dragControls,
+      dragListener = true,
+      dragConstraints,
+      dragElastic,
+      dragMomentum,
+      dragTransition,
+      dragSnapToOrigin,
+      dragDirectionLock,
+      onDirectionLock,
+      onDragStart,
+      onDrag,
+      onDragEnd,
       onMouseEnter: propsOnMouseEnter,
       onMouseLeave: propsOnMouseLeave,
+      onPointerEnter: propsOnPointerEnter,
       onPointerDown: propsOnPointerDown,
       onPointerUp: propsOnPointerUp,
       onPointerCancel: propsOnPointerCancel,
@@ -3061,23 +4026,50 @@ function createAnimatedComponent(tag) {
       onBlur: propsOnBlur,
       ...props
     }, forwardedRef) => {
-      const springRef = useRef22(null);
-      const unsubscribeRef = useRef22(null);
-      const elementRef = useRef22(null);
-      const [animatedStyle, setAnimatedStyle] = useState14({});
-      const isFirstRender = useRef22(true);
-      const hasCalledSafeToRemove = useRef22(false);
-      const isDestroyedRef = useRef22(false);
-      const [isHovered, setIsHovered] = useState14(false);
-      const [isPressed, setIsPressed] = useState14(false);
-      const [isFocused, setIsFocused] = useState14(false);
-      const [isDragging, _setIsDragging] = useState14(false);
-      const [isInViewport, setIsInViewport] = useState14(false);
-      const hasTriggeredInView = useRef22(false);
-      const presenceContext = useContext3(PresenceContext);
+      const springRef = useRef26(null);
+      const unsubscribeRef = useRef26(null);
+      const elementRef = useRef26(null);
+      const hasCalledSafeToRemove = useRef26(false);
+      const isDestroyedRef = useRef26(false);
+      const hasMountedRef = useRef26(false);
+      const lastTargetRef = useRef26(null);
+      const latestValuesRef = useRef26({});
+      const [isHovered, setIsHovered] = useState19(false);
+      const [isPressed, setIsPressed] = useState19(false);
+      const [isFocused, setIsFocused] = useState19(false);
+      const [isInViewport, setIsInViewport] = useState19(false);
+      const hasTriggeredInView = useRef26(false);
+      const isPressedRef = useRef26(false);
+      const removeGlobalPressListenersRef = useRef26(null);
+      const lastPointerTypeRef = useRef26(null);
+      const onTapCancelRef = useRef26(onTapCancel);
+      onTapCancelRef.current = onTapCancel;
+      const { dragOffset, isDragging, startDrag } = useAnimatedDrag(
+        {
+          drag,
+          dragControls,
+          dragListener,
+          dragConstraints,
+          dragElastic,
+          dragMomentum,
+          dragTransition,
+          dragSnapToOrigin,
+          dragDirectionLock,
+          onDirectionLock,
+          onDragStart,
+          onDrag,
+          onDragEnd
+        },
+        elementRef
+      );
+      const presenceContext = useContext5(PresenceContext);
       const isPresent = presenceContext?.isPresent ?? true;
       const safeToRemove = presenceContext?.safeToRemove;
-      const setRef = useCallback12((node) => {
+      const motionConfig = useContext5(MotionContext);
+      const reducedMotion = motionConfig.isReducedMotion;
+      const springConfig = { ...motionConfig.config, ...config };
+      const skipInitial = initial === false || presenceContext?.initial === false || motionConfig.initial === false;
+      const setRef = useCallback15((node) => {
         elementRef.current = node;
         if (typeof forwardedRef === "function") {
           forwardedRef(node);
@@ -3085,7 +4077,7 @@ function createAnimatedComponent(tag) {
           forwardedRef.current = node;
         }
       }, [forwardedRef]);
-      useEffect16(() => {
+      useEffect20(() => {
         if (!whileInView || !isBrowser) return;
         const element = elementRef.current;
         if (!element) return;
@@ -3115,7 +4107,27 @@ function createAnimatedComponent(tag) {
           observer.disconnect();
         };
       }, [whileInView, viewport?.once, viewport?.margin, viewport?.amount]);
-      const getTargetStyle = useCallback12(() => {
+      const numericKeySet = /* @__PURE__ */ new Set();
+      for (const source of [
+        initial === false ? void 0 : initial,
+        animate,
+        exit,
+        whileHover,
+        whileTap,
+        whileFocus,
+        whileDrag,
+        whileInView,
+        style
+      ]) {
+        if (!source) continue;
+        for (const key in source) {
+          if (typeof source[key] === "number") numericKeySet.add(key);
+        }
+      }
+      const numericKeys = Array.from(numericKeySet).sort();
+      const numericKeysSignature = numericKeys.join("|");
+      const getBaseValue = (key) => getNumber(animate, key) ?? getNumber(style, key) ?? DEFAULT_VALUES[key] ?? 0;
+      const getTargetStyle = () => {
         if (!isPresent && exit) {
           return exit;
         }
@@ -3135,171 +4147,198 @@ function createAnimatedComponent(tag) {
         if (whileTap && isPressed) {
           target = { ...target, ...whileTap };
         }
-        if (Object.keys(target).length === 0) {
-          return Object.fromEntries(
-            Object.entries(style).filter((entry) => typeof entry[1] === "number")
-          );
-        }
         return target;
-      }, [isPresent, exit, animate, style, whileHover, whileTap, whileFocus, whileDrag, whileInView, isHovered, isPressed, isFocused, isDragging, isInViewport]);
-      const getInitialStyle = useCallback12(() => {
-        if (initial === false) {
-          return getTargetStyle();
+      };
+      const getNumericTarget = () => {
+        const target = getTargetStyle();
+        const result = {};
+        for (const key of numericKeys) {
+          result[key] = getNumber(target, key) ?? getBaseValue(key);
         }
-        if (initial) {
-          return initial;
+        return result;
+      };
+      const getInitialValues = () => {
+        const target = getNumericTarget();
+        if (skipInitial || reducedMotion || !initial) return target;
+        const result = { ...target };
+        for (const key of numericKeys) {
+          const value = getNumber(initial, key);
+          if (value !== void 0) result[key] = value;
         }
-        return getTargetStyle();
-      }, [initial, getTargetStyle]);
-      useEffect16(() => {
-        const initialStyle = getInitialStyle();
-        const numericInitial = extractNumericValues(initialStyle);
-        if (Object.keys(numericInitial).length === 0) {
+        return result;
+      };
+      const [animatedStyle, setAnimatedStyle] = useState19(getInitialValues);
+      const getNumericTargetRef = useRef26(getNumericTarget);
+      getNumericTargetRef.current = getNumericTarget;
+      const getInitialValuesRef = useRef26(getInitialValues);
+      getInitialValuesRef.current = getInitialValues;
+      const reducedMotionRef = useRef26(reducedMotion);
+      reducedMotionRef.current = reducedMotion;
+      useEffect20(() => {
+        const target = getNumericTargetRef.current();
+        const keys = Object.keys(target);
+        if (keys.length === 0) {
           return;
         }
-        if (unsubscribeRef.current) {
-          unsubscribeRef.current();
-          unsubscribeRef.current = null;
-        }
-        if (springRef.current) {
-          springRef.current.destroy();
-          springRef.current = null;
-        }
+        const startValues = hasMountedRef.current ? { ...target, ...pickKeys(latestValuesRef.current, keys) } : getInitialValuesRef.current();
+        hasMountedRef.current = true;
         isDestroyedRef.current = false;
-        const spring = createSpringGroup4(numericInitial, config);
-        unsubscribeRef.current = spring.subscribe((values) => {
+        const spring2 = createSpringGroup4(startValues, springConfig);
+        unsubscribeRef.current = spring2.subscribe((values) => {
+          latestValuesRef.current = values;
           if (!isDestroyedRef.current) {
             setAnimatedStyle(values);
           }
         });
-        springRef.current = spring;
-        if (initial && initial !== false && animate) {
-          const numericAnimate = extractNumericValues(animate);
-          const needsAnimation = Object.keys(numericAnimate).some(
-            (key) => numericInitial[key] !== numericAnimate[key]
-          );
-          if (needsAnimation) {
-            requestAnimationFrame(() => {
-              if (springRef.current && !isDestroyedRef.current) {
-                springRef.current.set(numericAnimate);
+        springRef.current = spring2;
+        lastTargetRef.current = target;
+        let rafId = null;
+        const needsAnimation = keys.some((key) => startValues[key] !== target[key]);
+        if (needsAnimation) {
+          if (reducedMotionRef.current) {
+            spring2.jump(target);
+          } else {
+            rafId = safeRequestAnimationFrame(() => {
+              rafId = null;
+              if (!isDestroyedRef.current) {
+                spring2.set(target);
               }
             });
           }
         }
         return () => {
           isDestroyedRef.current = true;
+          if (rafId !== null) safeCancelAnimationFrame(rafId);
           if (unsubscribeRef.current) {
             unsubscribeRef.current();
             unsubscribeRef.current = null;
           }
-          spring.destroy();
+          spring2.destroy();
+          springRef.current = null;
         };
-      }, [config.stiffness, config.damping]);
-      useEffect16(() => {
-        if (!springRef.current) return;
-        if (isFirstRender.current) {
-          isFirstRender.current = false;
+      }, [springConfig.stiffness, springConfig.damping, springConfig.mass, numericKeysSignature]);
+      useEffect20(() => {
+        const spring2 = springRef.current;
+        if (!spring2) return;
+        const target = getNumericTarget();
+        if (shallowEqualValues(lastTargetRef.current, target)) return;
+        lastTargetRef.current = target;
+        if (reducedMotion) {
+          spring2.jump(target);
+        } else {
+          spring2.set(target);
+        }
+      });
+      useEffect20(() => {
+        if (isPresent || !safeToRemove || hasCalledSafeToRemove.current) return;
+        const complete = () => {
+          if (hasCalledSafeToRemove.current) return;
+          hasCalledSafeToRemove.current = true;
+          safeToRemove();
+          onAnimationComplete?.();
+        };
+        if (!exit) {
+          complete();
           return;
         }
-        const targetStyle = getTargetStyle();
-        const numericTarget = extractNumericValues(targetStyle);
-        springRef.current.set(numericTarget);
-      }, [isPresent, animate, exit, getTargetStyle, initial, isHovered, isPressed, isFocused, isInViewport]);
-      useEffect16(() => {
-        if (!isPresent && exit && safeToRemove && !hasCalledSafeToRemove.current) {
-          let innerTimeout = null;
-          let cancelled = false;
-          const checkComplete = () => {
-            if (cancelled) return;
-            const values = springRef.current;
-            if (values) {
-              innerTimeout = setTimeout(() => {
-                if (!cancelled && !hasCalledSafeToRemove.current) {
-                  hasCalledSafeToRemove.current = true;
-                  safeToRemove();
-                  onAnimationComplete?.();
-                }
-              }, 500);
-            }
-          };
-          const timeout = setTimeout(checkComplete, 50);
-          return () => {
-            cancelled = true;
-            clearTimeout(timeout);
-            if (innerTimeout !== null) {
-              clearTimeout(innerTimeout);
-            }
-          };
-        }
+        let cancelled = false;
+        let timeout = null;
+        const checkComplete = () => {
+          if (cancelled) return;
+          const spring2 = springRef.current;
+          if (!spring2 || spring2.isDestroyed() || !spring2.isAnimating()) {
+            complete();
+            return;
+          }
+          timeout = setTimeout(checkComplete, 50);
+        };
+        timeout = setTimeout(checkComplete, 50);
+        return () => {
+          cancelled = true;
+          if (timeout !== null) clearTimeout(timeout);
+        };
       }, [isPresent, exit, safeToRemove, onAnimationComplete]);
-      useEffect16(() => {
+      useEffect20(() => {
         if (isPresent) {
           hasCalledSafeToRemove.current = false;
         }
       }, [isPresent]);
-      const handleMouseEnter = useCallback12((e) => {
-        if (whileHover) setIsHovered(true);
-        onHoverStart?.(e);
+      const endPress = useCallback15(() => {
+        isPressedRef.current = false;
+        setIsPressed(false);
+        removeGlobalPressListenersRef.current?.();
+        removeGlobalPressListenersRef.current = null;
+      }, []);
+      useEffect20(() => {
+        return () => {
+          removeGlobalPressListenersRef.current?.();
+          removeGlobalPressListenersRef.current = null;
+        };
+      }, []);
+      const handlePointerEnter = useCallback15((e) => {
+        lastPointerTypeRef.current = e.pointerType || null;
+        propsOnPointerEnter?.(e);
+      }, [propsOnPointerEnter]);
+      const handleMouseEnter = useCallback15((e) => {
+        if (lastPointerTypeRef.current !== "touch") {
+          if (whileHover) setIsHovered(true);
+          onHoverStart?.(e);
+        }
         propsOnMouseEnter?.(e);
       }, [whileHover, onHoverStart, propsOnMouseEnter]);
-      const handleMouseLeave = useCallback12((e) => {
-        if (whileHover) setIsHovered(false);
-        if (whileTap) setIsPressed(false);
-        onHoverEnd?.(e);
+      const handleMouseLeave = useCallback15((e) => {
+        if (lastPointerTypeRef.current !== "touch") {
+          if (whileHover) setIsHovered(false);
+          if (isPressedRef.current) {
+            isPressedRef.current = false;
+            setIsPressed(false);
+          }
+          onHoverEnd?.(e);
+        }
         propsOnMouseLeave?.(e);
-      }, [whileHover, whileTap, onHoverEnd, propsOnMouseLeave]);
-      const handlePointerDown = useCallback12((e) => {
+      }, [whileHover, onHoverEnd, propsOnMouseLeave]);
+      const handlePointerDown = useCallback15((e) => {
+        if (e.pointerType) lastPointerTypeRef.current = e.pointerType;
+        isPressedRef.current = true;
         if (whileTap) setIsPressed(true);
+        if (isBrowser && !removeGlobalPressListenersRef.current) {
+          const handleGlobalPointerUp = (event) => {
+            if (!removeGlobalPressListenersRef.current) return;
+            endPress();
+            onTapCancelRef.current?.(event);
+          };
+          window.addEventListener("pointerup", handleGlobalPointerUp);
+          window.addEventListener("pointercancel", handleGlobalPointerUp);
+          removeGlobalPressListenersRef.current = () => {
+            window.removeEventListener("pointerup", handleGlobalPointerUp);
+            window.removeEventListener("pointercancel", handleGlobalPointerUp);
+          };
+        }
         onTapStart?.(e);
         propsOnPointerDown?.(e);
-      }, [whileTap, onTapStart, propsOnPointerDown]);
-      const handlePointerUp = useCallback12((e) => {
-        if (whileTap && isPressed) {
-          setIsPressed(false);
+      }, [whileTap, onTapStart, propsOnPointerDown, endPress]);
+      const handlePointerUp = useCallback15((e) => {
+        if (isPressedRef.current) {
+          endPress();
           onTap?.(e);
         }
         propsOnPointerUp?.(e);
-      }, [whileTap, isPressed, onTap, propsOnPointerUp]);
-      const handlePointerCancel = useCallback12((e) => {
-        if (whileTap && isPressed) {
-          setIsPressed(false);
+      }, [onTap, propsOnPointerUp, endPress]);
+      const handlePointerCancel = useCallback15((e) => {
+        if (isPressedRef.current || removeGlobalPressListenersRef.current) {
+          endPress();
           onTapCancel?.(e);
         }
         propsOnPointerCancel?.(e);
-      }, [whileTap, isPressed, onTapCancel, propsOnPointerCancel]);
-      const handleFocus = useCallback12((e) => {
+      }, [onTapCancel, propsOnPointerCancel, endPress]);
+      const handleFocus = useCallback15((e) => {
         if (whileFocus) setIsFocused(true);
         propsOnFocus?.(e);
       }, [whileFocus, propsOnFocus]);
-      const handleBlur = useCallback12((e) => {
+      const handleBlur = useCallback15((e) => {
         if (whileFocus) setIsFocused(false);
         propsOnBlur?.(e);
       }, [whileFocus, propsOnBlur]);
-      const globalListenersActiveRef = useRef22(false);
-      useEffect16(() => {
-        if (!whileTap || !isPressed) {
-          globalListenersActiveRef.current = false;
-          return;
-        }
-        globalListenersActiveRef.current = true;
-        const handleGlobalPointerUp = () => {
-          setIsPressed(false);
-        };
-        window.addEventListener("pointerup", handleGlobalPointerUp);
-        window.addEventListener("pointercancel", handleGlobalPointerUp);
-        return () => {
-          window.removeEventListener("pointerup", handleGlobalPointerUp);
-          window.removeEventListener("pointercancel", handleGlobalPointerUp);
-          globalListenersActiveRef.current = false;
-        };
-      }, [whileTap, isPressed]);
-      useEffect16(() => {
-        return () => {
-          if (globalListenersActiveRef.current) {
-            globalListenersActiveRef.current = false;
-          }
-        };
-      }, []);
       const staticStyle = Object.fromEntries(
         Object.entries(style).filter(([_, v]) => typeof v !== "number")
       );
@@ -3319,8 +4358,18 @@ function createAnimatedComponent(tag) {
       if (whileTap && isPressed) {
         Object.assign(gestureStringStyles, extractStringValues(whileTap));
       }
-      const eventHandlers = {};
+      const eventHandlers = {
+        onMouseEnter: propsOnMouseEnter,
+        onMouseLeave: propsOnMouseLeave,
+        onPointerEnter: propsOnPointerEnter,
+        onPointerDown: propsOnPointerDown,
+        onPointerUp: propsOnPointerUp,
+        onPointerCancel: propsOnPointerCancel,
+        onFocus: propsOnFocus,
+        onBlur: propsOnBlur
+      };
       if (whileHover || onHoverStart || onHoverEnd) {
+        eventHandlers.onPointerEnter = handlePointerEnter;
         eventHandlers.onMouseEnter = handleMouseEnter;
         eventHandlers.onMouseLeave = handleMouseLeave;
       }
@@ -3329,9 +4378,27 @@ function createAnimatedComponent(tag) {
         eventHandlers.onPointerUp = handlePointerUp;
         eventHandlers.onPointerCancel = handlePointerCancel;
       }
+      const isDragListener = Boolean(drag) && dragListener;
+      if (isDragListener) {
+        const onPointerDown = eventHandlers.onPointerDown;
+        eventHandlers.onPointerDown = (e) => {
+          if (!e.button) startDrag(e.nativeEvent);
+          onPointerDown?.(e);
+        };
+      }
       if (whileFocus) {
         eventHandlers.onFocus = handleFocus;
         eventHandlers.onBlur = handleBlur;
+      }
+      const elementStyle = {
+        // Keep touch input from scrolling the page instead of dragging
+        ...isDragListener ? { touchAction: drag === "x" ? "pan-y" : drag === "y" ? "pan-x" : "none" } : void 0,
+        ...staticStyle,
+        ...buildStyle({ ...animatedStyle, ...gestureStringStyles }, staticStyle.transform)
+      };
+      if (dragOffset.x !== 0 || dragOffset.y !== 0) {
+        const rest = elementStyle.transform && elementStyle.transform !== "none" ? ` ${elementStyle.transform}` : "";
+        elementStyle.transform = `translate3d(${dragOffset.x}px, ${dragOffset.y}px, 0px)${rest}`;
       }
       return React3.createElement(
         tag,
@@ -3339,14 +4406,16 @@ function createAnimatedComponent(tag) {
           ...props,
           ...eventHandlers,
           ref: setRef,
-          style: { ...staticStyle, ...animatedStyle, ...gestureStringStyles }
+          style: elementStyle
         },
         children
       );
     }
   );
   AnimatedComponent.displayName = `Animated.${String(tag)}`;
-  return memo(AnimatedComponent);
+  const MemoizedComponent = memo(AnimatedComponent);
+  MemoizedComponent.displayName = `Animated.${String(tag)}`;
+  return MemoizedComponent;
 }
 var Animated = {
   div: createAnimatedComponent("div"),
@@ -3380,63 +4449,197 @@ var Animated = {
 
 // src/adapters/react/components/Trail.tsx
 import * as React4 from "react";
-import { useEffect as useEffect17, useRef as useRef23, useState as useState15 } from "react";
+import { useEffect as useEffect21, useRef as useRef27, useState as useState20 } from "react";
 import { createTrail } from "@oxog/springkit";
-import { Fragment as Fragment3, jsx as jsx2 } from "react/jsx-runtime";
+import { Fragment as Fragment4, jsx as jsx3 } from "react/jsx-runtime";
+var DEFAULT_TRAIL_CONFIG = {};
 var Trail = ({
   items,
   keys,
   from,
   to,
-  config = {},
+  config: configProp,
   reverse = false,
   children
 }) => {
-  const trailRef = useRef23(null);
-  const [values, setValues] = useState15(
+  const config = useStableSpringConfig(configProp, DEFAULT_TRAIL_CONFIG);
+  const trailsRef = useRef27(/* @__PURE__ */ new Map());
+  const [values, setValues] = useState20(
     () => items.map(() => ({ ...from }))
   );
-  useEffect17(() => {
-    const trail = createTrail(items.length, config);
-    const unsubscribe = trail.subscribe((vals) => {
-      setValues(vals.map((v) => ({ ...to, x: v })));
-    });
-    trailRef.current = trail;
-    const firstValue = Object.values(to)[0];
-    trail.set(firstValue);
-    return () => {
-      unsubscribe();
-      trail.destroy();
+  const fromRef = useRef27(from);
+  fromRef.current = from;
+  const toRef = useRef27(to);
+  toRef.current = to;
+  const reverseRef = useRef27(reverse);
+  reverseRef.current = reverse;
+  const valueKeysSignature = Object.keys(to).join("|");
+  const toSignature = Object.keys(to).map((key) => `${key}:${to[key]}`).join("|");
+  useEffect21(() => {
+    const count = items.length;
+    const fromValues = fromRef.current;
+    const toValues = toRef.current;
+    const keys2 = Object.keys(toValues);
+    const trails = /* @__PURE__ */ new Map();
+    const current = {};
+    const unsubscribes = [];
+    const publish = () => {
+      const isReversed = reverseRef.current;
+      setValues(
+        Array.from({ length: count }, (_, index) => {
+          const itemValues = { ...fromValues };
+          const trailIndex = isReversed ? count - 1 - index : index;
+          for (const key of keys2) {
+            itemValues[key] = current[key]?.[trailIndex] ?? fromValues[key] ?? toValues[key] ?? 0;
+          }
+          return itemValues;
+        })
+      );
     };
-  }, [items.length, config.stiffness, config.damping]);
-  useEffect17(() => {
-    const firstValue = Object.values(to)[0];
-    trailRef.current?.set(firstValue);
-  }, [to]);
-  return /* @__PURE__ */ jsx2(Fragment3, { children: items.map((item, index) => {
+    for (const key of keys2) {
+      const start = fromValues[key] ?? toValues[key] ?? 0;
+      const trail = createTrail(count, config);
+      trail.jump(start);
+      current[key] = new Array(count).fill(start);
+      unsubscribes.push(
+        trail.subscribe((vals) => {
+          current[key] = vals;
+          publish();
+        })
+      );
+      trails.set(key, trail);
+    }
+    trailsRef.current = trails;
+    for (const key of keys2) {
+      const target = toValues[key];
+      if (typeof target === "number") trails.get(key)?.set(target);
+    }
+    return () => {
+      unsubscribes.forEach((unsubscribe) => unsubscribe());
+      trails.forEach((trail) => trail.destroy());
+      trailsRef.current = /* @__PURE__ */ new Map();
+    };
+  }, [items.length, config, valueKeysSignature]);
+  const isFirstUpdateRef = useRef27(true);
+  useEffect21(() => {
+    if (isFirstUpdateRef.current) {
+      isFirstUpdateRef.current = false;
+      return;
+    }
+    const toValues = toRef.current;
+    trailsRef.current.forEach((trail, key) => {
+      const target = toValues[key];
+      if (typeof target === "number") trail.set(target);
+    });
+  }, [toSignature]);
+  return /* @__PURE__ */ jsx3(Fragment4, { children: items.map((item, index) => {
     const itemValues = values[index];
     if (!itemValues) {
       console.warn(`[SpringKit] Trail: No values found for item at index ${index}`);
       return null;
     }
-    return /* @__PURE__ */ jsx2(React4.Fragment, { children: children(itemValues, item, reverse ? items.length - 1 - index : index) }, keys(item, index));
+    return /* @__PURE__ */ jsx3(React4.Fragment, { children: children(itemValues, item, index) }, keys(item, index));
   }) });
 };
 
 // src/adapters/react/components/AnimatePresence.tsx
 import {
-  useRef as useRef25,
-  useState as useState16,
+  useRef as useRef30,
+  useState as useState21,
   useLayoutEffect as useLayoutEffect2,
-  useEffect as useEffect19,
-  Children,
-  isValidElement,
-  cloneElement
+  useEffect as useEffect23,
+  useCallback as useCallback18,
+  Children as Children2,
+  isValidElement as isValidElement2,
+  cloneElement as cloneElement2
 } from "react";
 
 // src/adapters/react/components/PresenceChild.tsx
-import { useMemo as useMemo4, useCallback as useCallback13, useRef as useRef24, useEffect as useEffect18 } from "react";
-import { jsx as jsx3 } from "react/jsx-runtime";
+import { useMemo as useMemo6, useCallback as useCallback17, useRef as useRef29, useEffect as useEffect22 } from "react";
+
+// src/adapters/react/components/PopChild.tsx
+import * as React5 from "react";
+import { useRef as useRef28, useCallback as useCallback16, cloneElement } from "react";
+import { jsx as jsx4 } from "react/jsx-runtime";
+var PopChildMeasure = class extends React5.Component {
+  getSnapshotBeforeUpdate(prevProps) {
+    const element = this.props.elementRef.current;
+    if (prevProps.isPresent && !this.props.isPresent && element && typeof HTMLElement !== "undefined" && element instanceof HTMLElement) {
+      const computed = getComputedStyle(element);
+      this.props.layoutRef.current = {
+        // `top`/`left` position the margin box, offsetTop/Left the border box
+        top: element.offsetTop - (parseFloat(computed.marginTop) || 0),
+        left: element.offsetLeft - (parseFloat(computed.marginLeft) || 0),
+        width: element.offsetWidth,
+        height: element.offsetHeight
+      };
+    }
+    return null;
+  }
+  // Required alongside getSnapshotBeforeUpdate
+  componentDidUpdate() {
+  }
+  render() {
+    return this.props.children;
+  }
+};
+function getElementRef(element) {
+  if (parseInt(React5.version, 10) >= 19) {
+    return element.props.ref;
+  }
+  return element.ref ?? void 0;
+}
+var POP_PROPERTIES = ["position", "top", "left", "width", "height", "box-sizing"];
+function PopChild({
+  children,
+  isPresent
+}) {
+  const elementRef = useRef28(null);
+  const layoutRef = useRef28(null);
+  const childRef = getElementRef(children);
+  const setRef = useCallback16(
+    (node) => {
+      elementRef.current = node;
+      if (typeof childRef === "function") {
+        childRef(node);
+      } else if (childRef && typeof childRef === "object") {
+        childRef.current = node;
+      }
+    },
+    [childRef]
+  );
+  useIsomorphicLayoutEffect(() => {
+    if (isPresent) return;
+    const element = elementRef.current;
+    const layout = layoutRef.current;
+    if (!element || !layout) return;
+    const { style } = element;
+    const previous = POP_PROPERTIES.map(
+      (property) => [property, style.getPropertyValue(property), style.getPropertyPriority(property)]
+    );
+    const values = {
+      position: "absolute",
+      top: `${layout.top}px`,
+      left: `${layout.left}px`,
+      width: `${layout.width}px`,
+      height: `${layout.height}px`,
+      "box-sizing": "border-box"
+    };
+    for (const property of POP_PROPERTIES) {
+      style.setProperty(property, values[property], "important");
+    }
+    return () => {
+      for (const [property, value, priority] of previous) {
+        if (value) style.setProperty(property, value, priority);
+        else style.removeProperty(property);
+      }
+    };
+  }, [isPresent]);
+  return /* @__PURE__ */ jsx4(PopChildMeasure, { isPresent, elementRef, layoutRef, children: cloneElement(children, { ref: setRef }) });
+}
+
+// src/adapters/react/components/PresenceChild.tsx
+import { jsx as jsx5 } from "react/jsx-runtime";
 var DEFAULT_EXIT_TIMEOUT = 1e4;
 function PresenceChild({
   id,
@@ -3444,54 +4647,54 @@ function PresenceChild({
   isPresent,
   onExitComplete,
   custom,
-  exitTimeout = DEFAULT_EXIT_TIMEOUT
+  exitTimeout = DEFAULT_EXIT_TIMEOUT,
+  initial,
+  popLayout = false
 }) {
-  const presenceIdRef = useRef24(id);
+  const presenceIdRef = useRef29(id);
+  const onExitCompleteRef = useRef29(onExitComplete);
   presenceIdRef.current = id;
-  const safeToRemove = useCallback13(() => {
-    onExitComplete(presenceIdRef.current);
-  }, [onExitComplete]);
-  const contextValue = useMemo4(
+  onExitCompleteRef.current = onExitComplete;
+  const safeToRemove = useCallback17(() => {
+    onExitCompleteRef.current(presenceIdRef.current);
+  }, []);
+  const hasExitHandlerRef = useRef29(false);
+  const contextValue = useMemo6(
     () => ({
       id,
       isPresent,
-      safeToRemove,
-      custom
+      get safeToRemove() {
+        hasExitHandlerRef.current = true;
+        return safeToRemove;
+      },
+      custom,
+      initial
     }),
-    [id, isPresent, safeToRemove, custom]
+    [id, isPresent, safeToRemove, custom, initial]
   );
-  const hasExitedRef = useRef24(false);
-  const hasCalledRemoveRef = useRef24(false);
-  useEffect18(() => {
-    if (isPresent) {
-      hasExitedRef.current = false;
-      hasCalledRemoveRef.current = false;
+  useEffect22(() => {
+    if (isPresent) return;
+    if (!hasExitHandlerRef.current) {
+      safeToRemove();
       return;
     }
-    if (hasExitedRef.current) return;
-    hasExitedRef.current = true;
     if (exitTimeout <= 0) return;
-    const timeout = setTimeout(() => {
-      if (!hasCalledRemoveRef.current) {
-        hasCalledRemoveRef.current = true;
-        safeToRemove();
-      }
-    }, exitTimeout);
+    const timeout = setTimeout(safeToRemove, exitTimeout);
     return () => clearTimeout(timeout);
   }, [isPresent, safeToRemove, exitTimeout]);
-  return /* @__PURE__ */ jsx3(PresenceContext.Provider, { value: contextValue, children });
+  return /* @__PURE__ */ jsx5(PresenceContext.Provider, { value: contextValue, children: popLayout ? /* @__PURE__ */ jsx5(PopChild, { isPresent, children }) : children });
 }
 
 // src/adapters/react/components/AnimatePresence.tsx
-import { Fragment as Fragment4, jsx as jsx4 } from "react/jsx-runtime";
-var useIsomorphicLayoutEffect2 = typeof window !== "undefined" ? useLayoutEffect2 : useEffect19;
+import { Fragment as Fragment5, jsx as jsx6 } from "react/jsx-runtime";
+var useIsomorphicLayoutEffect2 = typeof window !== "undefined" ? useLayoutEffect2 : useEffect23;
 function getChildKey(child) {
   return child.key !== null ? String(child.key) : "";
 }
 function getChildrenMap(children) {
   const map = {};
-  Children.forEach(children, (child) => {
-    if (isValidElement(child)) {
+  Children2.forEach(children, (child) => {
+    if (isValidElement2(child)) {
       const key = getChildKey(child);
       if (key) {
         map[key] = child;
@@ -3507,166 +4710,127 @@ function AnimatePresence({
   mode = "sync",
   onExitComplete
 }) {
-  const isInitialMount = useRef25(true);
-  const [exitingChildren, setExitingChildren] = useState16({});
-  const prevChildrenRef = useRef25({});
-  const [, forceUpdate] = useState16(0);
-  const pendingExitCount = useRef25(0);
+  const isInitialMount = useRef30(true);
+  const [exitingChildren, setExitingChildren] = useState21({});
+  const prevChildrenRef = useRef30({});
+  const prevOrderRef = useRef30([]);
+  const exitingRef = useRef30({});
+  const onExitCompleteRef = useRef30(onExitComplete);
+  onExitCompleteRef.current = onExitComplete;
   const currentChildren = getChildrenMap(children);
-  useIsomorphicLayoutEffect2(() => {
-    const prevChildren = prevChildrenRef.current;
-    const newExiting = {};
-    for (const key in prevChildren) {
-      if (!(key in currentChildren)) {
-        const prevChild = prevChildren[key];
-        if (prevChild) {
-          newExiting[key] = prevChild;
-        }
+  const currentKeys = [];
+  Children2.forEach(children, (child) => {
+    if (isValidElement2(child)) {
+      const key = getChildKey(child);
+      if (key && !currentKeys.includes(key)) currentKeys.push(key);
+    }
+  });
+  const prevOrder = prevOrderRef.current;
+  const derivedExiting = {};
+  for (const key in exitingChildren) {
+    const child = exitingChildren[key];
+    if (child && !(key in currentChildren)) derivedExiting[key] = child;
+  }
+  for (const key in prevChildrenRef.current) {
+    const child = prevChildrenRef.current[key];
+    if (child && !(key in currentChildren) && prevOrder.includes(key)) {
+      derivedExiting[key] = child;
+    }
+  }
+  const showEntering = mode !== "wait" || Object.keys(derivedExiting).length === 0;
+  const renderedOrder = showEntering ? [...currentKeys] : [];
+  const exitingKeys = Object.keys(derivedExiting).sort(
+    (a, b) => prevOrder.indexOf(a) - prevOrder.indexOf(b)
+  );
+  for (const key of exitingKeys) {
+    let insertAt = 0;
+    for (let i = prevOrder.indexOf(key) - 1; i >= 0; i--) {
+      const index = renderedOrder.indexOf(prevOrder[i]);
+      if (index !== -1) {
+        insertAt = index + 1;
+        break;
       }
     }
-    if (Object.keys(newExiting).length > 0) {
-      setExitingChildren((prev) => ({ ...prev, ...newExiting }));
-      pendingExitCount.current += Object.keys(newExiting).length;
-    }
+    renderedOrder.splice(insertAt, 0, key);
+  }
+  useIsomorphicLayoutEffect2(() => {
+    exitingRef.current = derivedExiting;
     prevChildrenRef.current = currentChildren;
+    prevOrderRef.current = renderedOrder;
+    const prevKeys = Object.keys(exitingChildren);
+    const nextKeys = Object.keys(derivedExiting);
+    if (prevKeys.length !== nextKeys.length || nextKeys.some((key) => exitingChildren[key] !== derivedExiting[key])) {
+      setExitingChildren(derivedExiting);
+    }
     if (isInitialMount.current) {
       isInitialMount.current = false;
     }
   });
-  const handleExitComplete = (key) => {
+  const handleExitComplete = useCallback18((key) => {
+    if (!(key in exitingRef.current)) return;
+    const next = { ...exitingRef.current };
+    delete next[key];
+    exitingRef.current = next;
     setExitingChildren((prev) => {
       if (!(key in prev)) return prev;
-      const next = { ...prev };
-      delete next[key];
-      return next;
+      const updated = { ...prev };
+      delete updated[key];
+      return updated;
     });
-    if (pendingExitCount.current > 0) {
-      pendingExitCount.current--;
+    if (Object.keys(next).length === 0) {
+      onExitCompleteRef.current?.();
     }
-    if (pendingExitCount.current === 0 && onExitComplete) {
-      onExitComplete();
-    }
-    if (mode === "wait") {
-      forceUpdate((n) => n + 1);
-    }
-  };
-  const showEntering = mode !== "wait" || Object.keys(exitingChildren).length === 0;
+  }, []);
+  if (showEntering) {
+    Children2.forEach(children, (child) => {
+      if (isValidElement2(child) && !getChildKey(child)) {
+        console.warn(
+          'AnimatePresence: Every child must have a unique "key" prop.'
+        );
+      }
+    });
+  }
+  const skipInitial = isInitialMount.current && initial === false;
   const allChildren = [];
-  for (const key in exitingChildren) {
-    const exitingChild = exitingChildren[key];
-    if (!exitingChild) continue;
+  for (const key of renderedOrder) {
+    const exitingChild = derivedExiting[key];
+    const child = exitingChild ?? currentChildren[key];
+    if (!child) continue;
     allChildren.push(
-      /* @__PURE__ */ jsx4(
+      /* @__PURE__ */ jsx6(
         PresenceChild,
         {
           id: key,
-          isPresent: false,
+          isPresent: !exitingChild,
           onExitComplete: handleExitComplete,
           custom,
-          children: cloneElement(exitingChild, {
-            key
-          })
+          initial: skipInitial ? false : void 0,
+          popLayout: mode === "popLayout",
+          children: cloneElement2(child, { key })
         },
         `presence-${key}`
       )
     );
   }
-  if (showEntering) {
-    Children.forEach(children, (child) => {
-      if (isValidElement(child)) {
-        const key = getChildKey(child);
-        if (!key) {
-          console.warn(
-            'AnimatePresence: Every child must have a unique "key" prop.'
-          );
-          return;
-        }
-        const shouldAnimate = !(isInitialMount.current && initial === false);
-        allChildren.push(
-          /* @__PURE__ */ jsx4(
-            PresenceChild,
-            {
-              id: key,
-              isPresent: true,
-              onExitComplete: handleExitComplete,
-              custom,
-              children: cloneElement(child, {
-                key,
-                // Pass down animation state - child components can use this
-                ...shouldAnimate ? {} : { "data-initial-skip": true }
-              })
-            },
-            `presence-${key}`
-          )
-        );
-      }
-    });
-  }
-  return /* @__PURE__ */ jsx4(Fragment4, { children: allChildren });
-}
-
-// src/adapters/react/components/MotionConfig.tsx
-import { createContext as createContext4, useContext as useContext4, useMemo as useMemo5 } from "react";
-import { jsx as jsx5 } from "react/jsx-runtime";
-var defaultContext = {
-  config: {},
-  reducedMotion: "user",
-  initial: true,
-  isReducedMotion: false
-};
-var MotionContext = createContext4(defaultContext);
-function useMotionConfig() {
-  return useContext4(MotionContext);
-}
-function checkReducedMotion() {
-  if (typeof window === "undefined") return false;
-  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
-}
-function MotionConfig({
-  config = {},
-  reducedMotion = "user",
-  initial = true,
-  children
-}) {
-  const parentContext = useContext4(MotionContext);
-  const value = useMemo5(() => {
-    let isReducedMotion = false;
-    switch (reducedMotion) {
-      case "always":
-        isReducedMotion = true;
-        break;
-      case "never":
-        isReducedMotion = false;
-        break;
-      case "user":
-      default:
-        isReducedMotion = checkReducedMotion();
-    }
-    return {
-      config: { ...parentContext.config, ...config },
-      reducedMotion,
-      initial,
-      isReducedMotion
-    };
-  }, [config, reducedMotion, initial, parentContext.config]);
-  return /* @__PURE__ */ jsx5(MotionContext.Provider, { value, children });
+  return /* @__PURE__ */ jsx6(Fragment5, { children: allChildren });
 }
 
 // src/adapters/react/components/Reorder.tsx
-import * as React5 from "react";
+import * as React6 from "react";
 import {
   createContext as createContext5,
-  useContext as useContext5,
-  useRef as useRef26,
-  useState as useState17,
-  useEffect as useEffect20,
-  useCallback as useCallback14,
-  useMemo as useMemo6
+  useContext as useContext6,
+  useRef as useRef31,
+  useState as useState22,
+  useEffect as useEffect24,
+  useCallback as useCallback19,
+  useMemo as useMemo7
 } from "react";
 import { createSpringValue as createSpringValue5 } from "@oxog/springkit";
+var DEFAULT_REORDER_CONFIG = { stiffness: 300, damping: 30 };
 var ReorderContext = createContext5(null);
 function useReorderContext() {
-  const context = useContext5(ReorderContext);
+  const context = useContext6(ReorderContext);
   if (!context) {
     throw new Error("Reorder.Item must be used within a Reorder.Group");
   }
@@ -3676,36 +4840,47 @@ function ReorderGroupComponent({
   values,
   onReorder,
   axis = "y",
-  config = { stiffness: 300, damping: 30 },
+  config = DEFAULT_REORDER_CONFIG,
   className,
   style,
   children,
-  as: Component = "ul",
+  as: Component2 = "ul",
   layoutDuration = 200
 }, ref) {
-  const itemsRef = useRef26(/* @__PURE__ */ new Map());
-  const sizesRef = useRef26(/* @__PURE__ */ new Map());
-  const [draggingValue, setDraggingValue] = useState17(null);
-  const [offsets, setOffsets] = useState17(/* @__PURE__ */ new Map());
-  const dragStartIndexRef = useRef26(-1);
-  const currentOrderRef = useRef26(values);
-  useEffect20(() => {
+  const itemsRef = useRef31(/* @__PURE__ */ new Map());
+  const sizesRef = useRef31(/* @__PURE__ */ new Map());
+  const [draggingValue, setDraggingValue] = useState22(null);
+  const [offsets, setOffsetsState] = useState22(/* @__PURE__ */ new Map());
+  const offsetsRef = useRef31(offsets);
+  const setOffsets = useCallback19((next) => {
+    offsetsRef.current = next;
+    setOffsetsState(next);
+  }, []);
+  const dragStartIndexRef = useRef31(-1);
+  const currentOrderRef = useRef31(values);
+  const onReorderRef = useRef31(onReorder);
+  onReorderRef.current = onReorder;
+  useEffect24(() => {
     currentOrderRef.current = values;
   }, [values]);
-  const registerItem = useCallback14((value, element) => {
+  const registerItem = useCallback19((value, element) => {
     itemsRef.current.set(value, element);
     const rect = element.getBoundingClientRect();
     sizesRef.current.set(value, axis === "y" ? rect.height : rect.width);
   }, [axis]);
-  const unregisterItem = useCallback14((value) => {
+  const unregisterItem = useCallback19((value) => {
     itemsRef.current.delete(value);
     sizesRef.current.delete(value);
   }, []);
-  const handleDragStart = useCallback14((value) => {
+  const handleDragStart = useCallback19((value) => {
     setDraggingValue(value);
     dragStartIndexRef.current = currentOrderRef.current.indexOf(value);
-  }, []);
-  const handleDrag = useCallback14((value, offset) => {
+    itemsRef.current.forEach((element, itemValue) => {
+      const rect = element.getBoundingClientRect();
+      sizesRef.current.set(itemValue, axis === "y" ? rect.height : rect.width);
+    });
+  }, [axis]);
+  const handleDrag = useCallback19((value, offset) => {
     const currentIndex = currentOrderRef.current.indexOf(value);
     if (currentIndex === -1) return;
     const sizes = sizesRef.current;
@@ -3716,7 +4891,7 @@ function ReorderGroupComponent({
     if (offset > 0) {
       for (let i = currentIndex + 1; i < order.length; i++) {
         const otherValue = order[i];
-        if (!otherValue) continue;
+        if (otherValue === void 0) continue;
         const otherSize = sizes.get(otherValue) || 0;
         accumulatedOffset += otherSize;
         if (offset > accumulatedOffset - otherSize / 2) {
@@ -3728,7 +4903,7 @@ function ReorderGroupComponent({
     } else if (offset < 0) {
       for (let i = currentIndex - 1; i >= 0; i--) {
         const otherValue = order[i];
-        if (!otherValue) continue;
+        if (otherValue === void 0) continue;
         const otherSize = sizes.get(otherValue) || 0;
         accumulatedOffset -= otherSize;
         if (offset < accumulatedOffset + otherSize / 2) {
@@ -3739,8 +4914,8 @@ function ReorderGroupComponent({
       }
     }
     setOffsets(newOffsets);
-  }, []);
-  const handleDragEnd = useCallback14((value) => {
+  }, [setOffsets]);
+  const handleDragEnd = useCallback19((value) => {
     const currentIndex = currentOrderRef.current.indexOf(value);
     if (currentIndex === -1) {
       setDraggingValue(null);
@@ -3749,7 +4924,7 @@ function ReorderGroupComponent({
     }
     const order = [...currentOrderRef.current];
     let targetIndex = currentIndex;
-    offsets.forEach((offset, otherValue) => {
+    offsetsRef.current.forEach((offset, otherValue) => {
       const otherIndex = order.indexOf(otherValue);
       if (offset < 0 && otherIndex > currentIndex) {
         targetIndex = Math.max(targetIndex, otherIndex);
@@ -3762,15 +4937,25 @@ function ReorderGroupComponent({
       const [removed] = newOrder.splice(currentIndex, 1);
       if (removed !== void 0) {
         newOrder.splice(targetIndex, 0, removed);
-        onReorder(newOrder);
+        onReorderRef.current(newOrder);
       }
     }
     setDraggingValue(null);
     setOffsets(/* @__PURE__ */ new Map());
-  }, [offsets, onReorder]);
-  const getDraggingValue = useCallback14(() => draggingValue, [draggingValue]);
-  const getItemOffset = useCallback14((value) => offsets.get(value) || 0, [offsets]);
-  const contextValue = useMemo6(() => ({
+  }, [setOffsets]);
+  const moveItem = useCallback19((value, toIndex) => {
+    const order = [...currentOrderRef.current];
+    const fromIndex = order.indexOf(value);
+    if (fromIndex === -1) return;
+    const clampedIndex = Math.max(0, Math.min(order.length - 1, toIndex));
+    if (clampedIndex === fromIndex) return;
+    order.splice(fromIndex, 1);
+    order.splice(clampedIndex, 0, value);
+    onReorderRef.current(order);
+  }, []);
+  const getDraggingValue = useCallback19(() => draggingValue, [draggingValue]);
+  const getItemOffset = useCallback19((value) => offsets.get(value) || 0, [offsets]);
+  const contextValue = useMemo7(() => ({
     values,
     axis,
     config,
@@ -3779,6 +4964,7 @@ function ReorderGroupComponent({
     onDragStart: handleDragStart,
     onDrag: handleDrag,
     onDragEnd: handleDragEnd,
+    moveItem,
     getDraggingValue,
     getItemOffset,
     layoutDuration
@@ -3791,15 +4977,16 @@ function ReorderGroupComponent({
     handleDragStart,
     handleDrag,
     handleDragEnd,
+    moveItem,
     getDraggingValue,
     getItemOffset,
     layoutDuration
   ]);
-  return React5.createElement(
+  return React6.createElement(
     ReorderContext.Provider,
     { value: contextValue },
-    React5.createElement(
-      Component,
+    React6.createElement(
+      Component2,
       {
         ref,
         className,
@@ -3822,88 +5009,97 @@ function ReorderItemComponent({
   className,
   style,
   children,
-  as: Component = "li",
+  as: Component2 = "li",
   dragEnabled = true,
   onDragStart,
   onDragEnd
 }, ref) {
   const context = useReorderContext();
-  const elementRef = useRef26(null);
-  const springRef = useRef26(null);
-  const [offset, setOffset] = useState17(0);
-  const [isDragging, setIsDragging] = useState17(false);
-  const dragStartPos = useRef26({ x: 0, y: 0 });
-  const dragOffset = useRef26(0);
-  const setRef = useCallback14((node) => {
+  const { registerItem, unregisterItem } = context;
+  const elementRef = useRef31(null);
+  const springRef = useRef31(null);
+  const [offset, setOffset] = useState22(0);
+  const [isDragging, setIsDragging] = useState22(false);
+  const isDraggingRef = useRef31(false);
+  const dragStartPos = useRef31({ x: 0, y: 0 });
+  const dragOffset = useRef31(0);
+  const setRef = useCallback19((node) => {
     elementRef.current = node;
     if (typeof ref === "function") {
       ref(node);
     } else if (ref) {
       ref.current = node;
     }
-    if (node) {
-      context.registerItem(value, node);
-    } else {
-      context.unregisterItem(value);
-    }
-  }, [ref, context, value]);
-  useEffect20(() => {
+  }, [ref]);
+  useEffect24(() => {
+    const element = elementRef.current;
+    if (element) registerItem(value, element);
     return () => {
-      context.unregisterItem(value);
-      springRef.current?.destroy();
+      unregisterItem(value);
     };
-  }, [context, value]);
-  useEffect20(() => {
+  }, [value, registerItem, unregisterItem]);
+  useEffect24(() => {
+    return () => {
+      springRef.current?.destroy();
+      springRef.current = null;
+    };
+  }, []);
+  const targetOffset = context.getItemOffset(value);
+  const springConfig = context.config;
+  useEffect24(() => {
     if (isDragging) return;
-    const targetOffset = context.getItemOffset(value);
     if (!springRef.current) {
       springRef.current = createSpringValue5(0, {
-        ...context.config,
+        ...springConfig,
         onUpdate: setOffset
       });
     }
     springRef.current.set(targetOffset);
-  }, [context, value, isDragging]);
-  const handlePointerDown = useCallback14((e) => {
+  }, [targetOffset, isDragging, springConfig]);
+  const handlePointerDown = useCallback19((e) => {
     if (!dragEnabled) return;
     e.preventDefault();
     e.stopPropagation();
+    isDraggingRef.current = true;
     setIsDragging(true);
+    springRef.current?.stop();
     onDragStart?.();
     context.onDragStart(value);
-    const rect = elementRef.current?.getBoundingClientRect();
-    dragStartPos.current = {
-      x: e.clientX - (rect?.left ?? 0),
-      y: e.clientY - (rect?.top ?? 0)
-    };
+    dragStartPos.current = { x: e.clientX, y: e.clientY };
     dragOffset.current = 0;
-    if (elementRef.current) {
-      elementRef.current.setPointerCapture(e.pointerId);
+    const element = elementRef.current;
+    if (element && typeof element.setPointerCapture === "function") {
+      try {
+        element.setPointerCapture(e.pointerId);
+      } catch {
+      }
     }
   }, [dragEnabled, context, value, onDragStart]);
-  const handlePointerMove = useCallback14((e) => {
-    if (!isDragging) return;
-    const rect = elementRef.current?.getBoundingClientRect();
-    if (!rect) return;
-    const currentPos = context.axis === "y" ? e.clientY : e.clientX;
-    const startPos = context.axis === "y" ? (elementRef.current?.offsetTop ?? 0) + dragStartPos.current.y : (elementRef.current?.offsetLeft ?? 0) + dragStartPos.current.x;
-    dragOffset.current = currentPos - startPos - (context.axis === "y" ? rect.height / 2 : rect.width / 2);
+  const handlePointerMove = useCallback19((e) => {
+    if (!isDraggingRef.current) return;
+    dragOffset.current = context.axis === "y" ? e.clientY - dragStartPos.current.y : e.clientX - dragStartPos.current.x;
     context.onDrag(value, dragOffset.current);
     setOffset(dragOffset.current);
-  }, [isDragging, context, value]);
-  const handlePointerUp = useCallback14((e) => {
-    if (!isDragging) return;
-    if (elementRef.current) {
-      elementRef.current.releasePointerCapture(e.pointerId);
+  }, [context, value]);
+  const handlePointerUp = useCallback19((e) => {
+    if (!isDraggingRef.current) return;
+    isDraggingRef.current = false;
+    const element = elementRef.current;
+    if (element && typeof element.releasePointerCapture === "function") {
+      try {
+        element.releasePointerCapture(e.pointerId);
+      } catch {
+      }
     }
     setIsDragging(false);
     onDragEnd?.();
     context.onDragEnd(value);
+    springRef.current?.jump(0);
     setOffset(0);
     dragOffset.current = 0;
-  }, [isDragging, context, value, onDragEnd]);
+  }, [context, value, onDragEnd]);
   const transformProp = context.axis === "y" ? `translateY(${offset}px)` : `translateX(${offset}px)`;
-  const handleKeyDown = useCallback14((e) => {
+  const handleKeyDown = useCallback19((e) => {
     if (!dragEnabled) return;
     const currentIndex = context.values.indexOf(value);
     if (currentIndex === -1) return;
@@ -3944,14 +5140,11 @@ function ReorderItemComponent({
         break;
     }
     if (newIndex !== currentIndex) {
-      context.onDragStart(value);
-      const offset2 = (newIndex - currentIndex) * 50;
-      context.onDrag(value, offset2);
-      context.onDragEnd(value);
+      context.moveItem(value, newIndex);
     }
   }, [dragEnabled, context, value]);
-  return React5.createElement(
-    Component,
+  return React6.createElement(
+    Component2,
     {
       ref: setRef,
       className,
@@ -3978,24 +5171,51 @@ function ReorderItemComponent({
     children
   );
 }
-var ReorderGroup = React5.forwardRef(ReorderGroupComponent);
-var ReorderItem = React5.forwardRef(ReorderItemComponent);
+var ReorderGroupWithRef = React6.forwardRef(ReorderGroupComponent);
+ReorderGroupWithRef.displayName = "Reorder.Group";
+var ReorderItemWithRef = React6.forwardRef(ReorderItemComponent);
+ReorderItemWithRef.displayName = "Reorder.Item";
+var ReorderGroup = ReorderGroupWithRef;
+var ReorderItem = ReorderItemWithRef;
 var Reorder = {
   Group: ReorderGroup,
   Item: ReorderItem
 };
 
 // src/adapters/react/components/SpringText.tsx
-import * as React6 from "react";
-import { useRef as useRef27, useEffect as useEffect21, useState as useState18, useMemo as useMemo7, memo as memo2 } from "react";
+import * as React7 from "react";
+import { useRef as useRef32, useEffect as useEffect25, useState as useState23, useMemo as useMemo8, memo as memo2 } from "react";
 import { createSpringValue as createSpringValue6 } from "@oxog/springkit";
-import { jsx as jsx6, jsxs } from "react/jsx-runtime";
+import { jsx as jsx7, jsxs } from "react/jsx-runtime";
+var graphemeSegmenter;
+function splitCharacters(text) {
+  if (graphemeSegmenter === void 0) {
+    const Segmenter = typeof Intl !== "undefined" ? Intl.Segmenter : void 0;
+    graphemeSegmenter = typeof Segmenter === "function" ? new Segmenter(void 0, { granularity: "grapheme" }) : null;
+  }
+  if (graphemeSegmenter) {
+    return Array.from(graphemeSegmenter.segment(text), (part) => part.segment);
+  }
+  return Array.from(text);
+}
+function splitText(text, mode) {
+  switch (mode) {
+    case "words":
+      return text.split(/(\s+)/);
+    case "lines":
+      return text.split("\n");
+    case "characters":
+    default:
+      return splitCharacters(text);
+  }
+}
+var DEFAULT_TEXT_CONFIG = { stiffness: 200, damping: 20 };
 var SpringText = memo2(function SpringText2({
   children,
   mode = "characters",
   stagger = 30,
   from = "bottom",
-  config = { stiffness: 200, damping: 20 },
+  config: configProp,
   initialOpacity = 0,
   initialOffset = 20,
   animateOnMount = true,
@@ -4004,67 +5224,76 @@ var SpringText = memo2(function SpringText2({
   className,
   style
 }) {
-  const [elements, setElements] = useState18([]);
-  const [animatedValues, setAnimatedValues] = useState18([]);
-  const springsRef = useRef27([]);
-  const completedRef = useRef27(0);
-  useEffect21(() => {
-    let parts;
-    switch (mode) {
-      case "words":
-        parts = children.split(/(\s+)/);
-        break;
-      case "lines":
-        parts = children.split("\n");
-        break;
-      case "characters":
-      default:
-        parts = children.split("");
-    }
-    setElements(parts);
-    setAnimatedValues(new Array(parts.length).fill(0));
-  }, [children, mode]);
-  useEffect21(() => {
+  const config = useStableSpringConfig(configProp, DEFAULT_TEXT_CONFIG);
+  const elements = useMemo8(() => splitText(children, mode), [children, mode]);
+  const [animatedValues, setAnimatedValues] = useState23(
+    () => new Array(elements.length).fill(animateOnMount ? 0 : 1)
+  );
+  const onCompleteRef = useRef32(onComplete);
+  onCompleteRef.current = onComplete;
+  const prevTriggerRef = useRef32(trigger);
+  useEffect25(() => {
+    const triggerChanged = prevTriggerRef.current !== trigger;
+    prevTriggerRef.current = trigger;
+    const shouldAnimate = animateOnMount || triggerChanged;
     if (elements.length === 0) return;
-    springsRef.current.forEach((s) => s.destroy());
-    springsRef.current = [];
-    completedRef.current = 0;
-    const springs = elements.map((_, index) => {
-      const spring = createSpringValue6(0, {
+    if (!shouldAnimate) {
+      setAnimatedValues(new Array(elements.length).fill(1));
+      return;
+    }
+    let cancelled = false;
+    const timeouts = /* @__PURE__ */ new Set();
+    const rafIds = /* @__PURE__ */ new Set();
+    let completed = 0;
+    setAnimatedValues(new Array(elements.length).fill(0));
+    const springs = elements.map(
+      (_, index) => createSpringValue6(0, {
         ...config,
         onUpdate: (value) => {
+          if (cancelled) return;
           setAnimatedValues((prev) => {
             const next = [...prev];
             next[index] = value;
             return next;
           });
         }
-      });
-      return spring;
-    });
-    springsRef.current = springs;
-    if (animateOnMount || trigger !== void 0) {
-      springs.forEach((spring, index) => {
-        setTimeout(() => {
-          spring.set(1);
-          const checkComplete = () => {
-            if (!spring.isAnimating()) {
-              completedRef.current++;
-              if (completedRef.current === elements.length) {
-                onComplete?.();
-              }
-            } else {
-              requestAnimationFrame(checkComplete);
+      })
+    );
+    springs.forEach((spring2, index) => {
+      const startTimeout = setTimeout(() => {
+        timeouts.delete(startTimeout);
+        if (cancelled) return;
+        spring2.set(1);
+        const checkComplete = () => {
+          if (cancelled) return;
+          if (!spring2.isAnimating()) {
+            completed++;
+            if (completed === springs.length) {
+              onCompleteRef.current?.();
             }
-          };
-          setTimeout(checkComplete, 50);
-        }, index * stagger);
-      });
-    }
+          } else {
+            const rafId = requestAnimationFrame(() => {
+              rafIds.delete(rafId);
+              checkComplete();
+            });
+            rafIds.add(rafId);
+          }
+        };
+        const checkTimeout = setTimeout(() => {
+          timeouts.delete(checkTimeout);
+          checkComplete();
+        }, 50);
+        timeouts.add(checkTimeout);
+      }, index * stagger);
+      timeouts.add(startTimeout);
+    });
     return () => {
+      cancelled = true;
+      timeouts.forEach((id) => clearTimeout(id));
+      rafIds.forEach((id) => cancelAnimationFrame(id));
       springs.forEach((s) => s.destroy());
     };
-  }, [elements, stagger, config, animateOnMount, trigger, onComplete]);
+  }, [elements, stagger, config, animateOnMount, trigger]);
   const getTransform = (progress) => {
     const offset = (1 - progress) * initialOffset;
     switch (from) {
@@ -4082,13 +5311,13 @@ var SpringText = memo2(function SpringText2({
         return `translateY(${offset}px)`;
     }
   };
-  return /* @__PURE__ */ jsx6("span", { className, style, children: elements.map((element, index) => {
+  return /* @__PURE__ */ jsx7("span", { className, style, children: elements.map((element, index) => {
     const progress = animatedValues[index] ?? 0;
     const opacity = initialOpacity + (1 - initialOpacity) * progress;
     if (element.match(/^\s+$/)) {
-      return /* @__PURE__ */ jsx6("span", { children: element }, index);
+      return /* @__PURE__ */ jsx7("span", { children: element }, index);
     }
-    return /* @__PURE__ */ jsx6(
+    return /* @__PURE__ */ jsx7(
       "span",
       {
         style: {
@@ -4113,10 +5342,10 @@ var SpringNumber = memo2(function SpringNumber2({
   className,
   style
 }) {
-  const [displayValue, setDisplayValue] = useState18(value);
-  const springRef = useRef27(null);
-  const lastValueRef = useRef27(value);
-  useEffect21(() => {
+  const [displayValue, setDisplayValue] = useState23(value);
+  const springRef = useRef32(null);
+  const lastValueRef = useRef32(value);
+  useEffect25(() => {
     springRef.current = createSpringValue6(value, {
       ...config,
       onUpdate: setDisplayValue
@@ -4126,13 +5355,13 @@ var SpringNumber = memo2(function SpringNumber2({
       springRef.current = null;
     };
   }, []);
-  useEffect21(() => {
+  useEffect25(() => {
     if (springRef.current && value !== lastValueRef.current) {
       springRef.current.set(value);
       lastValueRef.current = value;
     }
   }, [value]);
-  const formattedValue = useMemo7(() => {
+  const formattedValue = useMemo8(() => {
     if (format) {
       return format(displayValue);
     }
@@ -4157,21 +5386,24 @@ var TypeWriter = memo2(function TypeWriter2({
   className,
   style
 }) {
-  const [displayText, setDisplayText] = useState18("");
-  const [showCursor, setShowCursor] = useState18(cursor);
-  const [_isDeleting, setIsDeleting] = useState18(false);
-  const timeoutRef = useRef27(null);
-  useEffect21(() => {
+  const [displayText, setDisplayText] = useState23("");
+  const [showCursor, setShowCursor] = useState23(cursor);
+  const [_isDeleting, setIsDeleting] = useState23(false);
+  const timeoutRef = useRef32(null);
+  const onCompleteRef = useRef32(onComplete);
+  onCompleteRef.current = onComplete;
+  useEffect25(() => {
+    const characters = splitCharacters(children);
     let currentIndex = 0;
     let isDeleteMode = false;
     const tick = () => {
       if (!isDeleteMode) {
-        if (currentIndex <= children.length) {
-          setDisplayText(children.slice(0, currentIndex));
+        if (currentIndex <= characters.length) {
+          setDisplayText(characters.slice(0, currentIndex).join(""));
           currentIndex++;
           timeoutRef.current = window.setTimeout(tick, speed);
         } else {
-          onComplete?.();
+          onCompleteRef.current?.();
           if (loop) {
             timeoutRef.current = window.setTimeout(() => {
               isDeleteMode = true;
@@ -4183,7 +5415,7 @@ var TypeWriter = memo2(function TypeWriter2({
       } else {
         if (currentIndex > 0) {
           currentIndex--;
-          setDisplayText(children.slice(0, currentIndex));
+          setDisplayText(characters.slice(0, currentIndex).join(""));
           timeoutRef.current = window.setTimeout(tick, deleteSpeed);
         } else {
           isDeleteMode = false;
@@ -4196,8 +5428,8 @@ var TypeWriter = memo2(function TypeWriter2({
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
-  }, [children, speed, delay, loop, pauseAtEnd, deleteSpeed, onComplete]);
-  useEffect21(() => {
+  }, [children, speed, delay, loop, pauseAtEnd, deleteSpeed]);
+  useEffect25(() => {
     if (!cursor) return;
     const blink = setInterval(() => {
       setShowCursor((prev) => !prev);
@@ -4206,7 +5438,7 @@ var TypeWriter = memo2(function TypeWriter2({
   }, [cursor]);
   return /* @__PURE__ */ jsxs("span", { className, style, children: [
     displayText,
-    cursor && /* @__PURE__ */ jsx6("span", { style: { opacity: showCursor ? 1 : 0 }, children: cursorChar })
+    cursor && /* @__PURE__ */ jsx7("span", { style: { opacity: showCursor ? 1 : 0 }, children: cursorChar })
   ] });
 });
 var SplitText = memo2(function SplitText2({
@@ -4216,37 +5448,52 @@ var SplitText = memo2(function SplitText2({
   className,
   style
 }) {
-  const elements = useMemo7(() => {
-    switch (mode) {
-      case "words":
-        return children.split(/(\s+)/);
-      case "lines":
-        return children.split("\n");
-      case "characters":
-      default:
-        return children.split("");
-    }
-  }, [children, mode]);
-  return /* @__PURE__ */ jsx6("span", { className, style, children: elements.map((element, index) => /* @__PURE__ */ jsx6(React6.Fragment, { children: render(element, index, elements.length) }, index)) });
+  const elements = useMemo8(() => splitText(children, mode), [children, mode]);
+  return /* @__PURE__ */ jsx7("span", { className, style, children: elements.map((element, index) => /* @__PURE__ */ jsx7(React7.Fragment, { children: render(element, index, elements.length) }, index)) });
 });
 
 // src/adapters/react/components/Magnetic.tsx
 import {
-  useRef as useRef28,
-  useEffect as useEffect22,
-  useState as useState19,
-  useCallback as useCallback15,
+  useRef as useRef33,
+  useEffect as useEffect26,
+  useState as useState24,
+  useCallback as useCallback20,
   memo as memo3,
-  forwardRef as forwardRef3
+  forwardRef as forwardRef4
 } from "react";
 import { createSpringValue as createSpringValue7 } from "@oxog/springkit";
-import { jsx as jsx7 } from "react/jsx-runtime";
-var Magnetic = memo3(forwardRef3(
+
+// src/adapters/react/utils/reducedMotion.ts
+import { useContext as useContext7 } from "react";
+function useShouldReduceMotion() {
+  const motionConfig = useContext7(MotionContext);
+  const prefersReducedMotion2 = useReducedMotion();
+  if (motionConfig.reducedMotion === "always") return true;
+  if (motionConfig.reducedMotion === "never") return false;
+  return motionConfig.isReducedMotion || prefersReducedMotion2;
+}
+
+// src/adapters/react/utils/dom.ts
+function onPointerLeaveWindow(handler) {
+  if (typeof document === "undefined") return () => {
+  };
+  const listener = (event) => {
+    if (event.relatedTarget === null) handler();
+  };
+  document.addEventListener("mouseout", listener, { passive: true });
+  return () => document.removeEventListener("mouseout", listener);
+}
+
+// src/adapters/react/components/Magnetic.tsx
+import { jsx as jsx8 } from "react/jsx-runtime";
+var DEFAULT_MAGNETIC_CONFIG = { stiffness: 200, damping: 20 };
+var DEFAULT_CURSOR_CONFIG = { stiffness: 150, damping: 15 };
+var Magnetic = memo3(forwardRef4(
   function Magnetic2({
     children,
     strength = 0.3,
     range = 100,
-    config = { stiffness: 200, damping: 20 },
+    config: configProp,
     enabled = true,
     scaleOnHover = 1,
     maxOffset = 50,
@@ -4255,7 +5502,10 @@ var Magnetic = memo3(forwardRef3(
     onAttract,
     onRelease
   }, ref) {
-    const innerRef = useRef28(null);
+    const config = useStableSpringConfig(configProp, DEFAULT_MAGNETIC_CONFIG);
+    const reduceMotion = useShouldReduceMotion();
+    const isActive = enabled && !reduceMotion;
+    const innerRef = useRef33(null);
     const combinedRef = (node) => {
       innerRef.current = node;
       if (typeof ref === "function") {
@@ -4264,12 +5514,12 @@ var Magnetic = memo3(forwardRef3(
         ref.current = node;
       }
     };
-    const springXRef = useRef28(null);
-    const springYRef = useRef28(null);
-    const springScaleRef = useRef28(null);
-    const [transform, setTransform] = useState19({ x: 0, y: 0, scale: 1 });
-    const isAttractedRef = useRef28(false);
-    useEffect22(() => {
+    const springXRef = useRef33(null);
+    const springYRef = useRef33(null);
+    const springScaleRef = useRef33(null);
+    const [transform, setTransform] = useState24({ x: 0, y: 0, scale: 1 });
+    const isAttractedRef = useRef33(false);
+    useEffect26(() => {
       springXRef.current = createSpringValue7(0, {
         ...config,
         onUpdate: (x) => setTransform((t) => ({ ...t, x }))
@@ -4288,13 +5538,13 @@ var Magnetic = memo3(forwardRef3(
         springScaleRef.current?.destroy();
       };
     }, [config]);
-    const onAttractRef = useRef28(onAttract);
-    const onReleaseRef = useRef28(onRelease);
+    const onAttractRef = useRef33(onAttract);
+    const onReleaseRef = useRef33(onRelease);
     onAttractRef.current = onAttract;
     onReleaseRef.current = onRelease;
-    const handleMouseMove = useCallback15(
+    const handleMouseMove = useCallback20(
       (e) => {
-        if (!enabled || !innerRef.current) return;
+        if (!isActive || !innerRef.current) return;
         const rect = innerRef.current.getBoundingClientRect();
         const centerX = rect.left + rect.width / 2;
         const centerY = rect.top + rect.height / 2;
@@ -4327,9 +5577,9 @@ var Magnetic = memo3(forwardRef3(
           }
         }
       },
-      [enabled, range, strength, maxOffset, scaleOnHover]
+      [isActive, range, strength, maxOffset, scaleOnHover]
     );
-    const handleMouseLeave = useCallback15(() => {
+    const handleMouseLeave = useCallback20(() => {
       springXRef.current?.set(0);
       springYRef.current?.set(0);
       springScaleRef.current?.set(1);
@@ -4338,16 +5588,24 @@ var Magnetic = memo3(forwardRef3(
         onReleaseRef.current?.();
       }
     }, []);
-    useEffect22(() => {
-      if (!enabled) return;
+    useEffect26(() => {
+      if (!isActive) {
+        handleMouseLeave();
+        if (reduceMotion) {
+          springXRef.current?.jump(0);
+          springYRef.current?.jump(0);
+          springScaleRef.current?.jump(1);
+        }
+        return;
+      }
       window.addEventListener("mousemove", handleMouseMove, { passive: true });
-      window.addEventListener("mouseleave", handleMouseLeave, { passive: true });
+      const removeLeaveListener = onPointerLeaveWindow(handleMouseLeave);
       return () => {
         window.removeEventListener("mousemove", handleMouseMove);
-        window.removeEventListener("mouseleave", handleMouseLeave);
+        removeLeaveListener();
       };
-    }, [enabled, handleMouseMove, handleMouseLeave]);
-    return /* @__PURE__ */ jsx7(
+    }, [isActive, reduceMotion, handleMouseMove, handleMouseLeave]);
+    return /* @__PURE__ */ jsx8(
       "div",
       {
         ref: combinedRef,
@@ -4370,22 +5628,25 @@ var MagneticGroup = memo3(function MagneticGroup2({
   className,
   style
 }) {
-  return /* @__PURE__ */ jsx7("div", { className, style, children });
+  return /* @__PURE__ */ jsx8("div", { className, style, children });
 });
 var MagneticCursor = memo3(function MagneticCursor2({
   children,
   size = 30,
-  config = { stiffness: 150, damping: 15 },
-  offset = { x: 0, y: 0 },
+  config: configProp,
+  offset,
   visible = true,
   zIndex = 9999,
   className,
   style
 }) {
-  const [position, setPosition] = useState19({ x: 0, y: 0 });
-  const springXRef = useRef28(null);
-  const springYRef = useRef28(null);
-  useEffect22(() => {
+  const config = useStableSpringConfig(configProp, DEFAULT_CURSOR_CONFIG);
+  const offsetX = offset?.x ?? 0;
+  const offsetY = offset?.y ?? 0;
+  const [position, setPosition] = useState24({ x: 0, y: 0 });
+  const springXRef = useRef33(null);
+  const springYRef = useRef33(null);
+  useEffect26(() => {
     springXRef.current = createSpringValue7(0, {
       ...config,
       onUpdate: (x) => setPosition((p) => ({ ...p, x }))
@@ -4399,16 +5660,16 @@ var MagneticCursor = memo3(function MagneticCursor2({
       springYRef.current?.destroy();
     };
   }, [config]);
-  useEffect22(() => {
+  useEffect26(() => {
     const handleMouseMove = (e) => {
-      springXRef.current?.set(e.clientX + offset.x);
-      springYRef.current?.set(e.clientY + offset.y);
+      springXRef.current?.set(e.clientX + offsetX);
+      springYRef.current?.set(e.clientY + offsetY);
     };
     window.addEventListener("mousemove", handleMouseMove, { passive: true });
     return () => window.removeEventListener("mousemove", handleMouseMove);
-  }, [offset]);
+  }, [offsetX, offsetY]);
   if (!visible) return null;
-  return /* @__PURE__ */ jsx7(
+  return /* @__PURE__ */ jsx8(
     "div",
     {
       className,
@@ -4422,7 +5683,7 @@ var MagneticCursor = memo3(function MagneticCursor2({
         zIndex,
         ...style
       },
-      children: children ?? /* @__PURE__ */ jsx7(
+      children: children ?? /* @__PURE__ */ jsx8(
         "div",
         {
           style: {
@@ -4441,17 +5702,20 @@ function useMagnetic(options = {}) {
   const {
     strength = 0.3,
     range = 100,
-    config = { stiffness: 200, damping: 20 },
+    config: configOption,
     enabled = true,
     maxOffset = 50
   } = options;
-  const ref = useRef28(null);
-  const springXRef = useRef28(null);
-  const springYRef = useRef28(null);
-  const [position, setPosition] = useState19({ x: 0, y: 0 });
-  const isAttractedRef = useRef28(false);
-  const [isAttracted, setIsAttracted] = useState19(false);
-  useEffect22(() => {
+  const config = useStableSpringConfig(configOption, DEFAULT_MAGNETIC_CONFIG);
+  const reduceMotion = useShouldReduceMotion();
+  const isActive = enabled && !reduceMotion;
+  const ref = useRef33(null);
+  const springXRef = useRef33(null);
+  const springYRef = useRef33(null);
+  const [position, setPosition] = useState24({ x: 0, y: 0 });
+  const isAttractedRef = useRef33(false);
+  const [isAttracted, setIsAttracted] = useState24(false);
+  useEffect26(() => {
     springXRef.current = createSpringValue7(0, {
       ...config,
       onUpdate: (x) => setPosition((p) => ({ ...p, x }))
@@ -4465,8 +5729,21 @@ function useMagnetic(options = {}) {
       springYRef.current?.destroy();
     };
   }, [config]);
-  useEffect22(() => {
-    if (!enabled) return;
+  useEffect26(() => {
+    if (!isActive) {
+      if (reduceMotion) {
+        springXRef.current?.jump(0);
+        springYRef.current?.jump(0);
+      } else {
+        springXRef.current?.set(0);
+        springYRef.current?.set(0);
+      }
+      if (isAttractedRef.current) {
+        isAttractedRef.current = false;
+        setIsAttracted(false);
+      }
+      return;
+    }
     const handleMouseMove = (e) => {
       if (!ref.current) return;
       const rect = ref.current.getBoundingClientRect();
@@ -4505,13 +5782,13 @@ function useMagnetic(options = {}) {
       }
     };
     window.addEventListener("mousemove", handleMouseMove, { passive: true });
-    window.addEventListener("mouseleave", handleMouseLeave, { passive: true });
+    const removeLeaveListener = onPointerLeaveWindow(handleMouseLeave);
     return () => {
       window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseleave", handleMouseLeave);
+      removeLeaveListener();
     };
-  }, [enabled, range, strength, maxOffset]);
-  const reset = useCallback15(() => {
+  }, [isActive, reduceMotion, range, strength, maxOffset]);
+  const reset = useCallback20(() => {
     springXRef.current?.set(0);
     springYRef.current?.set(0);
     isAttractedRef.current = false;
@@ -4527,34 +5804,42 @@ function useMagnetic(options = {}) {
 }
 
 // src/adapters/react/components/Parallax.tsx
-import * as React7 from "react";
+import * as React8 from "react";
 import {
-  useRef as useRef29,
-  useEffect as useEffect23,
-  useState as useState20,
-  useCallback as useCallback16,
-  useMemo as useMemo8,
+  useRef as useRef34,
+  useEffect as useEffect27,
+  useState as useState25,
+  useCallback as useCallback21,
+  useMemo as useMemo9,
   memo as memo4,
-  forwardRef as forwardRef4,
+  forwardRef as forwardRef5,
   createContext as createContext6,
-  useContext as useContext6
+  useContext as useContext8
 } from "react";
 import { createSpringValue as createSpringValue8 } from "@oxog/springkit";
-import { jsx as jsx8, jsxs as jsxs2 } from "react/jsx-runtime";
-var Parallax = memo4(forwardRef4(
+import { jsx as jsx9, jsxs as jsxs2 } from "react/jsx-runtime";
+var DEFAULT_PARALLAX_CONFIG = { stiffness: 100, damping: 20 };
+var DEFAULT_MOUSE_PARALLAX_CONFIG = { stiffness: 100, damping: 15 };
+var DEFAULT_TILT_CONFIG = { stiffness: 300, damping: 20 };
+var Parallax = memo4(forwardRef5(
   function Parallax2({
     children,
     speed = 0.5,
     direction = "vertical",
-    config = { stiffness: 100, damping: 20 },
+    config: configProp,
     enabled = true,
-    offset = {},
+    offset,
     rootMargin = "100px",
-    as: Component = "div",
+    as: Component2 = "div",
     className,
     style
   }, ref) {
-    const innerRef = useRef29(null);
+    const config = useStableSpringConfig(configProp, DEFAULT_PARALLAX_CONFIG);
+    const reduceMotion = useShouldReduceMotion();
+    const isActive = enabled && !reduceMotion;
+    const offsetX = offset?.x ?? 0;
+    const offsetY = offset?.y ?? 0;
+    const innerRef = useRef34(null);
     const combinedRef = (node) => {
       innerRef.current = node;
       if (typeof ref === "function") {
@@ -4563,16 +5848,16 @@ var Parallax = memo4(forwardRef4(
         ref.current = node;
       }
     };
-    const springXRef = useRef29(null);
-    const springYRef = useRef29(null);
-    const [transform, setTransform] = useState20({ x: offset.x ?? 0, y: offset.y ?? 0 });
-    const [isInView, setIsInView] = useState20(false);
-    useEffect23(() => {
-      springXRef.current = createSpringValue8(offset.x ?? 0, {
+    const springXRef = useRef34(null);
+    const springYRef = useRef34(null);
+    const [transform, setTransform] = useState25({ x: offsetX, y: offsetY });
+    const [isInView, setIsInView] = useState25(false);
+    useEffect27(() => {
+      springXRef.current = createSpringValue8(offsetX, {
         ...config,
         onUpdate: (x) => setTransform((t) => ({ ...t, x }))
       });
-      springYRef.current = createSpringValue8(offset.y ?? 0, {
+      springYRef.current = createSpringValue8(offsetY, {
         ...config,
         onUpdate: (y) => setTransform((t) => ({ ...t, y }))
       });
@@ -4580,8 +5865,8 @@ var Parallax = memo4(forwardRef4(
         springXRef.current?.destroy();
         springYRef.current?.destroy();
       };
-    }, [config, offset.x, offset.y]);
-    useEffect23(() => {
+    }, [config, offsetX, offsetY]);
+    useEffect27(() => {
       if (!innerRef.current) return;
       const observer = new IntersectionObserver(
         ([entry]) => {
@@ -4592,8 +5877,13 @@ var Parallax = memo4(forwardRef4(
       observer.observe(innerRef.current);
       return () => observer.disconnect();
     }, [rootMargin]);
-    useEffect23(() => {
-      if (!enabled || !isInView) return;
+    useEffect27(() => {
+      if (reduceMotion) {
+        springXRef.current?.jump(offsetX);
+        springYRef.current?.jump(offsetY);
+        return;
+      }
+      if (!isActive || !isInView) return;
       const handleScroll = () => {
         if (!innerRef.current) return;
         const rect = innerRef.current.getBoundingClientRect();
@@ -4602,11 +5892,11 @@ var Parallax = memo4(forwardRef4(
         const centerY = (rect.top + rect.height / 2 - windowHeight / 2) / windowHeight;
         const centerX = (rect.left + rect.width / 2 - windowWidth / 2) / windowWidth;
         if (direction === "vertical" || direction === "both") {
-          const yOffset = centerY * speed * 200 + (offset.y ?? 0);
+          const yOffset = centerY * speed * 200 + offsetY;
           springYRef.current?.set(yOffset);
         }
         if (direction === "horizontal" || direction === "both") {
-          const xOffset = centerX * speed * 200 + (offset.x ?? 0);
+          const xOffset = centerX * speed * 200 + offsetX;
           springXRef.current?.set(xOffset);
         }
       };
@@ -4617,8 +5907,8 @@ var Parallax = memo4(forwardRef4(
         window.removeEventListener("scroll", handleScroll);
         window.removeEventListener("resize", handleScroll);
       };
-    }, [enabled, isInView, speed, direction, offset]);
-    const transformStyle = useMemo8(() => {
+    }, [isActive, reduceMotion, isInView, speed, direction, offsetX, offsetY]);
+    const transformStyle = useMemo9(() => {
       const parts = [];
       if (direction === "vertical" || direction === "both") {
         parts.push(`translateY(${transform.y}px)`);
@@ -4628,8 +5918,8 @@ var Parallax = memo4(forwardRef4(
       }
       return parts.join(" ") || "none";
     }, [direction, transform]);
-    return React7.createElement(
-      Component,
+    return React8.createElement(
+      Component2,
       {
         ref: combinedRef,
         className,
@@ -4643,23 +5933,25 @@ var Parallax = memo4(forwardRef4(
     );
   }
 ));
-var MouseParallax = memo4(forwardRef4(
+var MouseParallax = memo4(forwardRef5(
   function MouseParallax2({
     children,
     strength = 20,
     inverted = false,
-    config = { stiffness: 100, damping: 15 },
+    config: configProp,
     enabled = true,
     container,
     resetOnLeave = true,
-    as: Component = "div",
+    as: Component2 = "div",
     className,
     style
   }, ref) {
-    const springXRef = useRef29(null);
-    const springYRef = useRef29(null);
-    const [transform, setTransform] = useState20({ x: 0, y: 0 });
-    useEffect23(() => {
+    const config = useStableSpringConfig(configProp, DEFAULT_MOUSE_PARALLAX_CONFIG);
+    const reduceMotion = useShouldReduceMotion();
+    const springXRef = useRef34(null);
+    const springYRef = useRef34(null);
+    const [transform, setTransform] = useState25({ x: 0, y: 0 });
+    useEffect27(() => {
       springXRef.current = createSpringValue8(0, {
         ...config,
         onUpdate: (x) => setTransform((t) => ({ ...t, x }))
@@ -4673,7 +5965,12 @@ var MouseParallax = memo4(forwardRef4(
         springYRef.current?.destroy();
       };
     }, [config]);
-    useEffect23(() => {
+    useEffect27(() => {
+      if (reduceMotion) {
+        springXRef.current?.jump(0);
+        springYRef.current?.jump(0);
+        return;
+      }
       if (!enabled) return;
       const target = container?.current ?? null;
       const useWindow = target === null;
@@ -4708,9 +6005,10 @@ var MouseParallax = memo4(forwardRef4(
           springYRef.current?.set(0);
         }
       };
+      let removeWindowLeaveListener = null;
       if (useWindow) {
         window.addEventListener("mousemove", handleMouseMove, { passive: true });
-        window.addEventListener("mouseleave", handleMouseLeave, { passive: true });
+        removeWindowLeaveListener = onPointerLeaveWindow(handleMouseLeave);
       } else {
         target.addEventListener("mousemove", handleMouseMove, { passive: true });
         target.addEventListener("mouseleave", handleMouseLeave, { passive: true });
@@ -4718,15 +6016,15 @@ var MouseParallax = memo4(forwardRef4(
       return () => {
         if (useWindow) {
           window.removeEventListener("mousemove", handleMouseMove);
-          window.removeEventListener("mouseleave", handleMouseLeave);
+          removeWindowLeaveListener?.();
         } else {
           target.removeEventListener("mousemove", handleMouseMove);
           target.removeEventListener("mouseleave", handleMouseLeave);
         }
       };
-    }, [enabled, container, strength, inverted, resetOnLeave]);
-    return React7.createElement(
-      Component,
+    }, [enabled, reduceMotion, container, strength, inverted, resetOnLeave]);
+    return React8.createElement(
+      Component2,
       {
         ref,
         className,
@@ -4740,13 +6038,13 @@ var MouseParallax = memo4(forwardRef4(
     );
   }
 ));
-var TiltCard = memo4(forwardRef4(
+var TiltCard = memo4(forwardRef5(
   function TiltCard2({
     children,
     maxTilt = 20,
     perspective = 1e3,
     scale = 1,
-    config = { stiffness: 300, damping: 20 },
+    config: configProp,
     enabled = true,
     glare = false,
     glareOpacity = 0.2,
@@ -4754,7 +6052,10 @@ var TiltCard = memo4(forwardRef4(
     style,
     onTilt
   }, ref) {
-    const innerRef = useRef29(null);
+    const config = useStableSpringConfig(configProp, DEFAULT_TILT_CONFIG);
+    const reduceMotion = useShouldReduceMotion();
+    const isActive = enabled && !reduceMotion;
+    const innerRef = useRef34(null);
     const combinedRef = (node) => {
       innerRef.current = node;
       if (typeof ref === "function") {
@@ -4763,12 +6064,12 @@ var TiltCard = memo4(forwardRef4(
         ref.current = node;
       }
     };
-    const springTiltXRef = useRef29(null);
-    const springTiltYRef = useRef29(null);
-    const springScaleRef = useRef29(null);
-    const springGlareRef = useRef29(null);
-    const [tilt, setTilt] = useState20({ x: 0, y: 0, scale: 1, glareX: 50, glareY: 50, glareOpacity: 0 });
-    useEffect23(() => {
+    const springTiltXRef = useRef34(null);
+    const springTiltYRef = useRef34(null);
+    const springScaleRef = useRef34(null);
+    const springGlareRef = useRef34(null);
+    const [tilt, setTilt] = useState25({ x: 0, y: 0, scale: 1, glareX: 50, glareY: 50, glareOpacity: 0 });
+    useEffect27(() => {
       springTiltXRef.current = createSpringValue8(0, {
         ...config,
         onUpdate: (x) => setTilt((t) => ({ ...t, x }))
@@ -4792,9 +6093,9 @@ var TiltCard = memo4(forwardRef4(
         springGlareRef.current?.destroy();
       };
     }, [config]);
-    const handleMouseMove = useCallback16(
+    const handleMouseMove = useCallback21(
       (e) => {
-        if (!enabled || !innerRef.current) return;
+        if (!isActive || !innerRef.current) return;
         const rect = innerRef.current.getBoundingClientRect();
         const centerX = (e.clientX - rect.left) / rect.width - 0.5;
         const centerY = (e.clientY - rect.top) / rect.height - 0.5;
@@ -4813,15 +6114,22 @@ var TiltCard = memo4(forwardRef4(
         }
         onTilt?.(tiltX, tiltY);
       },
-      [enabled, maxTilt, scale, glare, glareOpacity, onTilt]
+      [isActive, maxTilt, scale, glare, glareOpacity, onTilt]
     );
-    const handleMouseLeave = useCallback16(() => {
+    const handleMouseLeave = useCallback21(() => {
       springTiltXRef.current?.set(0);
       springTiltYRef.current?.set(0);
       springScaleRef.current?.set(1);
       springGlareRef.current?.set(0);
     }, []);
-    return /* @__PURE__ */ jsx8(
+    useEffect27(() => {
+      if (!reduceMotion) return;
+      springTiltXRef.current?.jump(0);
+      springTiltYRef.current?.jump(0);
+      springScaleRef.current?.jump(1);
+      springGlareRef.current?.jump(0);
+    }, [reduceMotion]);
+    return /* @__PURE__ */ jsx9(
       "div",
       {
         ref: combinedRef,
@@ -4843,7 +6151,7 @@ var TiltCard = memo4(forwardRef4(
             },
             children: [
               children,
-              glare && /* @__PURE__ */ jsx8(
+              glare && /* @__PURE__ */ jsx9(
                 "div",
                 {
                   style: {
@@ -4870,9 +6178,9 @@ var ParallaxContainer = memo4(function ParallaxContainer2({
   className,
   style
 }) {
-  const containerRef = useRef29(null);
-  const [scrollProgress, setScrollProgress] = useState20(0);
-  useEffect23(() => {
+  const containerRef = useRef34(null);
+  const [scrollProgress, setScrollProgress] = useState25(0);
+  useEffect27(() => {
     const container = containerRef.current;
     if (!container) return;
     const handleScroll = () => {
@@ -4885,11 +6193,11 @@ var ParallaxContainer = memo4(function ParallaxContainer2({
     container.addEventListener("scroll", handleScroll, { passive: true });
     return () => container.removeEventListener("scroll", handleScroll);
   }, []);
-  const contextValue = useMemo8(
+  const contextValue = useMemo9(
     () => ({ scrollProgress, containerRef }),
     [scrollProgress]
   );
-  return /* @__PURE__ */ jsx8(ParallaxContext.Provider, { value: contextValue, children: /* @__PURE__ */ jsx8(
+  return /* @__PURE__ */ jsx9(ParallaxContext.Provider, { value: contextValue, children: /* @__PURE__ */ jsx9(
     "div",
     {
       ref: containerRef,
@@ -4900,7 +6208,7 @@ var ParallaxContainer = memo4(function ParallaxContainer2({
         position: "relative",
         ...style
       },
-      children: /* @__PURE__ */ jsx8("div", { style: { height: `${pages * 100}vh`, position: "relative" }, children })
+      children: /* @__PURE__ */ jsx9("div", { style: { height: `${pages * 100}vh`, position: "relative" }, children })
     }
   ) });
 });
@@ -4913,9 +6221,9 @@ var ParallaxLayer = memo4(function ParallaxLayer2({
   className,
   style
 }) {
-  const context = useContext6(ParallaxContext);
-  const [transform, setTransform] = useState20({ x: 0, y: 0 });
-  useEffect23(() => {
+  const context = useContext8(ParallaxContext);
+  const [transform, setTransform] = useState25({ x: 0, y: 0 });
+  useEffect27(() => {
     if (!context) return;
     const progress = context.scrollProgress;
     const pageHeight = 100;
@@ -4942,7 +6250,7 @@ var ParallaxLayer = memo4(function ParallaxLayer2({
       }
     }
   }, [context?.scrollProgress, offset, speed, horizontal, sticky]);
-  return /* @__PURE__ */ jsx8(
+  return /* @__PURE__ */ jsx9(
     "div",
     {
       className,
@@ -4961,12 +6269,12 @@ var ParallaxLayer = memo4(function ParallaxLayer2({
   );
 });
 function useParallaxContext() {
-  return useContext6(ParallaxContext);
+  return useContext8(ParallaxContext);
 }
 
 // src/adapters/react/components/LazyMotion.tsx
-import * as React8 from "react";
-import { createContext as createContext7, useContext as useContext7, useState as useState21, useEffect as useEffect24, useMemo as useMemo9 } from "react";
+import * as React9 from "react";
+import { createContext as createContext7, useContext as useContext9, useState as useState26, useEffect as useEffect28, useMemo as useMemo10 } from "react";
 var domAnimation = {
   animations: true,
   gestures: true
@@ -4987,7 +6295,7 @@ var LazyMotionContext = createContext7({
   isLoaded: true
 });
 function useLazyMotion() {
-  return useContext7(LazyMotionContext);
+  return useContext9(LazyMotionContext);
 }
 function useMotionFeature(feature) {
   const { features, isLoaded } = useLazyMotion();
@@ -4998,30 +6306,43 @@ function LazyMotion({
   strict = false,
   children
 }) {
-  const [loadedFeatures, setLoadedFeatures] = useState21(
+  const [loadedFeatures, setLoadedFeatures] = useState26(
     typeof features === "function" ? null : features
   );
-  const [isLoaded, setIsLoaded] = useState21(typeof features !== "function");
-  useEffect24(() => {
-    if (typeof features === "function") {
-      features().then((loaded) => {
-        setLoadedFeatures(loaded);
-        setIsLoaded(true);
-      });
-    } else {
+  const [isLoaded, setIsLoaded] = useState26(typeof features !== "function");
+  useEffect28(() => {
+    if (typeof features !== "function") {
       setLoadedFeatures(features);
       setIsLoaded(true);
+      return;
     }
+    let cancelled = false;
+    features().then(
+      (loaded) => {
+        if (cancelled) return;
+        setLoadedFeatures(loaded);
+        setIsLoaded(true);
+      },
+      (error) => {
+        if (cancelled) return;
+        console.error("[SpringKit] LazyMotion: failed to load features", error);
+        setLoadedFeatures({});
+        setIsLoaded(true);
+      }
+    );
+    return () => {
+      cancelled = true;
+    };
   }, [features]);
-  const contextValue = useMemo9(() => ({
+  const contextValue = useMemo10(() => ({
     features: loadedFeatures ?? {},
     isStrict: strict,
     isLoaded
   }), [loadedFeatures, strict, isLoaded]);
   if (!isLoaded) {
-    return React8.createElement(React8.Fragment, null, null);
+    return React9.createElement(React9.Fragment, null, null);
   }
-  return React8.createElement(
+  return React9.createElement(
     LazyMotionContext.Provider,
     { value: contextValue },
     children
@@ -5033,8 +6354,8 @@ function MotionFeatureGuard({
   fallback = null
 }) {
   const isAvailable = useMotionFeature(feature);
-  return React8.createElement(
-    React8.Fragment,
+  return React9.createElement(
+    React9.Fragment,
     null,
     isAvailable ? children : fallback
   );

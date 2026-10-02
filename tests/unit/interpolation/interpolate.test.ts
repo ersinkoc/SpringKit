@@ -268,3 +268,23 @@ describe('interpolation', () => {
     })
   })
 })
+
+describe('interpolate regressions', () => {
+  it('handles descending input ranges with non-linear outputs', () => {
+    // 25 lies halfway between 50 (0.2) and 0 (1)
+    expect(interpolate(() => 25, [100, 50, 0], [0, 0.2, 1]).get()).toBeCloseTo(0.6)
+  })
+
+  it('clamps correctly with a descending input range', () => {
+    const interp = interpolate(() => 50, [100, 0], [0, 1], { extrapolate: 'clamp' })
+    expect(interp.get()).toBeCloseTo(0.5)
+    expect(interpolate(() => 150, [100, 0], [0, 1], { extrapolate: 'clamp' }).get()).toBe(0)
+    expect(interpolate(() => -50, [100, 0], [0, 1], { extrapolate: 'clamp' }).get()).toBe(1)
+  })
+
+  it('does not return NaN when output has fewer entries than input', () => {
+    const interp = interpolate(() => 75, [0, 50, 100], [0, 1])
+    expect(Number.isNaN(interp.get())).toBe(false)
+    expect(interp.get()).toBeCloseTo(1.5)
+  })
+})

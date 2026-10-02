@@ -62,12 +62,16 @@ interface ReorderContextValue<T = unknown> {
   onDragStart: (value: T) => void
   onDrag: (value: T, offset: number) => void
   onDragEnd: (value: T) => void
+  /** Move an item directly to a new index (used for keyboard reordering) */
+  moveItem: (value: T, toIndex: number) => void
   getDraggingValue: () => T | null
   getItemOffset: (value: T) => number
   layoutDuration: number
 }
 
 // ============ Context ============
+
+const DEFAULT_REORDER_CONFIG: SpringConfig = { stiffness: 300, damping: 30 }
 
 const ReorderContext = createContext<ReorderContextValue | null>(null)
 
@@ -86,7 +90,7 @@ function ReorderGroupComponent<T>(
     values,
     onReorder,
     axis = 'y',
-    config = { stiffness: 300, damping: 30 },
+    config = DEFAULT_REORDER_CONFIG,
     className,
     style,
     children,
@@ -98,9 +102,18 @@ function ReorderGroupComponent<T>(
   const itemsRef = useRef<Map<T, HTMLElement>>(new Map())
   const sizesRef = useRef<Map<T, number>>(new Map())
   const [draggingValue, setDraggingValue] = useState<T | null>(null)
-  const [offsets, setOffsets] = useState<Map<T, number>>(new Map())
+  const [offsets, setOffsetsState] = useState<Map<T, number>>(new Map())
+  // Mirror of offsets so drag end always sees the latest values, even if the
+  // last pointermove's state update hasn't been rendered yet
+  const offsetsRef = useRef<Map<T, number>>(offsets)
+  const setOffsets = useCallback((next: Map<T, number>) => {
+    offsetsRef.current = next
+    setOffsetsState(next)
+  }, [])
   const dragStartIndexRef = useRef<number>(-1)
   const currentOrderRef = useRef<T[]>(values)
+  const onReorderRef = useRef(onReorder)
+  onReorderRef.current = onReorder
 
   // Keep order in sync with values
   useEffect(() => {
@@ -124,7 +137,13 @@ function ReorderGroupComponent<T>(
   const handleDragStart = useCallback((value: T) => {
     setDraggingValue(value)
     dragStartIndexRef.current = currentOrderRef.current.indexOf(value)
-  }, [])
+
+    // Re-measure item sizes (layout may have changed since they registered)
+    itemsRef.current.forEach((element, itemValue) => {
+      const rect = element.getBoundingClientRect()
+      sizesRef.current.set(itemValue, axis === 'y' ? rect.height : rect.width)
+    })
+  }, [axis])
 
   // Handle drag movement
   const handleDrag = useCallback((value: T, offset: number) => {
@@ -144,7 +163,7 @@ function ReorderGroupComponent<T>(
       // Moving forward
       for (let i = currentIndex + 1; i < order.length; i++) {
         const otherValue = order[i]
-        if (!otherValue) continue
+        if (otherValue === undefined) continue
         const otherSize = sizes.get(otherValue) || 0
         accumulatedOffset += otherSize
 
@@ -158,7 +177,7 @@ function ReorderGroupComponent<T>(
       // Moving backward
       for (let i = currentIndex - 1; i >= 0; i--) {
         const otherValue = order[i]
-        if (!otherValue) continue
+        if (otherValue === undefined) continue
         const otherSize = sizes.get(otherValue) || 0
         accumulatedOffset -= otherSize
 
@@ -171,7 +190,7 @@ function ReorderGroupComponent<T>(
     }
 
     setOffsets(newOffsets)
-  }, [])
+  }, [setOffsets])
 
   // Handle drag end
   const handleDragEnd = useCallback((value: T) => {
@@ -187,7 +206,7 @@ function ReorderGroupComponent<T>(
 
     // Find items that were shifted
     let targetIndex = currentIndex
-    offsets.forEach((offset, otherValue) => {
+    offsetsRef.current.forEach((offset, otherValue) => {
       const otherIndex = order.indexOf(otherValue)
       if (offset < 0 && otherIndex > currentIndex) {
         // Item moved backward, we move forward
@@ -204,13 +223,25 @@ function ReorderGroupComponent<T>(
       const [removed] = newOrder.splice(currentIndex, 1)
       if (removed !== undefined) {
         newOrder.splice(targetIndex, 0, removed)
-        onReorder(newOrder)
+        onReorderRef.current(newOrder)
       }
     }
 
     setDraggingValue(null)
     setOffsets(new Map())
-  }, [offsets, onReorder])
+  }, [setOffsets])
+
+  // Move an item directly to a new index
+  const moveItem = useCallback((value: T, toIndex: number) => {
+    const order = [...currentOrderRef.current]
+    const fromIndex = order.indexOf(value)
+    if (fromIndex === -1) return
+    const clampedIndex = Math.max(0, Math.min(order.length - 1, toIndex))
+    if (clampedIndex === fromIndex) return
+    order.splice(fromIndex, 1)
+    order.splice(clampedIndex, 0, value)
+    onReorderRef.current(order)
+  }, [])
 
   // Get dragging value
   const getDraggingValue = useCallback(() => draggingValue, [draggingValue])
@@ -227,6 +258,7 @@ function ReorderGroupComponent<T>(
     onDragStart: handleDragStart,
     onDrag: handleDrag,
     onDragEnd: handleDragEnd,
+    moveItem,
     getDraggingValue,
     getItemOffset,
     layoutDuration,
@@ -239,6 +271,7 @@ function ReorderGroupComponent<T>(
     handleDragStart,
     handleDrag,
     handleDragEnd,
+    moveItem,
     getDraggingValue,
     getItemOffset,
     layoutDuration,
@@ -283,10 +316,14 @@ function ReorderItemComponent<T>(
   ref: React.Ref<HTMLElement>
 ) {
   const context = useReorderContext<T>()
+  const { registerItem, unregisterItem } = context
   const elementRef = useRef<HTMLElement | null>(null)
   const springRef = useRef<ReturnType<typeof createSpringValue> | null>(null)
   const [offset, setOffset] = useState(0)
   const [isDragging, setIsDragging] = useState(false)
+  // Ref mirror so pointer handlers see the drag state before React re-renders
+  const isDraggingRef = useRef(false)
+  // Pointer position (client coordinates) when the drag started
   const dragStartPos = useRef({ x: 0, y: 0 })
   const dragOffset = useRef(0)
 
@@ -298,37 +335,42 @@ function ReorderItemComponent<T>(
     } else if (ref) {
       (ref as React.MutableRefObject<HTMLElement | null>).current = node
     }
+  }, [ref])
 
-    if (node) {
-      context.registerItem(value, node)
-    } else {
-      context.unregisterItem(value)
+  // Register with the group. Only re-run when the value (or the stable
+  // register functions) change - not on every context update, which would
+  // drop the item's measured size in the middle of a drag.
+  useEffect(() => {
+    const element = elementRef.current
+    if (element) registerItem(value, element)
+    return () => {
+      unregisterItem(value)
     }
-  }, [ref, context, value])
+  }, [value, registerItem, unregisterItem])
 
-  // Cleanup
+  // Destroy spring on unmount
   useEffect(() => {
     return () => {
-      context.unregisterItem(value)
       springRef.current?.destroy()
+      springRef.current = null
     }
-  }, [context, value])
+  }, [])
 
   // Animate offset changes from other items being dragged
+  const targetOffset = context.getItemOffset(value)
+  const springConfig = context.config
   useEffect(() => {
     if (isDragging) return // Don't animate if we're the one dragging
 
-    const targetOffset = context.getItemOffset(value)
-
     if (!springRef.current) {
       springRef.current = createSpringValue(0, {
-        ...context.config,
+        ...springConfig,
         onUpdate: setOffset,
       })
     }
 
     springRef.current.set(targetOffset)
-  }, [context, value, isDragging])
+  }, [targetOffset, isDragging, springConfig])
 
   // Handle pointer down
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
@@ -336,49 +378,53 @@ function ReorderItemComponent<T>(
 
     e.preventDefault()
     e.stopPropagation()
+    isDraggingRef.current = true
     setIsDragging(true)
+    springRef.current?.stop()
     onDragStart?.()
     context.onDragStart(value)
 
-    const rect = elementRef.current?.getBoundingClientRect()
-    dragStartPos.current = {
-      x: e.clientX - (rect?.left ?? 0),
-      y: e.clientY - (rect?.top ?? 0),
-    }
+    dragStartPos.current = { x: e.clientX, y: e.clientY }
     dragOffset.current = 0
 
     // Set pointer capture on the actual element ref for reliable drag tracking
-    if (elementRef.current) {
-      elementRef.current.setPointerCapture(e.pointerId)
+    const element = elementRef.current
+    if (element && typeof element.setPointerCapture === 'function') {
+      try {
+        element.setPointerCapture(e.pointerId)
+      } catch {
+        // Pointer may no longer be active
+      }
     }
   }, [dragEnabled, context, value, onDragStart])
 
   // Handle pointer move
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
-    if (!isDragging) return
+    if (!isDraggingRef.current) return
 
-    const rect = elementRef.current?.getBoundingClientRect()
-    if (!rect) return
-
-    const currentPos = context.axis === 'y' ? e.clientY : e.clientX
-    const startPos = context.axis === 'y'
-      ? (elementRef.current?.offsetTop ?? 0) + dragStartPos.current.y
-      : (elementRef.current?.offsetLeft ?? 0) + dragStartPos.current.x
-
-    dragOffset.current = currentPos - startPos - (context.axis === 'y' ? rect.height / 2 : rect.width / 2)
+    // Offset is the pointer movement since the drag started
+    dragOffset.current = context.axis === 'y'
+      ? e.clientY - dragStartPos.current.y
+      : e.clientX - dragStartPos.current.x
     context.onDrag(value, dragOffset.current)
 
     // Update visual position
     setOffset(dragOffset.current)
-  }, [isDragging, context, value])
+  }, [context, value])
 
   // Handle pointer up
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
-    if (!isDragging) return
+    if (!isDraggingRef.current) return
+    isDraggingRef.current = false
 
     // Release pointer capture on the element ref
-    if (elementRef.current) {
-      elementRef.current.releasePointerCapture(e.pointerId)
+    const element = elementRef.current
+    if (element && typeof element.releasePointerCapture === 'function') {
+      try {
+        element.releasePointerCapture(e.pointerId)
+      } catch {
+        // Capture may already have been released (e.g. pointercancel)
+      }
     }
 
     setIsDragging(false)
@@ -386,9 +432,10 @@ function ReorderItemComponent<T>(
     context.onDragEnd(value)
 
     // Animate back to final position
+    springRef.current?.jump(0)
     setOffset(0)
     dragOffset.current = 0
-  }, [isDragging, context, value, onDragEnd])
+  }, [context, value, onDragEnd])
 
   const transformProp = context.axis === 'y'
     ? `translateY(${offset}px)`
@@ -441,10 +488,7 @@ function ReorderItemComponent<T>(
 
     // Move item if index changed
     if (newIndex !== currentIndex) {
-      context.onDragStart(value)
-      const offset = (newIndex - currentIndex) * 50 // Approximate offset
-      context.onDrag(value, offset)
-      context.onDragEnd(value)
+      context.moveItem(value, newIndex)
     }
   }, [dragEnabled, context, value])
 
@@ -481,11 +525,17 @@ function ReorderItemComponent<T>(
 
 // ============ Export ============
 
-const ReorderGroup = React.forwardRef(ReorderGroupComponent) as <T>(
+const ReorderGroupWithRef = React.forwardRef(ReorderGroupComponent)
+ReorderGroupWithRef.displayName = 'Reorder.Group'
+
+const ReorderItemWithRef = React.forwardRef(ReorderItemComponent)
+ReorderItemWithRef.displayName = 'Reorder.Item'
+
+const ReorderGroup = ReorderGroupWithRef as <T>(
   props: ReorderGroupProps<T> & { ref?: React.Ref<HTMLElement> }
 ) => React.ReactElement
 
-const ReorderItem = React.forwardRef(ReorderItemComponent) as <T>(
+const ReorderItem = ReorderItemWithRef as <T>(
   props: ReorderItemProps<T> & { ref?: React.Ref<HTMLElement> }
 ) => React.ReactElement
 

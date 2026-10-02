@@ -79,7 +79,7 @@ describe('spring', () => {
       await new Promise(resolve => setTimeout(resolve, 50))
 
       // Get velocity before reverse
-      const velocityBefore = anim.getVelocity()
+      const _velocityBefore = anim.getVelocity()
 
       // Call reverse while running - should trigger lines 132-133
       anim.reverse()
@@ -395,7 +395,7 @@ describe('spring', () => {
       await new Promise(resolve => setTimeout(resolve, 50))
 
       // Get velocity before set
-      const velocityBefore = anim.getVelocity()
+      const _velocityBefore = anim.getVelocity()
 
       // Call set while running - should trigger line 132-133
       anim.set(50)

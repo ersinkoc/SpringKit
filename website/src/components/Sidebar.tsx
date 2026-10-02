@@ -49,6 +49,8 @@ const navItems: NavItem[] = [
   {
     title: 'Advanced Features',
     children: [
+      { title: 'Native Springs', href: '/docs/advanced/native-springs' },
+      { title: 'Testing Animations', href: '/docs/advanced/testing' },
       { title: 'Variants System', href: '/docs/advanced/variants' },
       { title: 'Timeline API', href: '/docs/advanced/timeline' },
       { title: 'SVG Morphing', href: '/docs/advanced/morph' },

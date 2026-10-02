@@ -178,6 +178,7 @@ export type {
   UseStaggerChildrenOptions,
   UseStaggerChildrenReturn,
   CreateMotionComponentOptions,
+  MotionComponentProps,
 } from './hooks/useVariants.js'
 
 // ============ Physics Hooks (SpringKit Exclusive) ============
@@ -208,6 +209,15 @@ export type {
 export { Spring } from './components/Spring.js'
 export { Animated } from './components/Animated.js'
 export type { AnimatedStyle, AnimatedElementProps } from './components/Animated.js'
+export type {
+  PanInfo,
+  DragConstraints,
+  DragConstraintsBox,
+  DragElastic,
+  DragTransition,
+  DragPoint,
+  AnimatedDragProps,
+} from './components/Animated.js'
 export { Trail } from './components/Trail.js'
 export { AnimatePresence } from './components/AnimatePresence.js'
 export type { AnimatePresenceProps, AnimatePresenceMode } from './components/AnimatePresence.js'
@@ -324,6 +334,7 @@ export type {
   ScrollSpring,
   ScrollSpringConfig,
   RGB,
+  RGBA,
   HSL,
 } from '@oxog/springkit'
 

@@ -7,7 +7,134 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Fixed
+Recommended release: **2.0.0** (see "Behavior changes").
+
+### Behavior changes
+- **`decay()` uses real units.** `velocity` is in units per second and
+  `deceleration` is the fraction of velocity kept per millisecond (iOS scale:
+  0.998 normal, 0.99 fast). Previously both were applied per 60fps frame, so
+  the documented `velocity: 1000` travelled ~500,000px and kept running for
+  about a minute. A 1000 px/s fling now travels ~500px. Multiply old
+  per-frame velocities by 60 to migrate.
+- **Springs run at the same speed on every display.** Before, animations ran
+  2x faster at 120Hz, 2.4x at 144Hz and 1.67x at 50Hz. `spring()` now advances
+  with the exact closed-form solution of the spring equation.
+- **Color interpolation keeps alpha.** Translucent results are emitted as
+  `rgba(...)`.
+- `createScrollTrigger` progress now grows from 0 to 1 as the element crosses
+  the viewport. Swipe gestures no longer fire on `pointercancel`.
+- **`stagger()` with a numeric `delay` actually staggers**: item k steps away
+  from `from` starts after `k * delay` (before, every item got the same delay).
+  `from: 'center'` fans out symmetrically.
+- **`animate()` arrays are `[from, ...to]`**: the first entry is the start
+  value (Framer Motion convention).
+- **`configFromDuration()` / `configFromBounce()`** return physically derived
+  configs (perceptual model) instead of three fixed buckets.
+- **`spring().stop()` / `decay().stop()` resolve `finished`**; restarting
+  creates a new `finished` promise per run.
+- **Timeline** segments are a function of playhead time (exact on seek and
+  reverse); `to()` reads start values when the segment first plays.
+- `useTransform` color outputs are `rgb()`/`rgba()` strings.
+- `Animated` props: `onDrag`, `onDragStart`, `onDragEnd` are now the drag
+  gesture callbacks `(event, info)` (Framer Motion style), replacing the native
+  HTML5 drag handlers of the same name.
+- Trail `reverse` reverses the stagger order; `children` receive the real
+  index.
+- Plain DOM children of `AnimatePresence` (no exit animation) are removed
+  immediately instead of after the 10s fallback.
+
+### Added
+- **Native (compositor) springs:** `springEasing()` compiles a spring to a CSS
+  `linear()` easing; `springTransition()`; `animateNative()` (Web Animations
+  API, respects `prefers-reduced-motion`, commits final styles);
+  `supportsLinearEasing()`.
+- **`solveSpring()`**: analytic, seekable spring solver (`.at(ms)` gives value
+  and velocity, `.duration` gives the settle time).
+- **`defineSpring({ duration, bounce })`**: perceptual spring parameters
+  (SwiftUI / Jetpack Compose model).
+- **`@oxog/springkit/testing`**: `installTestClock()` virtualizes
+  `requestAnimationFrame`, `performance.now` and optionally timers, with
+  `advance()`, `nextFrame()` and `runAll()`, for deterministic, instant
+  animation tests.
+- `decay()`: `from`, `modifyTarget` (lands exactly on the returned value),
+  `restDelta`, `getValue()`, `getVelocity()` and `target`.
+- `simulateSpring(..., timeStep?)`, `stepSpring()`, `springMotion()`;
+  `parseColorRGBA()` and the `RGBA` type.
+- **Global time scale:** `globalLoop.setTimeScale(0.1)` plays every
+  loop-driven animation, timeline and `animateNative()` animation in slow
+  motion (`0` freezes them); `getTimeScale()`, `onTimeScaleChange()`.
+- **Perceptual color mixing:** `interpolateColor(..., { space: 'oklab' })`
+  (also `'linear'`), premultiplied alpha everywhere; `rgbToOklab()`,
+  `oklabToRgb()`, `srgbToLinear()`, `linearToSrgb()`, `mixColorsRGBA()`,
+  `formatRGBA()`.
+- **`Animated` drag:** `drag`, `dragControls`, `dragListener`,
+  `dragConstraints` (box or container ref), `dragElastic`, `dragMomentum`,
+  `dragTransition`, `dragSnapToOrigin`, `dragDirectionLock`,
+  `onDragStart`/`onDrag`/`onDragEnd` with `{ point, delta, offset, velocity }`.
+- **`AnimatePresence mode="popLayout"`.**
+- **`createMotionComponent(tag, { variants, spring })`** (previously threw
+  "not implemented"); `VariantProvider` passes `staggerIndex`/`staggerCount`
+  to its direct children so `staggerChildren` works.
+- `keyframes({ duration })` honors `times`; timeline object targets; MotionValue
+  `animationComplete` / `animationCancel` events; `useTimeline().seekProgress()`;
+  `useTransform` interpolates colors, unit values and complex strings
+  (`space` option); `ScrollLinkedConfig.smooth` accepts a factor or a spring
+  config; FLIP `correctBorderRadius`; drag `lockToDiagonal` and
+  `elasticBounce`; `createSharedLayoutContext().createGroup(id, config)`.
+
+### Fixed (audit: about 125 bugs, each with a regression test)
+- **Second pass:** `useInView`, `useInViewCallback`, `useScroll` and `usePointer`
+  now work with elements that mount later; `useScroll({ axis: 'x' })`;
+  `useScrollVelocity` decays to 0; physics hooks read the latest options;
+  `useVariants` applies stagger; `useMorph` controller is available on first
+  render; `useGyroscope` falls back to the mouse on desktop; `useAnimate` starts
+  from the element's current values (scale started at 0); FLIP keeps the
+  element's `transform-origin`; swipe/long-press recover from a lost
+  `pointerup`; SVG path `pause()` no longer resolves `play()`; shared layout
+  honors per-property transitions and restores the user's inline styles;
+  `Magnetic`/`Parallax`/`TiltCard` respect reduced motion and detect the
+  pointer leaving the window; scroll smoothing settles exactly on target; the
+  variants `staggerContainer` preset used seconds where milliseconds are
+  expected; the test clock and the loop hand pending frames over when the
+  clock is swapped.
+- **Core loop:** running animations were held only by `WeakRef`, so a
+  fire-and-forget `spring(...).start()` was garbage-collected mid-flight. One
+  throwing `update()` froze every animation forever. Re-entrant ticks spawned a
+  second RAF chain.
+- **Spring, SpringValue, SpringGroup, MotionValue:** velocity was lost on
+  retarget; `finished` never resolved in several cases (idle values, `jump()`,
+  superseded `set()`); throwing callbacks stopped completion; `set(v, false)`
+  desynced the spring; `animationEnd` fired early.
+- **Timeline:** `call()` and `addPause()` almost never fired; `onComplete` of
+  non-last segments never fired; seeking backwards didn't replay; `play()`
+  twice ran two loops.
+- **animate(), keyframes(), trail, stagger, variants:** opacity 0 was read as 1;
+  a second `animate()` wiped other transforms; `pause()` didn't pause;
+  `stop()`/`resume()` in keyframes; subscriber notifications multiplied in
+  trails; the radial grid stagger gave all-zero delays.
+- **Gestures:** multi-touch hijacked drags; snap/`animateTo` jumped after a drag;
+  `bounds` and `lockAxis` weren't applied while dragging; rotation flipped at
+  180°; pinch rubber-banding could produce negative scale; swipe velocity was
+  ~0; wheel `deltaMode` was ignored; RAF loops leaked.
+- **Interpolation & color:** 4/8-digit hex, `hsla()`, space-separated
+  `rgb()`; descending input ranges; NaN with short output ranges.
+- **Layout, SVG, scroll:** FLIP replaced existing transforms; border-radius
+  correction distorted corners; relative SVG path commands were treated as
+  absolute; `path.resume()` did nothing; scroll subscribers got stale values.
+- **React hooks:** many hooks returned destroyed instances under
+  `React.StrictMode` (Next.js dev mode); `useSprings` re-created springs every
+  render; `useTimeline` never exposed its timeline; `useInViewMultiple` hit
+  "Maximum update depth exceeded"; `useReducedMotion` crashed without
+  `matchMedia`; `useScroll({ target })` progress was inverted.
+- **React components:** inline `config={{...}}` objects restarted springs every
+  frame, so Magnetic, Parallax, TiltCard, SpringText, Spring and Trail barely
+  moved with default settings. AnimatePresence remounted exiting children,
+  duplicated re-added ones and ignored `initial={false}`. Animated didn't
+  animate keys that only appear in `whileHover`/`whileTap`, wrote `x`/`y` as
+  invalid CSS, dropped user event handlers and ignored `MotionConfig`. Reorder
+  never reordered while dragging. SpringText split emoji.
+
+### Fixed (packaging)
 - **React adapter bundled a second copy of the core**: `@oxog/springkit/react`
   inlined the whole core library instead of importing it, so apps using both
   entry points loaded the core twice and ran two independent `globalLoop`s
@@ -41,7 +168,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added `bugs`, a `./package.json` export and `typesVersions` (for
   `moduleResolution: node` consumers of `@oxog/springkit/react`)
 - README: the "~7KB gzipped" claim was replaced with measured sizes
-  (~2 KB min+gzip for `spring()` alone, ~24 KB for the whole core)
+  (~3 KB min+gzip for `spring()` alone, ~31 KB for the whole core)
 
 ### Previously unreleased
 - **Build**: tsup config made function-free (function options cannot be

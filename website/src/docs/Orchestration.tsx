@@ -153,20 +153,22 @@ function Stagger() {
       <DocSection title="Basic Stagger">
         <Card>
           <CardContent className="pt-6">
-            <CodeBlock code={`import { stagger } from '@oxog/springkit'
+            <CodeBlock code={`import { spring, stagger } from '@oxog/springkit'
 
-const elements = document.querySelectorAll('.item')
+const elements = Array.from(document.querySelectorAll<HTMLElement>('.item'))
 
 await stagger(
   elements,
   (element, index) => {
+    // Return the animation WITHOUT calling start():
+    // stagger() starts each one after its delay
     return spring(0, 1, {
       onUpdate: (value) => {
         element.style.opacity = String(value)
       },
-    }).start()
+    })
   },
-  { delay: 50 }  // 50ms between each
+  { delay: (i) => i * 50 }  // item i starts after i * 50ms
 )`} />
           </CardContent>
         </Card>
@@ -182,7 +184,7 @@ await stagger(
   elements,
   animateElement,
   {
-    delay: 30,
+    delay: (i) => i * 30,
     from: 'center',  // Items near center start first
   }
 )`} />
@@ -210,9 +212,8 @@ await stagger(
       <DocSection title="Options">
         <div className="grid gap-3">
           {[
-            { option: 'delay', desc: 'Delay between items (ms or function)' },
-            { option: 'from', desc: '"start" | "center" | "end" | number' },
-            { option: 'easing', desc: 'Timing function for delay curve' },
+            { option: 'delay', desc: 'Start delay in ms: (i) => ms, where i is the start order; a number delays every item equally' },
+            { option: 'from', desc: '"first" | "last" | "center" | index (default "first")' },
           ].map((item) => (
             <div key={item.option} className="flex items-center gap-4 p-3 rounded-lg bg-white/5 border border-white/10">
               <code className="text-orange-300 font-mono text-sm">{item.option}</code>
@@ -309,7 +310,7 @@ function Decay() {
             <CodeBlock code={`import { decay } from '@oxog/springkit'
 
 const anim = decay({
-  velocity: 1000,  // Initial velocity
+  velocity: 1000,  // px/s, e.g. the release velocity of a drag
   onUpdate: (value) => {
     element.style.transform = \`translateX(\${value}px)\`
   },
@@ -327,12 +328,32 @@ anim.start()`} />
         <Card>
           <CardContent className="pt-6">
             <CodeBlock code={`const anim = decay({
+  from: container.scrollLeft,
   velocity: 500,
-  deceleration: 0.998,  // Higher = slower decay (0.9-0.999)
+  deceleration: 0.998,  // velocity kept per ms: 0.998 normal, 0.99 fast (iOS scale)
   onUpdate: (value) => {
     container.scrollLeft = value
   },
 })`} />
+          </CardContent>
+        </Card>
+      </DocSection>
+
+      <DocSection title="Snapping a Fling">
+        <p className="text-muted-foreground mb-4">
+          <code>modifyTarget</code> receives the natural resting value. The decay is rescaled to land
+          exactly on the value you return, so the motion still feels like momentum:
+        </p>
+        <Card>
+          <CardContent className="pt-6">
+            <CodeBlock code={`const anim = decay({
+  from: x,
+  velocity: releaseVelocity,                       // px/s
+  modifyTarget: (t) => Math.round(t / 320) * 320,  // snap to 320px pages
+  onUpdate: (value) => { track.style.transform = \`translateX(\${value}px)\` },
+}).start()
+
+anim.target // where it will come to rest`} />
           </CardContent>
         </Card>
       </DocSection>
@@ -357,10 +378,12 @@ anim.start()`} />
       <DocSection title="Options">
         <div className="grid gap-3">
           {[
-            { option: 'velocity', desc: 'Initial velocity (required)' },
-            { option: 'deceleration', desc: 'Rate of slowdown (0.9-0.999)' },
-            { option: 'clamp', desc: '[min, max] boundaries' },
-            { option: 'modifyTarget', desc: 'Function to snap final position' },
+            { option: 'velocity', desc: 'Initial velocity in units per second (required)' },
+            { option: 'from', desc: 'Starting value (default 0)' },
+            { option: 'deceleration', desc: 'Fraction of velocity kept per millisecond (default 0.998)' },
+            { option: 'clamp', desc: '[min, max] boundaries; motion stops at a boundary' },
+            { option: 'modifyTarget', desc: 'Adjust the resting value, e.g. snap to a grid; lands exactly on it' },
+            { option: 'restDelta', desc: 'Remaining distance at which the motion ends (default 0.5)' },
             { option: 'onUpdate', desc: 'Called with current value' },
             { option: 'onComplete', desc: 'Called when motion stops' },
           ].map((item) => (

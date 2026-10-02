@@ -164,14 +164,31 @@ export function LazyMotion({
 
   // Load async features
   useEffect(() => {
-    if (typeof features === 'function') {
-      features().then((loaded) => {
-        setLoadedFeatures(loaded)
-        setIsLoaded(true)
-      })
-    } else {
+    if (typeof features !== 'function') {
       setLoadedFeatures(features)
       setIsLoaded(true)
+      return
+    }
+
+    // Ignore results of a loader that was superseded or unmounted, so a slow
+    // earlier loader can't overwrite the features of a newer one
+    let cancelled = false
+    features().then(
+      (loaded) => {
+        if (cancelled) return
+        setLoadedFeatures(loaded)
+        setIsLoaded(true)
+      },
+      (error: unknown) => {
+        if (cancelled) return
+        console.error('[SpringKit] LazyMotion: failed to load features', error)
+        // Render children without optional features instead of nothing forever
+        setLoadedFeatures({})
+        setIsLoaded(true)
+      }
+    )
+    return () => {
+      cancelled = true
     }
   }, [features])
 

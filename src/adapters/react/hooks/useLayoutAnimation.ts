@@ -1,7 +1,7 @@
 /**
  * React hooks for layout animations (FLIP)
  */
-import { useRef, useCallback, createContext, type ReactNode, type RefCallback } from 'react'
+import { useRef, useCallback, useState, createContext, type ReactNode, type RefCallback } from 'react'
 import * as React from 'react'
 import {
   createLayoutGroup,
@@ -9,6 +9,7 @@ import {
   createAutoLayout,
   measureElement,
   flip,
+  createFlip,
   type LayoutAnimationConfig,
   type LayoutGroup,
   type SharedLayoutContext,
@@ -16,7 +17,7 @@ import {
   type LayoutMeasurement,
   type FlipOptions,
 } from '@oxog/springkit'
-import { useIsomorphicLayoutEffect } from '../utils/ssr.js'
+import { useDestroyOnUnmount } from './useDestroyOnUnmount.js'
 
 // ============ Context ============
 
@@ -74,39 +75,37 @@ export interface UseLayoutGroupReturn {
 export function useLayoutGroup(
   options: UseLayoutGroupOptions = {}
 ): UseLayoutGroupReturn {
-  const layoutGroupRef = useRef<LayoutGroup | null>(null)
+  // Created during the first render (it only allocates bookkeeping maps) so it
+  // already exists when children's ref callbacks call register() in the
+  // initial commit - those run before this component's layout effects
+  const [layoutGroup] = useState(() => createLayoutGroup(options))
 
-  useIsomorphicLayoutEffect(() => {
-    const layoutGroup = createLayoutGroup(options)
-    layoutGroupRef.current = layoutGroup
-
-    return () => {
-      layoutGroup.destroy()
-    }
-  }, [])
+  useDestroyOnUnmount(() => {
+    layoutGroup.destroy()
+  })
 
   const register = useCallback((id: string, element: HTMLElement) => {
-    layoutGroupRef.current?.register(id, element)
-  }, [])
+    layoutGroup.register(id, element)
+  }, [layoutGroup])
 
   const unregister = useCallback((id: string, element: HTMLElement) => {
-    layoutGroupRef.current?.unregister(id, element)
-  }, [])
+    layoutGroup.unregister(id, element)
+  }, [layoutGroup])
 
   const update = useCallback(() => {
-    layoutGroupRef.current?.update()
-  }, [])
+    layoutGroup.update()
+  }, [layoutGroup])
 
   const forceUpdate = useCallback(() => {
-    layoutGroupRef.current?.forceUpdate()
-  }, [])
+    layoutGroup.forceUpdate()
+  }, [layoutGroup])
 
   return {
     register,
     unregister,
     update,
     forceUpdate,
-    layoutGroup: layoutGroupRef.current,
+    layoutGroup,
   }
 }
 
@@ -142,21 +141,18 @@ export function useLayoutId(
 ): UseLayoutIdReturn {
   const { group, ...config } = options
   const elementRef = useRef<HTMLElement | null>(null)
-  const localGroupRef = useRef<LayoutGroup | null>(null)
 
-  // Create local group if none provided
-  useIsomorphicLayoutEffect(() => {
-    if (!group) {
-      localGroupRef.current = createLayoutGroup(config)
-      return () => {
-        localGroupRef.current?.destroy()
-      }
-    }
-  }, [group])
+  // Local group used when none is provided. Created during render so it exists
+  // when the ref callback runs in the initial commit (before layout effects).
+  const [localGroup] = useState(() => createLayoutGroup(config))
+
+  useDestroyOnUnmount(() => {
+    localGroup.destroy()
+  })
 
   const ref = useCallback(
     (element: HTMLElement | null) => {
-      const activeGroup = group ?? localGroupRef.current
+      const activeGroup = group ?? localGroup
 
       if (elementRef.current && activeGroup) {
         activeGroup.unregister(layoutId, elementRef.current)
@@ -168,13 +164,13 @@ export function useLayoutId(
         activeGroup.register(layoutId, element)
       }
     },
-    [layoutId, group]
+    [layoutId, group, localGroup]
   )
 
   const update = useCallback(() => {
-    const activeGroup = group ?? localGroupRef.current
-    activeGroup?.update()
-  }, [group])
+    const activeGroup = group ?? localGroup
+    activeGroup.update()
+  }, [group, localGroup])
 
   return { ref, update }
 }
@@ -219,6 +215,10 @@ export interface UseFlipReturn {
 export function useFlip(options: UseFlipOptions = {}): UseFlipReturn {
   const elementRef = useRef<HTMLElement | null>(null)
   const lastMeasurementRef = useRef<LayoutMeasurement | null>(null)
+  // Latest options without changing flip()'s identity (it is meant to be used
+  // as an effect dependency; inline options would re-run that effect each render)
+  const optionsRef = useRef(options)
+  optionsRef.current = options
 
   const ref = useCallback((element: HTMLElement | null) => {
     if (element) {
@@ -228,12 +228,23 @@ export function useFlip(options: UseFlipOptions = {}): UseFlipReturn {
   }, [])
 
   const flipFn = useCallback(async (mutate?: () => void) => {
-    if (!elementRef.current) return
+    const element = elementRef.current
+    if (!element) return
 
-    await flip(elementRef.current, mutate ?? (() => {}), options)
+    if (mutate) {
+      await flip(element, mutate, optionsRef.current)
+    } else {
+      // The layout already changed (e.g. flip() called from an effect after a
+      // re-render): animate from the last known box to the current one
+      const first = lastMeasurementRef.current ?? measureElement(element)
+      const last = measureElement(element)
+      await createFlip(element, first, last, optionsRef.current).play()
+    }
 
-    lastMeasurementRef.current = measureElement(elementRef.current)
-  }, [options])
+    if (elementRef.current) {
+      lastMeasurementRef.current = measureElement(elementRef.current)
+    }
+  }, [])
 
   const measure = useCallback(() => {
     if (!elementRef.current) return null
@@ -281,6 +292,8 @@ export function useAutoLayout(
   options: UseAutoLayoutOptions = {}
 ): UseAutoLayoutReturn {
   const autoLayoutRef = useRef<ReturnType<typeof createAutoLayout> | null>(null)
+  const optionsRef = useRef(options)
+  optionsRef.current = options
 
   const containerRef = useCallback((element: HTMLElement | null) => {
     if (autoLayoutRef.current) {
@@ -289,9 +302,14 @@ export function useAutoLayout(
     }
 
     if (element) {
-      autoLayoutRef.current = createAutoLayout(options)
+      // Observe the container this ref is attached to (not the whole document)
+      const currentOptions = optionsRef.current
+      autoLayoutRef.current = createAutoLayout({
+        ...currentOptions,
+        root: currentOptions.root ?? element,
+      })
     }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   const update = useCallback(() => {
     autoLayoutRef.current?.update()
@@ -318,19 +336,17 @@ export function LayoutGroupProvider({
   children,
   config,
 }: LayoutGroupProviderProps): React.ReactElement {
-  const layoutGroupRef = useRef<LayoutGroup | null>(null)
+  // Created during render so the context value is available to children on
+  // the first render (a ref filled in an effect never reached the Provider)
+  const [layoutGroup] = useState(() => createLayoutGroup(config))
 
-  useIsomorphicLayoutEffect(() => {
-    layoutGroupRef.current = createLayoutGroup(config)
-
-    return () => {
-      layoutGroupRef.current?.destroy()
-    }
-  }, [])
+  useDestroyOnUnmount(() => {
+    layoutGroup.destroy()
+  })
 
   return React.createElement(
     LayoutGroupContext.Provider,
-    { value: layoutGroupRef.current },
+    { value: layoutGroup },
     children
   )
 }
@@ -348,19 +364,17 @@ export interface SharedLayoutProviderProps {
 export function SharedLayoutProvider({
   children,
 }: SharedLayoutProviderProps): React.ReactElement {
-  const sharedContextRef = useRef<SharedLayoutContext | null>(null)
+  // Created during render so the context value is available to children on
+  // the first render (a ref filled in an effect never reached the Provider)
+  const [sharedContext] = useState(() => createSharedLayoutContext())
 
-  useIsomorphicLayoutEffect(() => {
-    sharedContextRef.current = createSharedLayoutContext()
-
-    return () => {
-      sharedContextRef.current?.destroy()
-    }
-  }, [])
+  useDestroyOnUnmount(() => {
+    sharedContext.destroy()
+  })
 
   return React.createElement(
     SharedLayoutContextReact.Provider,
-    { value: sharedContextRef.current },
+    { value: sharedContext },
     children
   )
 }

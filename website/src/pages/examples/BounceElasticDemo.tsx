@@ -3,72 +3,72 @@ import { Play, RotateCcw, Zap, Activity, Waves } from 'lucide-react'
 import { useBounce, useElastic, useGravity } from '@oxog/springkit/react'
 import { DemoPageLayout } from './DemoPageLayout'
 
-const CODE = `import { useState } from 'react'
-import { useBounce, useElastic, useGravity, useMotionValueState } from '@oxog/springkit/react'
+const CODE = `import { useBounce, useElastic, useGravity, useMotionValueState } from '@oxog/springkit/react'
 
-// useBounce - Creates bouncy, elastic animations
+// useBounce - A ball falling onto a floor
 function BounceDemo() {
-  const [active, setActive] = useState(false)
-
-  const { value, bounce } = useBounce({
-    bounciness: 0.6,       // How bouncy (0-1)
-    stiffness: 300,        // Spring stiffness
-  })
-
-  const y = useMotionValueState(value) ?? 0
-
-  const handleBounce = () => {
-    setActive(true)
-    bounce(100)  // Bounce with initial velocity
-    setTimeout(() => setActive(false), 1000)
-  }
-
-  return (
-    <div onClick={handleBounce}>
-      <div style={{ transform: \`translateY(\${y}px)\` }}>
-        Bouncy Ball
-      </div>
-    </div>
-  )
-}
-
-// useElastic - Creates elastic, stretchy animations
-function ElasticDemo() {
-  const { value, stretch, release } = useElastic({
-    elasticity: 0.8,       // How stretchy (0-1)
-    damping: 15,           // How quickly it settles
-  })
-
-  const scale = useMotionValueState(value) ?? 1
-
-  return (
-    <div
-      onMouseDown={() => stretch(0.7)}   // Compress
-      onMouseUp={() => release()}         // Spring back
-      style={{ transform: \`scale(\${scale})\` }}
-    >
-      Elastic Button
-    </div>
-  )
-}
-
-// useGravity - Simulates gravitational physics
-function GravityDemo() {
-  const { value, drop, throw: throwUp } = useGravity({
-    gravity: 980,          // Pixels per second squared
-    bounce: 0.7,           // Bounce coefficient
-    floor: 200,            // Floor position
+  const { value, drop, bounce, stop } = useBounce({
+    gravity: 0.5,       // Added to the velocity every frame
+    floor: 140,         // Ground level (px)
+    ceiling: 0,         // Top level (px)
+    restitution: 0.7,   // Bounciness (energy kept per bounce)
+    dampening: 0.02,    // Energy lost per frame
   })
 
   const y = useMotionValueState(value) ?? 0
 
   return (
     <div>
-      <div style={{ transform: \`translateY(\${y}px)\` }}>
-        Falling Object
-      </div>
-      <button onClick={() => drop()}>Drop</button>
-      <button onClick={() => throwUp(-500)}>Throw Up</button>
+      <div style={{ transform: \`translateY(\${y}px)\` }}>Bouncy Ball</div>
+      <button onClick={() => drop(0)}>Drop from the top</button>
+      <button onClick={() => bounce(-12)}>Kick upward</button>
+      <button onClick={stop}>Stop</button>
+    </div>
+  )
+}
+
+// useElastic - Rubber-band resistance with a spring back
+function ElasticDemo() {
+  const { value, stretch, release } = useElastic({
+    elasticity: 0.5,    // 0-1, higher = more stretch
+    maxStretch: 100,    // Maximum displacement
+    spring: { stiffness: 300, damping: 30 }, // Return animation
+  })
+
+  const offset = useMotionValueState(value) ?? 0
+  const scale = Math.max(0.5, 1 + offset / 100)
+
+  return (
+    <button
+      onMouseDown={() => stretch(-30)}  // Negative = compress
+      onMouseUp={() => release()}       // Spring back to 0
+      style={{ transform: \`scale(\${scale})\` }}
+    >
+      Elastic Button
+    </button>
+  )
+}
+
+// useGravity - 2D gravity with bouncing bounds
+function GravityDemo() {
+  const { y, launch, setPosition, stop } = useGravity({
+    gravity: { x: 0, y: 0.5 },
+    bounds: { left: 0, right: 0, top: 0, bottom: 140 },
+    bounciness: 0.65,
+  })
+
+  const top = useMotionValueState(y) ?? 0
+
+  return (
+    <div>
+      <div style={{ transform: \`translateY(\${top}px)\` }}>Falling Object</div>
+      <button onClick={() => { setPosition({ x: 0, y: 0 }); launch({ x: 0, y: 0.1 }) }}>
+        Drop
+      </button>
+      <button onClick={() => { setPosition({ x: 0, y: 140 }); launch({ x: 0, y: -15 }) }}>
+        Throw Up
+      </button>
+      <button onClick={stop}>Stop</button>
     </div>
   )
 }`

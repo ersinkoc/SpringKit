@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": ".",
+    "types": ["vitest/globals", "@testing-library/jest-dom"],
+    "paths": {
+      "@oxog/springkit": ["./src/index.ts"],
+      "@oxog/springkit/react": ["./src/adapters/react/index.ts"],
+      "@oxog/springkit/testing": ["./src/testing/index.ts"]
+    }
+  },
+  "include": ["src/**/*", "tests/**/*"],
+  "exclude": ["node_modules", "dist", "website"]
+}

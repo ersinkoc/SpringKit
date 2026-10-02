@@ -23,6 +23,23 @@ import { createSpringValue } from './spring-value.js'
 import type { SpringConfig } from '../types.js'
 
 export type MotionValueSubscriber<T> = (value: T) => void
+
+/**
+ * Internal storage type for subscribers. Method syntax keeps the parameter
+ * bivariant so this private field doesn't make MotionValue<T> invariant in T
+ * (which made e.g. MotionValue<number> unassignable to MotionValue<unknown>).
+ */
+type StoredSubscriber<T> = { bivarianceHack(value: T): void }['bivarianceHack']
+/**
+ * MotionValue events:
+ * - `change`: the value changed
+ * - `animationStart`: an animated `set()` started (or retargeted) an animation
+ * - `animationComplete`: the animation came to rest at its target
+ * - `animationCancel`: the animation was interrupted by `stop()`, `jump()`,
+ *   `set(value, false)` or `destroy()`
+ * - `animationEnd`: the animation ended for any reason (fires right after
+ *   `animationComplete` or `animationCancel`)
+ */
 export type MotionValueEvent = 'change' | 'animationStart' | 'animationEnd' | 'animationComplete' | 'animationCancel'
 
 export interface MotionValueOptions {
@@ -42,7 +59,7 @@ export interface MotionValueOptions {
 export class MotionValue<T = number> {
   private _value: T
   private _velocity: number = 0
-  private _subscribers: Set<MotionValueSubscriber<T>> = new Set()
+  private _subscribers: Set<StoredSubscriber<T>> = new Set()
   private _eventListeners: Map<MotionValueEvent, Set<() => void>> = new Map()
   private _springValue: ReturnType<typeof createSpringValue> | null = null
   private _springConfig: SpringConfig
@@ -115,7 +132,6 @@ export class MotionValue<T = number> {
       this._springValue.set(newValue as number)
 
       // Check for animation end with proper cleanup
-      const targetValue = newValue as number
       const checkEnd = () => {
         // Bail out if destroyed during animation
         if (this._destroyed) {
@@ -123,16 +139,15 @@ export class MotionValue<T = number> {
           return
         }
 
-        const velocity = Math.abs(this._springValue?.getVelocity() ?? 0)
-        const currentValue = this._springValue?.get() ?? 0
-        const isAtRest = velocity < 0.01
-        // Also check if we're close to target to handle edge case
-        const isNearTarget = Math.abs(currentValue - targetValue) < 0.01
+        // Ask the spring itself: velocity/position heuristics misfire when an
+        // underdamped spring momentarily has ~0 velocity (turning point, first
+        // frame) or passes through the target while still oscillating.
+        const isSettled = !(this._springValue?.isAnimating() ?? false)
 
-        if (isAtRest || isNearTarget) {
+        if (isSettled) {
           this._isAnimating = false
           this._checkEndRafId = null
-          this._emit('animationEnd')
+          this._emitEnd('animationComplete')
         } else if (this._isAnimating) {
           this._checkEndRafId = requestAnimationFrame(checkEnd)
         } else {
@@ -141,9 +156,20 @@ export class MotionValue<T = number> {
       }
       this._checkEndRafId = requestAnimationFrame(checkEnd)
     } else {
+      const wasAnimating = this._isAnimating
+      // Keep the internal spring in sync (and stop any in-flight animation),
+      // otherwise the next animated set() would start from a stale value and
+      // the running spring would keep overwriting this value.
+      if (typeof newValue === 'number' && this._springValue) {
+        this._springValue.jump(newValue as number)
+      }
+      this._isAnimating = false
       this._value = newValue
       this._velocity = 0
       this._notify()
+      if (wasAnimating) {
+        this._emitEnd('animationCancel')
+      }
     }
   }
 
@@ -152,6 +178,14 @@ export class MotionValue<T = number> {
    */
   jump(newValue: T): void {
     if (this._destroyed) return
+
+    // The pending end check would otherwise report the interrupted animation
+    // as ended one frame later
+    if (this._checkEndRafId !== null) {
+      cancelAnimationFrame(this._checkEndRafId)
+      this._checkEndRafId = null
+    }
+    const wasAnimating = this._isAnimating
 
     this._value = newValue
     this._velocity = 0
@@ -162,6 +196,9 @@ export class MotionValue<T = number> {
 
     this._isAnimating = false
     this._notify()
+    if (wasAnimating) {
+      this._emitEnd('animationCancel')
+    }
   }
 
   /**
@@ -178,8 +215,12 @@ export class MotionValue<T = number> {
     if (this._springValue) {
       this._springValue.stop()
     }
+    const wasAnimating = this._isAnimating
     this._isAnimating = false
-    this._emit('animationEnd')
+    // Only signal the end of an animation that was actually running
+    if (wasAnimating) {
+      this._emitEnd('animationCancel')
+    }
   }
 
   /**
@@ -227,12 +268,19 @@ export class MotionValue<T = number> {
    * Destroy and cleanup
    */
   destroy(): void {
+    if (this._destroyed) return
     this._destroyed = true
 
     // Cancel pending RAF callback to prevent memory leak
     if (this._checkEndRafId !== null) {
       cancelAnimationFrame(this._checkEndRafId)
       this._checkEndRafId = null
+    }
+
+    // Let listeners know an in-flight animation will never complete
+    if (this._isAnimating) {
+      this._isAnimating = false
+      this._emitEnd('animationCancel')
     }
 
     this._subscribers.clear()
@@ -253,6 +301,15 @@ export class MotionValue<T = number> {
       }
     })
     this._emit('change')
+  }
+
+  /**
+   * Signal the end of an animation: `reason` (animationComplete or
+   * animationCancel) followed by `animationEnd` (kept for compatibility)
+   */
+  private _emitEnd(reason: 'animationComplete' | 'animationCancel'): void {
+    this._emit(reason)
+    this._emit('animationEnd')
   }
 
   private _emit(event: MotionValueEvent): void {

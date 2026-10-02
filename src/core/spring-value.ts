@@ -49,9 +49,9 @@ class SpringValueImpl implements SpringValue {
     this.value = validateAnimationValue(initial, 'createSpringValue.initial')
     this.config = { ...defaultConfig, ...config }
 
-    this.finishedPromise = new Promise((resolve) => {
-      this.resolveComplete = resolve
-    })
+    // Nothing is animating yet: `finished` must not hang forever when
+    // awaited before (or without) a set() call
+    this.finishedPromise = Promise.resolve()
   }
 
   get(): number {
@@ -68,6 +68,12 @@ class SpringValueImpl implements SpringValue {
 
     // Validate target value
     const validTo = validateAnimationValue(to, 'SpringValue.set')
+
+    // Carry over the current velocity when interrupting a running animation
+    // so retargeting mid-flight is smooth instead of stopping dead
+    const carriedVelocity = this.currentAnimation?.isAnimating()
+      ? this.currentAnimation.getVelocity()
+      : undefined
 
     // Cancel existing animation and resolve previous promise
     if (this.currentAnimation) {
@@ -89,6 +95,9 @@ class SpringValueImpl implements SpringValue {
 
     // Create new animation
     const mergedConfig = { ...this.config, ...config }
+    if (config.velocity === undefined && carriedVelocity !== undefined) {
+      mergedConfig.velocity = carriedVelocity
+    }
     const originalOnUpdate = mergedConfig.onUpdate
     const originalOnComplete = mergedConfig.onComplete
 
@@ -124,6 +133,8 @@ class SpringValueImpl implements SpringValue {
     if (this.currentAnimation) {
       this.currentAnimation.destroy()
       this.currentAnimation = null
+      // The interrupted animation will never complete: settle its promise
+      this.resolveComplete?.()
     }
     this.value = validTo
     this.notify()

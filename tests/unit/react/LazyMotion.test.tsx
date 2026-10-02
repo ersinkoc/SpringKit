@@ -268,7 +268,7 @@ describe('MotionFeatureGuard', () => {
   })
 
   it('should render nothing when feature is not available and no fallback', () => {
-    const { container } = render(
+    render(
       <LazyMotion features={domMin}>
         <MotionFeatureGuard feature="layout">
           <div data-testid="content">Layout available</div>

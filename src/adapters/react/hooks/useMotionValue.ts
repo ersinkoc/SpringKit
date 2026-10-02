@@ -1,5 +1,6 @@
 import { useRef, useEffect, useState } from 'react'
 import { MotionValue, createMotionValue, type MotionValueOptions } from '@oxog/springkit'
+import { useDestroyOnUnmount } from './useDestroyOnUnmount.js'
 
 /**
  * Create a MotionValue that persists across renders
@@ -40,12 +41,10 @@ export function useMotionValue<T = number>(
     motionValueRef.current = createMotionValue(initialValue, options)
   }
 
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      motionValueRef.current?.destroy()
-    }
-  }, [])
+  // Cleanup on unmount (deferred so StrictMode's simulated remount keeps it alive)
+  useDestroyOnUnmount(() => {
+    motionValueRef.current?.destroy()
+  })
 
   return motionValueRef.current
 }
@@ -154,18 +153,16 @@ export function useMotionValues<T extends Record<string, number>>(
     motionValuesRef.current = values as ResultType
   }
 
-  useEffect(() => {
-    return () => {
-      if (motionValuesRef.current) {
-        const current = motionValuesRef.current
-        for (const key in current) {
-          if (Object.prototype.hasOwnProperty.call(current, key)) {
-            current[key].destroy()
-          }
+  useDestroyOnUnmount(() => {
+    if (motionValuesRef.current) {
+      const current = motionValuesRef.current
+      for (const key in current) {
+        if (Object.prototype.hasOwnProperty.call(current, key)) {
+          current[key].destroy()
         }
       }
     }
-  }, [])
+  })
 
   // At this point, motionValuesRef.current is guaranteed to be non-null
   // because we recreate it in the if block above when it's null

@@ -1,6 +1,7 @@
 import * as React from 'react'
 import { useMemo, useCallback, useRef, useEffect } from 'react'
 import { PresenceContext, type PresenceContextValue } from '../context/PresenceContext.js'
+import { PopChild } from './PopChild.js'
 
 /** Default timeout for exit animations (10 seconds) */
 export const DEFAULT_EXIT_TIMEOUT = 10000
@@ -18,6 +19,10 @@ export interface PresenceChildProps {
   custom?: unknown
   /** Maximum time to wait for exit animation before forcing removal (ms). Set to 0 to disable. Default: 10000 */
   exitTimeout?: number
+  /** Set to false to tell children to skip their initial (mount) animation */
+  initial?: boolean
+  /** Pop the child out of the layout flow while it exits (AnimatePresence mode="popLayout") */
+  popLayout?: boolean
 }
 
 /**
@@ -33,65 +38,68 @@ export function PresenceChild({
   onExitComplete,
   custom,
   exitTimeout = DEFAULT_EXIT_TIMEOUT,
+  initial,
+  popLayout = false,
 }: PresenceChildProps) {
   const presenceIdRef = useRef(id)
+  const onExitCompleteRef = useRef(onExitComplete)
 
-  // Update ref on id change (shouldn't happen but be safe)
+  // Keep refs current (id shouldn't change, but be safe)
   presenceIdRef.current = id
+  onExitCompleteRef.current = onExitComplete
 
-  // Memoized callback for safeToRemove
+  // Stable safeToRemove: an unstable onExitComplete prop must not re-create the
+  // context value or reset the fallback exit timer on every render
   const safeToRemove = useCallback(() => {
-    onExitComplete(presenceIdRef.current)
-  }, [onExitComplete])
+    onExitCompleteRef.current(presenceIdRef.current)
+  }, [])
+
+  // Whether anything in the subtree has read `safeToRemove` (usePresence(),
+  // Animated, or a direct PresenceContext consumer). Only such children can
+  // animate out; anything else is removed as soon as it starts exiting.
+  const hasExitHandlerRef = useRef(false)
 
   // Create stable context value
   const contextValue = useMemo<PresenceContextValue>(
     () => ({
       id,
       isPresent,
-      safeToRemove,
+      get safeToRemove() {
+        hasExitHandlerRef.current = true
+        return safeToRemove
+      },
       custom,
+      initial,
     }),
-    [id, isPresent, safeToRemove, custom]
+    [id, isPresent, safeToRemove, custom, initial]
   )
 
-  // Auto-call safeToRemove after a timeout if exit animation doesn't complete
-  // This prevents "zombie" children from staying in the tree forever
-  const hasExitedRef = useRef(false)
-  const hasCalledRemoveRef = useRef(false)
-
+  // Auto-call safeToRemove after a timeout if exit animation doesn't complete.
+  // This prevents "zombie" children from staying in the tree forever.
+  // The timer is (re)armed every time this effect runs while exiting, so it also
+  // survives React StrictMode's mount/unmount/mount effect cycle.
   useEffect(() => {
-    // Reset when becoming present again
-    if (isPresent) {
-      hasExitedRef.current = false
-      hasCalledRemoveRef.current = false
+    if (isPresent) return
+
+    // Nothing will ever call safeToRemove (e.g. a plain DOM child): remove it
+    // now instead of after the fallback timeout. Consumers re-render with the
+    // new context value before this effect runs, so they have registered.
+    if (!hasExitHandlerRef.current) {
+      safeToRemove()
       return
     }
 
-    // Already processed exit
-    if (hasExitedRef.current) return
-
-    hasExitedRef.current = true
-
-    // If exitTimeout is 0 or negative, don't set a timeout (rely on animation to call safeToRemove)
+    // If exitTimeout is 0 or negative, don't set a timeout
+    // (rely on the exit animation to call safeToRemove)
     if (exitTimeout <= 0) return
 
-    // Set a configurable timeout for exit animations
-    // If the animation hasn't called safeToRemove by then, force removal
-    const timeout = setTimeout(() => {
-      // Only call if not already called
-      if (!hasCalledRemoveRef.current) {
-        hasCalledRemoveRef.current = true
-        safeToRemove()
-      }
-    }, exitTimeout)
-
+    const timeout = setTimeout(safeToRemove, exitTimeout)
     return () => clearTimeout(timeout)
   }, [isPresent, safeToRemove, exitTimeout])
 
   return (
     <PresenceContext.Provider value={contextValue}>
-      {children}
+      {popLayout ? <PopChild isPresent={isPresent}>{children}</PopChild> : children}
     </PresenceContext.Provider>
   )
 }

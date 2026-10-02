@@ -249,52 +249,79 @@ export function createFeeling(feeling: 'snappy' | 'smooth' | 'bouncy' | 'heavy' 
 /**
  * Adjust a preset for speed
  * @param preset - Base preset config
- * @param speed - Speed multiplier (0.5 = half speed, 2 = double speed)
+ * @param speed - Speed multiplier (0.5 = half speed, 2 = double speed).
+ *   Zero, negative or non-finite values are ignored (treated as 1).
  */
 export function adjustSpeed(preset: SpringConfig, speed: number): SpringConfig {
-  const stiffness = (preset.stiffness ?? 100) * speed
-  const damping = (preset.damping ?? 10) * Math.sqrt(speed)
+  // sqrt() of a negative speed is NaN, and 0 would remove the spring force
+  const safeSpeed = Number.isFinite(speed) && speed > 0 ? speed : 1
+  const stiffness = (preset.stiffness ?? 100) * safeSpeed
+  const damping = (preset.damping ?? 10) * Math.sqrt(safeSpeed)
   return { ...preset, stiffness, damping }
 }
 
 /**
  * Adjust a preset for bounciness
  * @param preset - Base preset config
- * @param bounce - Bounce factor (0 = no bounce, 1 = very bouncy)
+ * @param bounce - Bounce factor (0 = no bounce, 1 = very bouncy). Non-finite
+ *   values are treated as 0.
  */
 export function adjustBounce(preset: SpringConfig, bounce: number): SpringConfig {
   const minDamping = 5
   const maxDamping = 40
-  const damping = maxDamping - (bounce * (maxDamping - minDamping))
+  const safeBounce = Number.isFinite(bounce) ? bounce : 0
+  const damping = maxDamping - (safeBounce * (maxDamping - minDamping))
   return { ...preset, damping: Math.max(minDamping, Math.min(maxDamping, damping)) }
 }
 
 /**
- * Create a spring config that settles in approximately the given duration
- * @param ms - Approximate settling time in milliseconds
- * @returns Spring config
+ * Spring config from perceptual parameters (the model used by SwiftUI and
+ * Jetpack Compose): `T` is the perceived duration, `bounce` maps to the
+ * damping ratio. stiffness = (2π/T)²·m, damping = 4π·ζ·m/T with
+ * ζ = 1 - bounce (bounce >= 0) or 1 / (1 + bounce) (bounce < 0).
+ *
+ * @param durationMs - Perceived duration in ms (invalid values fall back to 500)
+ * @param bounce - Bounciness in [-1, 1] (clamped; non-finite values become 0)
+ * @param mass - Mass (default 1)
  */
-export function configFromDuration(ms: number): SpringConfig {
-  if (ms < 300) {
-    return { stiffness: 170, damping: 26 }
-  }
-  if (ms < 500) {
-    return { stiffness: 100, damping: 20 }
-  }
-  return { stiffness: 80, damping: 15 }
+export function perceptualSpringConfig(
+  durationMs: number,
+  bounce: number = 0,
+  mass: number = 1
+): SpringConfig {
+  const seconds =
+    (Number.isFinite(durationMs) && durationMs > 0 ? durationMs : 500) / 1000
+  const safeBounce = Math.min(1, Math.max(-1, Number.isFinite(bounce) ? bounce : 0))
+  const safeMass = Number.isFinite(mass) && mass > 0 ? mass : 1
+
+  const zeta = safeBounce >= 0 ? 1 - safeBounce : 1 / Math.max(1e-3, 1 + safeBounce)
+  const stiffness = Math.pow((2 * Math.PI) / seconds, 2) * safeMass
+  const damping = (4 * Math.PI * zeta * safeMass) / seconds
+  return { stiffness, damping, mass: safeMass }
 }
 
 /**
- * Create a spring config with specific bounce amount
- * @param bounce - Bounce factor (0 = no bounce, 0.5 = 50% overshoot)
- * @returns Spring config
+ * Create a critically damped spring config (no overshoot) whose motion is
+ * perceptually complete after `ms` milliseconds (~98% of the distance is
+ * covered at `ms`; the spring keeps settling slightly longer).
+ *
+ * @param ms - Perceived duration in milliseconds (invalid values fall back to 500)
+ * @returns Spring config `{ stiffness, damping, mass: 1 }`
+ */
+export function configFromDuration(ms: number): SpringConfig {
+  return perceptualSpringConfig(ms, 0)
+}
+
+/**
+ * Create a spring config with a specific bounce and a perceived duration of
+ * 500ms.
+ *
+ * @param bounce - Bounciness from -1 to 1: 0 = critically damped (no
+ *   overshoot), 0.3 = noticeable bounce, 1 = undamped (never settles).
+ *   Negative values are overdamped (slower, heavier settling). The damping
+ *   ratio is `1 - bounce` for bounce >= 0 and `1 / (1 + bounce)` below 0.
+ * @returns Spring config `{ stiffness, damping, mass: 1 }`
  */
 export function configFromBounce(bounce: number): SpringConfig {
-  if (bounce <= 0) {
-    return { stiffness: 170, damping: 26 }
-  }
-  if (bounce <= 0.25) {
-    return { stiffness: 200, damping: 12 }
-  }
-  return { stiffness: 200, damping: 8 }
+  return perceptualSpringConfig(500, bounce)
 }

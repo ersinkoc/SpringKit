@@ -7,7 +7,7 @@ export type { SpringValue } from './core/spring-value.js'
 export type { SpringGroup } from './core/spring-group.js'
 
 // Animation types
-export type { StaggerOptions } from './animation/sequence.js'
+export type { StaggerOptions, FinishableAnimation, StartableAnimation } from './animation/sequence.js'
 export type { Trail, TrailConfig } from './animation/trail.js'
 export type { DecayAnimation, DecayConfig } from './animation/decay.js'
 
@@ -20,4 +20,4 @@ export type { DragSpring, DragSpringConfig } from './gesture/drag.js'
 export type { ScrollSpring, ScrollSpringConfig } from './gesture/scroll.js'
 
 // Utility types
-export type { RGB, HSL } from './utils/color.js'
+export type { RGB, RGBA, HSL } from './utils/color.js'

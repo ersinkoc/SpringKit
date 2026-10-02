@@ -1,10 +1,9 @@
-import { expect, beforeEach, vi } from 'vitest'
+import { beforeEach } from 'vitest'
 import { cleanup } from '@testing-library/react'
 import '@testing-library/jest-dom'
 
 // Mock IntersectionObserver
 if (typeof global.IntersectionObserver === 'undefined') {
-  // @ts-expect-error - Mocking missing API
   global.IntersectionObserver = class IntersectionObserver {
     readonly root: Element | null = null
     readonly rootMargin: string = '0px'
@@ -36,7 +35,6 @@ if (typeof global.IntersectionObserver === 'undefined') {
 
 // Mock ResizeObserver
 if (typeof global.ResizeObserver === 'undefined') {
-  // @ts-expect-error - Mocking missing API
   global.ResizeObserver = class ResizeObserver {
     private callback: ResizeObserverCallback
 

@@ -115,7 +115,7 @@ function ApiIndex() {
           {[
             { fn: 'createMotionValue(initial, options?)', desc: 'Create a MotionValue instance' },
             { fn: 'transformValue(source, transform)', desc: 'Create a derived MotionValue' },
-            { fn: 'motionMapRange(source, input, output)', desc: 'Map MotionValue to range' },
+            { fn: 'transformMapRange(source, input, output, options?)', desc: 'Map MotionValue to range (exported as mapRange from @oxog/springkit/react)' },
           ].map((item) => (
             <div key={item.fn} className="p-3 rounded-lg bg-white/5 border border-white/10">
               <code className="font-mono text-sm text-orange-300 block mb-1">{item.fn}</code>
@@ -443,6 +443,7 @@ function SpringApi() {
             { method: 'resume()', desc: 'Resume paused animation' },
             { method: 'reverse()', desc: 'Reverse direction' },
             { method: 'set(to)', desc: 'Update target value' },
+            { method: 'setWithVelocity(to, velocity?)', desc: 'Retarget, keeping (or overriding) the current velocity' },
             { method: 'getValue()', desc: 'Get current value' },
             { method: 'getVelocity()', desc: 'Get current velocity' },
             { method: 'isAnimating()', desc: 'Check if running' },
@@ -522,6 +523,8 @@ function SpringValueApi() {
             { method: 'getVelocity()', desc: 'Get current velocity' },
             { method: 'set(to, config?)', desc: 'Animate to value' },
             { method: 'jump(to)', desc: 'Set immediately' },
+            { method: 'stop()', desc: 'Stop at the current position' },
+            { method: 'setConfig(config)', desc: 'Update the spring configuration' },
             { method: 'subscribe(callback)', desc: 'Listen to changes' },
             { method: 'isAnimating()', desc: 'Check if animating' },
             { method: 'finished', desc: 'Promise for completion' },
@@ -601,6 +604,7 @@ function SpringGroupApi() {
             { method: 'getValue(key)', desc: 'Get single value' },
             { method: 'set(values, config?)', desc: 'Animate to values' },
             { method: 'jump(values)', desc: 'Set immediately' },
+            { method: 'stop()', desc: 'Stop all values at their current position' },
             { method: 'subscribe(callback)', desc: 'Listen to changes' },
             { method: 'isAnimating()', desc: 'Check if animating' },
             { method: 'finished', desc: 'Promise for all complete' },
@@ -818,6 +822,8 @@ console.log(x.isAnimating()) // Is animation running?
 
 // Listen to events
 x.on('animationStart', () => console.log('Started!'))
+x.on('animationComplete', () => console.log('Reached the target'))
+x.on('animationCancel', () => console.log('Interrupted'))
 x.on('animationEnd', () => console.log('Ended!'))
 x.on('change', () => console.log('Changed!'))
 
@@ -842,29 +848,30 @@ const color = transformValue(x, v =>
 )
 
 // Derived values auto-update when source changes
-x.set(100)
+x.jump(100) // set() would spring there over time
 console.log(opacity.get()) // 0
 console.log(rotate.get())  // 50`} />
           </CardContent>
         </Card>
       </DocSection>
 
-      <DocSection title="motionMapRange()">
+      <DocSection title="transformMapRange()">
         <Card>
           <CardContent className="pt-6">
-            <CodeBlock code={`import { createMotionValue, motionMapRange } from '@oxog/springkit'
+            <CodeBlock code={`import { createMotionValue, transformMapRange } from '@oxog/springkit'
+// In React code: import { mapRange } from '@oxog/springkit/react'
 
 const scrollY = createMotionValue(0)
 
 // Map scroll (0-500) to opacity (1-0)
-const opacity = motionMapRange(
+const opacity = transformMapRange(
   scrollY,
   [0, 500],   // input range
   [1, 0]      // output range
 )
 
 // With clamping (no extrapolation)
-const progress = motionMapRange(
+const progress = transformMapRange(
   scrollY,
   [0, 500],
   [0, 1],
@@ -938,6 +945,7 @@ function TypesApi() {
   resume(): void
   reverse(): void
   set(to: number): void
+  setWithVelocity(to: number, velocity?: number): void
   isAnimating(): boolean
   isPaused(): boolean
   isComplete(): boolean
@@ -958,6 +966,8 @@ function TypesApi() {
   getVelocity(): number
   set(to: number, config?: SpringConfig): void
   jump(to: number): void
+  stop(): void
+  setConfig(config: Partial<SpringConfig>): void
   subscribe(callback: (value: number) => void): () => void
   isAnimating(): boolean
   finished: Promise<void>

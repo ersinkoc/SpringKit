@@ -131,7 +131,7 @@ export function validateDecayConfig(config: {
   if (deceleration <= 0 || deceleration >= 1) {
     warnOnce(
       `Deceleration should be between 0 and 1 (exclusive). Got ${deceleration}. ` +
-      `Typical values are 0.99-0.999.`
+      `Typical values are 0.99 (fast) to 0.998 (normal), applied per millisecond.`
     )
   }
 }

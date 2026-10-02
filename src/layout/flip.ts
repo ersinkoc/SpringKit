@@ -25,6 +25,11 @@ export interface FlipOptions {
   onComplete?: () => void
   /** Callback for value updates */
   onUpdate?: (progress: number) => void
+  /**
+   * Counter-scale the element's (px) border radius while it is scaled, so
+   * rounded corners don't stretch into ellipses (default false)
+   */
+  correctBorderRadius?: boolean
 }
 
 /**
@@ -52,6 +57,37 @@ export function measureElement(element: HTMLElement): MeasuredBox {
     width: rect.width,
     height: rect.height,
   }
+}
+
+/**
+ * Resolve a CSS transform-origin value to pixels relative to the element's
+ * top-left corner. Supports lengths in px, percentages and keywords.
+ */
+function resolveTransformOrigin(value: string, width: number, height: number): { x: number; y: number } {
+  const keywords: Record<string, { axis: 'x' | 'y' | 'any'; ratio: number }> = {
+    left: { axis: 'x', ratio: 0 },
+    right: { axis: 'x', ratio: 1 },
+    top: { axis: 'y', ratio: 0 },
+    bottom: { axis: 'y', ratio: 1 },
+    center: { axis: 'any', ratio: 0.5 },
+  }
+  const tokens = value.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const a = tokens[0] ?? '50%'
+  const b = tokens[1] ?? 'center'
+  // Keyword order may be swapped ("top left"); a lone vertical keyword sets y
+  const swapped = keywords[a]?.axis === 'y' || keywords[b]?.axis === 'x'
+  const first = swapped ? b : a
+  const second = swapped ? a : b
+
+  const resolve = (token: string, size: number): number => {
+    const keyword = keywords[token]
+    if (keyword) return keyword.ratio * size
+    const number = parseFloat(token)
+    if (!Number.isFinite(number)) return size / 2
+    return token.endsWith('%') ? (number / 100) * size : number
+  }
+
+  return { x: resolve(first, width), y: resolve(second, height) }
 }
 
 /**
@@ -101,6 +137,7 @@ export function createFlip(
     size = true,
     onComplete,
     onUpdate,
+    correctBorderRadius = false,
   } = options
 
   // Calculate the inversion (how much to transform to get back to "first")
@@ -119,13 +156,38 @@ export function createFlip(
 
   const spring = createSpringValue(0, config)
 
-  // Store original transform
+  // Store original styles
   const originalTransform = element.style.transform
   const originalTransformOrigin = element.style.transformOrigin
+  const originalBorderRadius = element.style.borderRadius
 
-  // Set transform origin to top-left for size animations
-  if (size) {
-    element.style.transformOrigin = '0 0'
+  const isScaling = size && (deltaWidth !== 1 || deltaHeight !== 1)
+
+  // The element keeps its own transform-origin (changing it would alter how an
+  // existing rotate/scale renders). The scale is compensated with a translation
+  // instead, so the invert still maps the "last" box onto the "first" box.
+  let origin = { x: 0, y: 0 }
+  let borderRadius = 0
+  if (isScaling) {
+    let computedOrigin = ''
+    let computedRadius = ''
+    try {
+      const styles = getComputedStyle(element)
+      computedOrigin = styles.transformOrigin
+      computedRadius = styles.borderTopLeftRadius || styles.borderRadius
+    } catch {
+      // Not attached / no computed styles available
+    }
+    origin = resolveTransformOrigin(
+      computedOrigin || originalTransformOrigin || '50% 50%',
+      element.offsetWidth || last.width,
+      element.offsetHeight || last.height
+    )
+    const radiusSource = computedRadius || originalBorderRadius
+    // Only px radii can be corrected (percentages scale with the box anyway)
+    if (correctBorderRadius && !radiusSource.includes('%')) {
+      borderRadius = parseFloat(radiusSource) || 0
+    }
   }
 
   const applyTransform = (t: number) => {
@@ -133,15 +195,37 @@ export function createFlip(
     const invertedT = 1 - t
 
     const transforms: string[] = []
+    const scaleX = isScaling ? 1 + (deltaWidth - 1) * invertedT : 1
+    const scaleY = isScaling ? 1 + (deltaHeight - 1) * invertedT : 1
 
     if (position) {
       transforms.push(`translate(${deltaX * invertedT}px, ${deltaY * invertedT}px)`)
     }
 
-    if (size && (deltaWidth !== 1 || deltaHeight !== 1)) {
-      const scaleX = 1 + (deltaWidth - 1) * invertedT
-      const scaleY = 1 + (deltaHeight - 1) * invertedT
+    if (isScaling) {
+      // Scale around the element's top-left corner whatever its
+      // transform-origin is: translate(-origin) scale() translate(origin)
+      // cancels the origin the browser applies around the whole transform
+      const hasOrigin = origin.x !== 0 || origin.y !== 0
+      if (hasOrigin) {
+        transforms.push(`translate(${-origin.x}px, ${-origin.y}px)`)
+      }
       transforms.push(`scale(${scaleX}, ${scaleY})`)
+      if (hasOrigin) {
+        transforms.push(`translate(${origin.x}px, ${origin.y}px)`)
+      }
+
+      if (borderRadius > 0) {
+        const radiusX = scaleX === 0 ? 0 : borderRadius / scaleX
+        const radiusY = scaleY === 0 ? 0 : borderRadius / scaleY
+        element.style.borderRadius = radiusX === radiusY ? `${radiusX}px` : `${radiusX}px / ${radiusY}px`
+      }
+    }
+
+    // Keep the element's own transform (e.g. rotate) - the FLIP offset is
+    // applied on top of it in screen space instead of replacing it
+    if (originalTransform && originalTransform !== 'none') {
+      transforms.push(originalTransform)
     }
 
     element.style.transform = transforms.length > 0 ? transforms.join(' ') : ''
@@ -159,6 +243,9 @@ export function createFlip(
     // Restore original styles
     element.style.transform = originalTransform
     element.style.transformOrigin = originalTransformOrigin
+    if (borderRadius > 0) {
+      element.style.borderRadius = originalBorderRadius
+    }
   }
 
   return {

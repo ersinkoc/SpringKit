@@ -105,6 +105,21 @@ describe('SpringText', () => {
 
   describe('callbacks', () => {
     it('should call onComplete when animation finishes', () => {
+      // Fake the animation clock too, so the spring physics actually advance
+      // while timers run (with a real performance.now() no time passes)
+      vi.useRealTimers()
+      vi.useFakeTimers({
+        toFake: [
+          'setTimeout',
+          'clearTimeout',
+          'setInterval',
+          'clearInterval',
+          'requestAnimationFrame',
+          'cancelAnimationFrame',
+          'performance',
+          'Date',
+        ],
+      })
       const onComplete = vi.fn()
       render(
         <SpringText stagger={10} onComplete={onComplete}>

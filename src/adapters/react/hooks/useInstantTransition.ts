@@ -1,4 +1,4 @@
-import { useCallback, useRef, useTransition, startTransition } from 'react'
+import { useCallback, useRef, useTransition } from 'react'
 
 /**
  * Options for useInstantTransition
@@ -64,15 +64,15 @@ export function useInstantTransition(): [
   startTransition: (callback: () => void) => void,
   isPending: boolean
 ] {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const [isPending, _setIsPending] = useTransition()
+  // Use the startTransition bound to this hook so `isPending` reflects it
+  // (the global startTransition never updates useTransition's isPending)
+  const [isPending, startTransition] = useTransition()
 
   const startInstantTransition = useCallback((callback: () => void) => {
-    // Use React's startTransition for concurrent mode compatibility
     startTransition(() => {
       callback()
     })
-  }, [])
+  }, [startTransition])
 
   return [startInstantTransition, isPending]
 }

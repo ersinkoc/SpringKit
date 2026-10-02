@@ -1,6 +1,10 @@
 import * as React from 'react'
-import { createContext, useContext, useMemo } from 'react'
+import { createContext, useContext, useMemo, useState, useEffect } from 'react'
 import type { SpringConfig } from '@oxog/springkit'
+import { useStableSpringConfig } from '../utils/config.js'
+
+const EMPTY_CONFIG: SpringConfig = {}
+const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)'
 
 /**
  * Reduced motion preference
@@ -13,9 +17,9 @@ export type ReducedMotionMode = 'user' | 'always' | 'never'
 export interface MotionConfigProps {
   /** Default spring configuration for all children */
   config?: SpringConfig
-  /** How to handle reduced motion preference */
+  /** How to handle reduced motion preference (inherits from a parent MotionConfig, default 'user') */
   reducedMotion?: ReducedMotionMode
-  /** Whether to skip initial animations */
+  /** Whether to skip initial animations (inherits from a parent MotionConfig, default true) */
   initial?: boolean
   /** Children components */
   children: React.ReactNode
@@ -55,7 +59,33 @@ export function useMotionConfig(): MotionContextValue {
  */
 function checkReducedMotion(): boolean {
   if (typeof window === 'undefined') return false
-  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
+  return window.matchMedia?.(REDUCED_MOTION_QUERY)?.matches ?? false
+}
+
+/**
+ * Track the user's reduced motion preference, updating when it changes
+ */
+function usePrefersReducedMotion(enabled: boolean): boolean {
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState(checkReducedMotion)
+
+  useEffect(() => {
+    if (!enabled || typeof window === 'undefined' || !window.matchMedia) return
+
+    const mediaQuery = window.matchMedia(REDUCED_MOTION_QUERY)
+    if (!mediaQuery) return
+    const update = () => setPrefersReducedMotion(mediaQuery.matches)
+    update()
+
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', update)
+      return () => mediaQuery.removeEventListener('change', update)
+    }
+    // Safari < 14
+    mediaQuery.addListener?.(update)
+    return () => mediaQuery.removeListener?.(update)
+  }, [enabled])
+
+  return prefersReducedMotion
 }
 
 /**
@@ -94,12 +124,18 @@ function checkReducedMotion(): boolean {
  * ```
  */
 export function MotionConfig({
-  config = {},
-  reducedMotion = 'user',
-  initial = true,
+  config: configProp,
+  reducedMotion: reducedMotionProp,
+  initial: initialProp,
   children,
 }: MotionConfigProps): React.ReactElement {
   const parentContext = useContext(MotionContext)
+
+  // Unspecified options inherit from the parent MotionConfig
+  const reducedMotion = reducedMotionProp ?? parentContext.reducedMotion
+  const initial = initialProp ?? parentContext.initial
+  const config = useStableSpringConfig(configProp, EMPTY_CONFIG)
+  const prefersReducedMotion = usePrefersReducedMotion(reducedMotion === 'user')
 
   const value = useMemo<MotionContextValue>(() => {
     // Determine if reduced motion is active
@@ -113,7 +149,7 @@ export function MotionConfig({
         break
       case 'user':
       default:
-        isReducedMotion = checkReducedMotion()
+        isReducedMotion = prefersReducedMotion
     }
 
     // Merge with parent config
@@ -123,7 +159,7 @@ export function MotionConfig({
       initial,
       isReducedMotion,
     }
-  }, [config, reducedMotion, initial, parentContext.config])
+  }, [config, reducedMotion, initial, parentContext.config, prefersReducedMotion])
 
   return (
     <MotionContext.Provider value={value}>

@@ -26,10 +26,10 @@ npx vitest run tests/unit/core/spring.test.ts
 # Run tests in watch mode
 npm run test:watch
 
-# Type checking
+# Type checking (src via tsconfig.json + tests via tsconfig.test.json)
 npm run typecheck
 
-# Linting (flat ESLint config)
+# Linting (flat ESLint config, src + tests)
 npm run lint
 
 # Validate published package shape (publint + arethetypeswrong; needs a build)
@@ -95,6 +95,18 @@ if (valueRef.current === null || valueRef.current.isDestroyed()) {
   valueRef.current = createMotionValue(0)
 }
 ```
+Destroy such instances via `hooks/useDestroyOnUnmount.ts` (defers destroy by a microtask and skips it when StrictMode re-runs the effect) — never destroy in a plain effect cleanup while the instance lives in a ref created during render.
+
+**Physics & time** (see `src/core/physics.ts`):
+- `spring()` advances with `stepSpring()` (closed-form solution) — exact and refresh-rate independent. Never integrate with a fixed per-frame step; anything time-based must use real elapsed time (the loop passes `deltaTime` to `Animatable.update(now, deltaTime)`).
+- `decay()` velocity is units/second, `deceleration` is per millisecond (iOS scale).
+- The loop holds running animations strongly (fire-and-forget animations must not be GC'd) and isolates errors per animation.
+- The loop owns the animation clock: it passes `animationTime` (advanced by real delta × `globalLoop.getTimeScale()`) to `update(now, deltaTime)`. Never call `performance.now()` inside an Animatable; modules with their own RAF loop (e.g. timeline) must multiply their delta by the time scale. Don't drive `update()` manually in tests with arbitrary timestamps — use the test clock.
+- The loop re-schedules its pending frame if the global `requestAnimationFrame` changes (test clock installed/removed).
+
+**Native springs** (`src/native/`): `solveSpring()` / `springEasing()` / `animateNative()` compile springs to CSS `linear()` for the compositor. `springMotion()` in core is the shared closed form.
+
+**Testing animations**: use `installTestClock()` from `src/testing/` (published as `@oxog/springkit/testing`) instead of `vi.useFakeTimers()` — it virtualizes rAF + `performance.now` (and timers with `{ timers: true }`). Always `uninstall()` in `afterEach`. Compare values against the time of the frame they were produced at (frames land on multiples of 1000/frameRate), not the `advance()` target.
 
 ### React Integration Patterns
 
@@ -102,6 +114,7 @@ if (valueRef.current === null || valueRef.current.isDestroyed()) {
 - Return refs + controls pattern (e.g., `useDrag` returns `[position, api]`)
 - Use `useIsomorphicLayoutEffect` for SSR safety
 - Track RAF/timeout IDs in refs for cleanup
+- Never put a spring config object (or any object/array prop with an inline default) directly in effect deps — inline `config={{...}}` is new every render and restarts springs every frame. Use `useStableSpringConfig` (`utils/config.ts`) or depend on primitive fields
 
 **Components** (`src/adapters/react/components/`):
 - `Animated.tsx`: Base animated element with gesture props (`whileHover`, `whileTap`, etc.)

@@ -6,8 +6,17 @@ export {
   hexToRgb,
   hslToRgb,
   rgbToHsl,
+  parseColorRGBA,
+  srgbToLinear,
+  linearToSrgb,
+  linearRgbToOklab,
+  oklabToLinearRgb,
+  rgbToOklab,
+  oklabToRgb,
+  mixColorsRGBA,
+  formatRGBA,
 } from './color.js'
-export type { RGB, HSL } from './color.js'
+export type { RGB, HSL, RGBA, OKLab, ColorSpace } from './color.js'
 export {
   validateSpringConfig,
   validateDragConfig,

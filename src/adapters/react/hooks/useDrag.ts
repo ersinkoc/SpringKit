@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { createDragSpring } from '@oxog/springkit'
 import type { DragSpring, DragSpringConfig } from '@oxog/springkit'
 
@@ -65,10 +65,12 @@ export function useDrag(config: DragSpringConfig = {}): [
   // Keep config ref updated
   configRef.current = config
 
-  // Ref callback - triggers re-render when element changes
-  const refCallback = (el: HTMLElement | null) => {
+  // Ref callback - triggers re-render when element changes.
+  // Must be stable: a new function each render makes React detach (null) and
+  // re-attach it on every render, queueing two extra state updates each time.
+  const refCallback = useCallback((el: HTMLElement | null) => {
     setElement(el)
-  }
+  }, [])
 
   // RAF-throttled update function
   const throttledUpdate = () => {

@@ -13,18 +13,20 @@ import {
 } from '@oxog/springkit'
 import { DemoPageLayout } from './DemoPageLayout'
 
-const CODE = `import { useRef } from 'react'
+const CODE = `import { useRef, useState } from 'react'
 import {
   animate,
   linearStagger,
+  reverseStagger,
   centerStagger,
+  edgeStagger,
   waveStagger,
   gridStagger,
   spiralStagger,
   randomStagger,
 } from '@oxog/springkit'
 
-// Available stagger patterns
+// Available stagger patterns (delays in seconds, like the delay passed in)
 const patterns = {
   linear: (count: number) => linearStagger({ count, delay: 0.05 }),
   reverse: (count: number) => reverseStagger({ count, delay: 0.05 }),
@@ -34,11 +36,11 @@ const patterns = {
   random: (count: number) => randomStagger({ count, delay: 0.05 }),
 }
 
-// For grid layout
-const gridPattern = (cols: number, rows: number) =>
+// For grid layouts, pass the column count
+const gridPattern = (count: number, cols: number) =>
   gridStagger({ count, columns: cols, origin: 'top-left', delay: 0.06 })
 
-const spiralPattern = (cols: number, rows: number) =>
+const spiralPattern = (count: number, cols: number) =>
   spiralStagger({ count, columns: cols, direction: 'clockwise', delay: 0.04 })
 
 function StaggerDemo() {

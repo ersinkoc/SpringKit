@@ -65,23 +65,34 @@ export interface Variant extends AnimationValues {
 }
 
 /**
+ * A variant computed from the `custom` value, e.g. `(i: number) => ({ x: i * 10 })`.
+ *
+ * Declared with method syntax so the parameter is checked bivariantly: a
+ * resolver may annotate `custom` with the concrete type it expects instead of
+ * `unknown`.
+ */
+export type VariantResolver = {
+  bivarianceHack(custom?: unknown): Variant
+}['bivarianceHack']
+
+/**
  * Map of variant names to their definitions
  */
 export interface Variants {
-  [key: string]: Variant | ((custom?: unknown) => Variant)
+  [key: string]: Variant | VariantResolver
 }
 
 /**
  * Orchestration options for variant animations
  */
 export interface OrchestrationOptions {
-  /** Delay before starting */
+  /** Delay before starting (ms) */
   delay?: number
   /** Animate children before or after */
   when?: 'beforeChildren' | 'afterChildren' | false
-  /** Stagger children animations */
+  /** Stagger children animations by this amount (ms) */
   staggerChildren?: number
-  /** Delay before children start */
+  /** Delay before children start (ms) */
   delayChildren?: number
   /** Direction of stagger (-1 for reverse) */
   staggerDirection?: 1 | -1
@@ -101,7 +112,7 @@ export interface ResolvedVariant {
  * Resolve a variant definition to concrete values
  */
 export function resolveVariant(
-  variant: Variant | ((custom?: unknown) => Variant) | undefined,
+  variant: Variant | VariantResolver | undefined,
   custom?: unknown
 ): ResolvedVariant {
   if (!variant) {
@@ -140,10 +151,13 @@ export function mergeVariants(...variants: (Variant | undefined)[]): Variant {
 
   for (const variant of variants) {
     if (variant) {
+      // Capture the accumulated transition BEFORE Object.assign replaces it
+      // with this variant's transition (which would drop earlier fields)
+      const previousTransition = merged.transition
       Object.assign(merged, variant)
       // Merge transitions
       if (variant.transition) {
-        merged.transition = { ...merged.transition, ...variant.transition }
+        merged.transition = { ...previousTransition, ...variant.transition }
       }
     }
   }
@@ -197,9 +211,11 @@ export function buildTransformString(values: AnimationValues): string {
   const transforms: string[] = []
 
   if (values.x !== undefined || values.y !== undefined) {
-    const x = values.x ?? 0
-    const y = values.y ?? 0
-    transforms.push(`translate(${x}px, ${y}px)`)
+    // Numbers are pixels; strings already carry a unit (e.g. '50%')
+    const toLength = (v: number | string) => (typeof v === 'number' ? `${v}px` : v)
+    const x = toLength(values.x ?? 0)
+    const y = toLength(values.y ?? 0)
+    transforms.push(`translate(${x}, ${y})`)
   }
 
   if (values.scale !== undefined) {
@@ -325,10 +341,11 @@ export function createOrchestration(
   const children = async () => {
     await Promise.all(
       childrenAnims.map((anim, i) =>
-        new Promise<void>((resolve) => {
-          setTimeout(async () => {
-            await anim()
-            resolve()
+        new Promise<void>((resolve, reject) => {
+          setTimeout(() => {
+            // Propagate failures; an async timer callback that throws would
+            // leave this promise pending forever (and the rejection unhandled)
+            Promise.resolve().then(anim).then(resolve, reject)
           }, delays[i])
         })
       )
@@ -357,9 +374,37 @@ export function createOrchestration(
 // ============ Variant Presets ============
 
 /**
- * Common animation presets
+ * An initial / animate / exit variant triple
  */
-export const variantPresets: Record<string, { initial: Variant; animate: Variant; exit: Variant }> = {
+export interface VariantPreset {
+  initial: Variant
+  animate: Variant
+  exit: Variant
+}
+
+/**
+ * Names of the built-in presets in `variantPresets`
+ */
+export type VariantPresetName =
+  | 'fadeIn'
+  | 'fadeInUp'
+  | 'fadeInDown'
+  | 'fadeInLeft'
+  | 'fadeInRight'
+  | 'scaleIn'
+  | 'popIn'
+  | 'slideUp'
+  | 'slideDown'
+  | 'slideLeft'
+  | 'slideRight'
+  | 'staggerContainer'
+  | 'staggerItem'
+
+/**
+ * Common animation presets. The built-in names are typed as always present;
+ * lookups by arbitrary string keys remain allowed.
+ */
+export const variantPresets: Record<VariantPresetName, VariantPreset> & Record<string, VariantPreset> = {
   /** Fade in from invisible */
   fadeIn: {
     initial: { opacity: 0 },
@@ -441,18 +486,18 @@ export const variantPresets: Record<string, { initial: Variant; animate: Variant
     exit: { x: 100, opacity: 0 },
   },
 
-  /** Container with staggered children */
+  /** Container with staggered children (stagger and delays in ms) */
   staggerContainer: {
     initial: {},
     animate: {
       transition: {
-        staggerChildren: 0.1,
-        delayChildren: 0.1,
+        staggerChildren: 100,
+        delayChildren: 100,
       },
     },
     exit: {
       transition: {
-        staggerChildren: 0.05,
+        staggerChildren: 50,
         staggerDirection: -1,
       },
     },
@@ -473,7 +518,7 @@ export function createVariantPreset(
   initial: Variant,
   animate: Variant,
   exit?: Variant
-): { initial: Variant; animate: Variant; exit: Variant } {
+): VariantPreset {
   return {
     initial,
     animate,

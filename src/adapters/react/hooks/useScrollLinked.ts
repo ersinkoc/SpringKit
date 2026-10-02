@@ -12,6 +12,7 @@ import {
   type ParallaxConfig,
   type ScrollTriggerConfig,
   type ScrollLinkedConfig,
+  type ScrollSmoothing,
 } from '@oxog/springkit'
 import { useIsomorphicLayoutEffect } from '../utils/ssr.js'
 
@@ -22,8 +23,8 @@ export interface UseScrollProgressOptions {
   target?: React.RefObject<HTMLElement>
   /** Scroll offset configuration */
   offset?: ['start' | 'center' | 'end', 'start' | 'center' | 'end']
-  /** Smoothing factor (0-1, higher = smoother) */
-  smooth?: number
+  /** Smoothing: a 0-1 factor (higher = smoother) or a spring config */
+  smooth?: ScrollSmoothing
 }
 
 export interface UseScrollProgressReturn {
@@ -56,6 +57,8 @@ export function useScrollProgress(
   options: UseScrollProgressOptions = {}
 ): UseScrollProgressReturn {
   const { target, offset, smooth } = options
+  // `smooth` may be an inline spring config object: key on its contents
+  const smoothKey = JSON.stringify(smooth ?? null)
 
   const [progress, setProgress] = useState(0)
   const [info, setInfo] = useState<ScrollInfo>({
@@ -82,7 +85,7 @@ export function useScrollProgress(
       unsubscribe()
       scrollProgress.destroy()
     }
-  }, [target?.current, offset?.[0], offset?.[1], smooth])
+  }, [target?.current, offset?.[0], offset?.[1], smoothKey])
 
   return {
     progress,
@@ -246,10 +249,18 @@ export function useScrollLinkedValue(
 ): number | string {
   const [value, setValue] = useState<number | string>(config.outputRange[0] ?? 0)
 
+  // Ranges are usually inline arrays (new identity every render): key the
+  // effect on their contents so the linked value isn't recreated each render
+  const configRef = useRef(config)
+  configRef.current = config
+  const inputRangeKey = JSON.stringify(config.inputRange)
+  const outputRangeKey = JSON.stringify(config.outputRange)
+  const smoothKey = JSON.stringify(config.smooth ?? null)
+
   useIsomorphicLayoutEffect(() => {
     if (!scrollProgress) return
 
-    const linkedValue = createScrollLinkedValue(scrollProgress, config)
+    const linkedValue = createScrollLinkedValue(scrollProgress, configRef.current)
 
     const unsubscribe = linkedValue.subscribe((newValue) => {
       setValue(newValue)
@@ -259,7 +270,7 @@ export function useScrollLinkedValue(
       unsubscribe()
       linkedValue.destroy()
     }
-  }, [scrollProgress, config.inputRange, config.outputRange, config.clamp, config.smooth])
+  }, [scrollProgress, inputRangeKey, outputRangeKey, config.clamp, smoothKey])
 
   return value
 }

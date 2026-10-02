@@ -19,7 +19,10 @@ export interface PathAnimationOptions {
  * Path animation controller
  */
 export interface PathAnimation {
-  /** Start the animation from 0 to target */
+  /**
+   * Animate to target (default 1). Resolves when the animation comes to rest,
+   * or when it is stopped by reset(), an instant set() or destroy()
+   */
   play: (target?: number) => Promise<void>
   /** Reverse the animation */
   reverse: () => Promise<void>
@@ -27,11 +30,11 @@ export interface PathAnimation {
   set: (value: number, animate?: boolean) => void
   /** Get current path length */
   get: () => number
-  /** Pause the animation */
+  /** Pause the animation (pending play()/reverse() promises stay pending) */
   pause: () => void
   /** Resume the animation */
   resume: () => void
-  /** Stop and reset */
+  /** Stop and reset (resolves pending promises without calling onComplete) */
   reset: () => void
   /** Check if animating */
   isAnimating: () => boolean
@@ -86,9 +89,14 @@ export function createPathAnimation(
   element.style.strokeDashoffset = String(totalLength)
 
   let currentValue = 0
+  // Last animation target, so resume() can continue towards it after pause()
+  let targetValue = 0
   let destroyed = false
+  let paused = false
   let pendingRafId: number | null = null
   let pendingTimeoutId: ReturnType<typeof setTimeout> | null = null
+  // Resolvers of play()/reverse() promises waiting for the animation to finish
+  const waiters = new Set<() => void>()
   const spring = createSpringValue(0, config)
 
   // Subscribe to updates
@@ -102,49 +110,94 @@ export function createPathAnimation(
     onUpdate?.(value)
   })
 
-  const waitForRest = (): Promise<void> => {
-    return new Promise((resolve) => {
-      const check = () => {
-        pendingRafId = null
+  const cancelWatch = () => {
+    if (pendingRafId !== null) {
+      cancelAnimationFrame(pendingRafId)
+      pendingRafId = null
+    }
+    if (pendingTimeoutId !== null) {
+      clearTimeout(pendingTimeoutId)
+      pendingTimeoutId = null
+    }
+  }
 
-        if (destroyed || !spring.isAnimating()) {
-          resolve()
-        } else {
-          pendingRafId = requestAnimationFrame(check)
-        }
+  /**
+   * Resolve every pending play()/reverse() promise. `completed` is true when
+   * the animation came to rest on its own (fires onComplete once), false when
+   * it was stopped (reset, instant set, destroy).
+   */
+  const settle = (completed: boolean) => {
+    cancelWatch()
+    if (waiters.size === 0) return
+    const resolvers = [...waiters]
+    waiters.clear()
+    resolvers.forEach((resolve) => resolve())
+    if (completed) {
+      try {
+        onComplete?.()
+      } catch (e) {
+        console.error('[SpringKit] Path animation onComplete error:', e)
       }
-      pendingTimeoutId = setTimeout(() => {
-        pendingTimeoutId = null
-        check()
-      }, 16)
+    }
+  }
+
+  // Single completion watcher shared by all pending promises. pause() stops it
+  // without resolving; resume() restarts it.
+  const watch = () => {
+    if (pendingRafId !== null || pendingTimeoutId !== null) return
+
+    const check = () => {
+      pendingRafId = null
+      if (destroyed || paused) return
+
+      if (!spring.isAnimating()) {
+        settle(true)
+      } else {
+        pendingRafId = requestAnimationFrame(check)
+      }
+    }
+    pendingTimeoutId = setTimeout(() => {
+      pendingTimeoutId = null
+      check()
+    }, 16)
+  }
+
+  const animateTo = (target: number): Promise<void> => {
+    targetValue = target
+    paused = false
+    spring.set(target)
+    return new Promise<void>((resolve) => {
+      waiters.add(resolve)
+      watch()
     })
   }
 
   const animation: PathAnimation = {
     play: async (target = 1) => {
       if (destroyed) return
-      spring.set(target)
-      await waitForRest()
-      onComplete?.()
+      await animateTo(target)
     },
 
     reverse: async () => {
       if (destroyed) return
-      spring.set(0)
-      await waitForRest()
-      onComplete?.()
+      await animateTo(0)
     },
 
     set: (value: number, animate = false) => {
       if (destroyed) return
 
+      targetValue = value
+      paused = false
       if (animate) {
         spring.set(value)
+        if (waiters.size > 0) watch()
       } else {
         spring.jump(value)
         currentValue = value
         const offset = totalLength * (1 - value)
         element.style.strokeDashoffset = String(offset)
+        // Jumping interrupts the animation: settle pending promises
+        settle(false)
       }
     },
 
@@ -152,35 +205,39 @@ export function createPathAnimation(
 
     pause: () => {
       if (destroyed) return
+      // Pending play() promises stay pending until the animation finishes
+      paused = true
+      cancelWatch()
       spring.stop()
     },
 
     resume: () => {
       if (destroyed) return
-      // Resume by re-setting target
-      spring.set(currentValue)
+      paused = false
+      // Resume by animating towards the target that was interrupted by pause()
+      spring.set(targetValue)
+      if (waiters.size > 0) watch()
     },
 
     reset: () => {
       if (destroyed) return
+      paused = false
       spring.jump(0)
       currentValue = 0
+      targetValue = 0
       element.style.strokeDashoffset = String(totalLength)
+      // Stop resolves pending promises (without onComplete)
+      settle(false)
     },
 
     isAnimating: () => spring.isAnimating(),
 
     destroy: () => {
+      if (destroyed) return
       destroyed = true
-      // Cancel pending RAF and timeout to prevent memory leaks
-      if (pendingRafId !== null) {
-        cancelAnimationFrame(pendingRafId)
-        pendingRafId = null
-      }
-      if (pendingTimeoutId !== null) {
-        clearTimeout(pendingTimeoutId)
-        pendingTimeoutId = null
-      }
+      // Cancel pending RAF/timeout and settle pending promises so awaiting
+      // code doesn't hang
+      settle(false)
       unsubscribe()
       spring.destroy()
     },

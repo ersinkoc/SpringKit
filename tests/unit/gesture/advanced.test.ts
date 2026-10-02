@@ -6,6 +6,7 @@ import {
   createLongPressGesture,
   createGestures,
 } from '@oxog/springkit'
+import { installTestClock, type TestClock } from '../../../src/testing'
 
 describe('Advanced Gestures', () => {
   let element: HTMLElement
@@ -290,8 +291,8 @@ describe('Advanced Gestures', () => {
       const touch2 = { identifier: 1, clientX: 200, clientY: 200 }
 
       const touchStartEvent = new TouchEvent('touchstart', {
-        changedTouches: [touch1, touch2] as unknown as TouchList,
-        touches: [touch1, touch2] as unknown as TouchList,
+        changedTouches: [touch1, touch2] as unknown as Touch[],
+        touches: [touch1, touch2] as unknown as Touch[],
       })
 
       element.dispatchEvent(touchStartEvent)
@@ -356,8 +357,8 @@ describe('Advanced Gestures', () => {
       const touch2 = { identifier: 1, clientX: 200, clientY: 200 }
 
       element.dispatchEvent(new TouchEvent('touchstart', {
-        changedTouches: [touch1, touch2] as unknown as TouchList,
-        touches: [touch1, touch2] as unknown as TouchList,
+        changedTouches: [touch1, touch2] as unknown as Touch[],
+        touches: [touch1, touch2] as unknown as Touch[],
         bubbles: true,
       }))
 
@@ -368,8 +369,8 @@ describe('Advanced Gestures', () => {
       const moveTouch2 = { identifier: 1, clientX: 250, clientY: 250 }
 
       element.dispatchEvent(new TouchEvent('touchmove', {
-        changedTouches: [moveTouch1, moveTouch2] as unknown as TouchList,
-        touches: [moveTouch1, moveTouch2] as unknown as TouchList,
+        changedTouches: [moveTouch1, moveTouch2] as unknown as Touch[],
+        touches: [moveTouch1, moveTouch2] as unknown as Touch[],
         bubbles: true,
       }))
 
@@ -377,8 +378,8 @@ describe('Advanced Gestures', () => {
 
       // Release one finger
       element.dispatchEvent(new TouchEvent('touchend', {
-        changedTouches: [moveTouch1] as unknown as TouchList,
-        touches: [moveTouch2] as unknown as TouchList,
+        changedTouches: [moveTouch1] as unknown as Touch[],
+        touches: [moveTouch2] as unknown as Touch[],
         bubbles: true,
       }))
 
@@ -401,11 +402,11 @@ describe('Advanced Gestures', () => {
         changedTouches: [
           { identifier: 0, clientX: 100, clientY: 100 },
           { identifier: 1, clientX: 200, clientY: 200 },
-        ] as unknown as TouchList,
+        ] as unknown as Touch[],
         touches: [
           { identifier: 0, clientX: 100, clientY: 100 },
           { identifier: 1, clientX: 200, clientY: 200 },
-        ] as unknown as TouchList,
+        ] as unknown as Touch[],
         bubbles: true,
       }))
 
@@ -414,11 +415,11 @@ describe('Advanced Gestures', () => {
         changedTouches: [
           { identifier: 0, clientX: 0, clientY: 0 },
           { identifier: 1, clientX: 400, clientY: 400 },
-        ] as unknown as TouchList,
+        ] as unknown as Touch[],
         bubbles: true,
       }))
 
-      const lastCall = onPinch.mock.calls[onPinch.mock.calls.length - 1][0]
+      const lastCall = onPinch.mock.calls[onPinch.mock.calls.length - 1]![0]
       expect(lastCall.scale).toBeLessThanOrEqual(2)
 
       controller.destroy()
@@ -439,7 +440,7 @@ describe('Advanced Gestures', () => {
         changedTouches: [
           { identifier: 0, clientX: 100, clientY: 100 },
           { identifier: 1, clientX: 200, clientY: 200 },
-        ] as unknown as TouchList,
+        ] as unknown as Touch[],
         bubbles: true,
       }))
 
@@ -447,7 +448,7 @@ describe('Advanced Gestures', () => {
         changedTouches: [
           { identifier: 0, clientX: -100, clientY: -100 },
           { identifier: 1, clientX: 500, clientY: 500 },
-        ] as unknown as TouchList,
+        ] as unknown as Touch[],
         bubbles: true,
       }))
 
@@ -470,7 +471,7 @@ describe('Advanced Gestures', () => {
         changedTouches: [
           { identifier: 0, clientX: 100, clientY: 100 },
           { identifier: 1, clientX: 200, clientY: 200 },
-        ] as unknown as TouchList,
+        ] as unknown as Touch[],
         bubbles: true,
       }))
 
@@ -479,13 +480,13 @@ describe('Advanced Gestures', () => {
         changedTouches: [
           { identifier: 0, clientX: 0, clientY: 0 },
           { identifier: 1, clientX: 400, clientY: 400 },
-        ] as unknown as TouchList,
+        ] as unknown as Touch[],
         bubbles: true,
       }))
 
       // Release
       element.dispatchEvent(new TouchEvent('touchend', {
-        changedTouches: [{ identifier: 0, clientX: 0, clientY: 0 }] as unknown as TouchList,
+        changedTouches: [{ identifier: 0, clientX: 0, clientY: 0 }] as unknown as Touch[],
         bubbles: true,
       }))
 
@@ -504,7 +505,7 @@ describe('Advanced Gestures', () => {
         changedTouches: [
           { identifier: 0, clientX: 100, clientY: 100 },
           { identifier: 1, clientX: 200, clientY: 200 },
-        ] as unknown as TouchList,
+        ] as unknown as Touch[],
         bubbles: true,
       }))
 
@@ -522,13 +523,13 @@ describe('Advanced Gestures', () => {
         changedTouches: [
           { identifier: 0, clientX: 100, clientY: 100 },
           { identifier: 1, clientX: 200, clientY: 200 },
-        ] as unknown as TouchList,
+        ] as unknown as Touch[],
         bubbles: true,
       }))
 
       // Cancel
       element.dispatchEvent(new TouchEvent('touchcancel', {
-        changedTouches: [{ identifier: 0, clientX: 100, clientY: 100 }] as unknown as TouchList,
+        changedTouches: [{ identifier: 0, clientX: 100, clientY: 100 }] as unknown as Touch[],
         bubbles: true,
       }))
 
@@ -541,8 +542,8 @@ describe('Advanced Gestures', () => {
 
       // Only one touch
       element.dispatchEvent(new TouchEvent('touchstart', {
-        changedTouches: [{ identifier: 0, clientX: 100, clientY: 100 }] as unknown as TouchList,
-        touches: [{ identifier: 0, clientX: 100, clientY: 100 }] as unknown as TouchList,
+        changedTouches: [{ identifier: 0, clientX: 100, clientY: 100 }] as unknown as Touch[],
+        touches: [{ identifier: 0, clientX: 100, clientY: 100 }] as unknown as Touch[],
         bubbles: true,
       }))
 
@@ -559,7 +560,7 @@ describe('Advanced Gestures', () => {
         changedTouches: [
           { identifier: 0, clientX: 100, clientY: 100 },
           { identifier: 1, clientX: 200, clientY: 200 },
-        ] as unknown as TouchList,
+        ] as unknown as Touch[],
         bubbles: true,
       }))
 
@@ -568,13 +569,13 @@ describe('Advanced Gestures', () => {
         changedTouches: [
           { identifier: 0, clientX: 0, clientY: 0 },
           { identifier: 1, clientX: 500, clientY: 500 },
-        ] as unknown as TouchList,
+        ] as unknown as Touch[],
         bubbles: true,
       }))
 
       // Release to start spring
       element.dispatchEvent(new TouchEvent('touchend', {
-        changedTouches: [{ identifier: 0, clientX: 0, clientY: 0 }] as unknown as TouchList,
+        changedTouches: [{ identifier: 0, clientX: 0, clientY: 0 }] as unknown as Touch[],
         bubbles: true,
       }))
 
@@ -602,7 +603,7 @@ describe('Advanced Gestures', () => {
         changedTouches: [
           { identifier: 0, clientX: 100, clientY: 100 },
           { identifier: 1, clientX: 200, clientY: 200 },
-        ] as unknown as TouchList,
+        ] as unknown as Touch[],
         bubbles: true,
       }))
 
@@ -613,7 +614,7 @@ describe('Advanced Gestures', () => {
         changedTouches: [
           { identifier: 0, clientX: 150, clientY: 50 },
           { identifier: 1, clientX: 150, clientY: 250 },
-        ] as unknown as TouchList,
+        ] as unknown as Touch[],
         bubbles: true,
       }))
 
@@ -621,7 +622,7 @@ describe('Advanced Gestures', () => {
 
       // End
       element.dispatchEvent(new TouchEvent('touchend', {
-        changedTouches: [{ identifier: 0, clientX: 150, clientY: 50 }] as unknown as TouchList,
+        changedTouches: [{ identifier: 0, clientX: 150, clientY: 50 }] as unknown as Touch[],
         bubbles: true,
       }))
 
@@ -642,7 +643,7 @@ describe('Advanced Gestures', () => {
         changedTouches: [
           { identifier: 0, clientX: 100, clientY: 150 },
           { identifier: 1, clientX: 200, clientY: 150 },
-        ] as unknown as TouchList,
+        ] as unknown as Touch[],
         bubbles: true,
       }))
 
@@ -651,7 +652,7 @@ describe('Advanced Gestures', () => {
         changedTouches: [
           { identifier: 0, clientX: 95, clientY: 150 },
           { identifier: 1, clientX: 205, clientY: 150 },
-        ] as unknown as TouchList,
+        ] as unknown as Touch[],
         bubbles: true,
       }))
 
@@ -663,7 +664,7 @@ describe('Advanced Gestures', () => {
         changedTouches: [
           { identifier: 0, clientX: 150, clientY: 50 },
           { identifier: 1, clientX: 150, clientY: 250 },
-        ] as unknown as TouchList,
+        ] as unknown as Touch[],
         bubbles: true,
       }))
 
@@ -681,7 +682,7 @@ describe('Advanced Gestures', () => {
         changedTouches: [
           { identifier: 0, clientX: 0, clientY: 150 },
           { identifier: 1, clientX: 200, clientY: 150 },
-        ] as unknown as TouchList,
+        ] as unknown as Touch[],
         bubbles: true,
       }))
 
@@ -690,7 +691,7 @@ describe('Advanced Gestures', () => {
         changedTouches: [
           { identifier: 0, clientX: 0, clientY: 150 },
           { identifier: 1, clientX: 196, clientY: 175 },
-        ] as unknown as TouchList,
+        ] as unknown as Touch[],
         bubbles: true,
       }))
 
@@ -735,7 +736,7 @@ describe('Advanced Gestures', () => {
       }))
 
       expect(onSwipe).toHaveBeenCalled()
-      expect(onSwipe.mock.calls[0][0].direction).toBe('left')
+      expect(onSwipe.mock.calls[0]![0].direction).toBe('left')
 
       controller.destroy()
     })
@@ -763,7 +764,7 @@ describe('Advanced Gestures', () => {
       }))
 
       expect(onSwipe).toHaveBeenCalled()
-      expect(onSwipe.mock.calls[0][0].direction).toBe('right')
+      expect(onSwipe.mock.calls[0]![0].direction).toBe('right')
 
       controller.destroy()
     })
@@ -791,7 +792,7 @@ describe('Advanced Gestures', () => {
       }))
 
       expect(onSwipe).toHaveBeenCalled()
-      expect(onSwipe.mock.calls[0][0].direction).toBe('up')
+      expect(onSwipe.mock.calls[0]![0].direction).toBe('up')
 
       controller.destroy()
     })
@@ -819,7 +820,7 @@ describe('Advanced Gestures', () => {
       }))
 
       expect(onSwipe).toHaveBeenCalled()
-      expect(onSwipe.mock.calls[0][0].direction).toBe('down')
+      expect(onSwipe.mock.calls[0]![0].direction).toBe('down')
 
       controller.destroy()
     })
@@ -1203,5 +1204,282 @@ describe('Advanced Gestures', () => {
       expect(controller.isEnabled()).toBe(true)
       controller.destroy()
     })
+  })
+})
+
+describe('Advanced Gestures regressions', () => {
+  let element: HTMLElement
+
+  const touch = (type: string, touches: Array<{ identifier: number; clientX: number; clientY: number }>) =>
+    new TouchEvent(type, { changedTouches: touches as unknown as Touch[], bubbles: true, cancelable: true })
+
+  const pointer = (type: string, pointerId: number, clientX: number, clientY: number) =>
+    new PointerEvent(type, { pointerId, clientX, clientY, bubbles: true })
+
+  beforeEach(() => {
+    element = document.createElement('div')
+    document.body.appendChild(element)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    document.body.textContent = ''
+  })
+
+  it('rotate keeps counting past 180° instead of flipping sign', () => {
+    const onRotate = vi.fn()
+    const controller = createRotateGesture(element, { onRotate })
+    const r = 100
+    const at = (deg: number) => {
+      const rad = (deg * Math.PI) / 180
+      return { identifier: 1, clientX: 200 + r * Math.cos(rad), clientY: 200 + r * Math.sin(rad) }
+    }
+
+    element.dispatchEvent(touch('touchstart', [{ identifier: 0, clientX: 200, clientY: 200 }, at(0)]))
+    for (const deg of [60, 120, 170, 200, 250, 300]) {
+      element.dispatchEvent(touch('touchmove', [at(deg)]))
+    }
+
+    const lastState = onRotate.mock.calls[onRotate.mock.calls.length - 1]![0]
+    expect(lastState.angle).toBeCloseTo(300)
+    controller.destroy()
+  })
+
+  it('rotate handles crossing the ±180° boundary of atan2', () => {
+    const onRotate = vi.fn()
+    const controller = createRotateGesture(element, { onRotate })
+
+    // Second finger to the left of the first: atan2 ≈ 180°
+    element.dispatchEvent(touch('touchstart', [
+      { identifier: 0, clientX: 200, clientY: 200 },
+      { identifier: 1, clientX: 100, clientY: 199 },
+    ]))
+    // Small clockwise move to just past 180 (atan2 flips to ≈ -179°)
+    element.dispatchEvent(touch('touchmove', [{ identifier: 1, clientX: 100, clientY: 202 }]))
+
+    const lastState = onRotate.mock.calls[onRotate.mock.calls.length - 1]![0]
+    expect(Math.abs(lastState.angle)).toBeLessThan(5)
+    controller.destroy()
+  })
+
+  it('pinch rubber band never amplifies small overshoot or produces a negative scale', () => {
+    const onPinch = vi.fn()
+    const controller = createPinchGesture(element, { onPinch, minScale: 0.5, maxScale: 2, rubberBandFactor: 0.5 })
+
+    element.dispatchEvent(touch('touchstart', [
+      { identifier: 0, clientX: 0, clientY: 0 },
+      { identifier: 1, clientX: 100, clientY: 0 },
+    ]))
+    // Raw scale 0.45 -> 0.05 below minScale
+    element.dispatchEvent(touch('touchmove', [{ identifier: 1, clientX: 45, clientY: 0 }]))
+
+    const scale = onPinch.mock.calls[onPinch.mock.calls.length - 1]![0].scale
+    expect(scale).toBeLessThanOrEqual(0.5)
+    expect(scale).toBeGreaterThanOrEqual(0.45)
+
+    // Raw scale 2.1 -> 0.1 above maxScale
+    element.dispatchEvent(touch('touchmove', [{ identifier: 1, clientX: 210, clientY: 0 }]))
+    const scale2 = onPinch.mock.calls[onPinch.mock.calls.length - 1]![0].scale
+    expect(scale2).toBeGreaterThanOrEqual(2)
+    expect(scale2).toBeLessThanOrEqual(2.1)
+    controller.destroy()
+  })
+
+  it('pinch does not produce Infinity/NaN when both fingers start at the same point', () => {
+    const onPinch = vi.fn()
+    const controller = createPinchGesture(element, { onPinch, rubberBand: false })
+
+    element.dispatchEvent(touch('touchstart', [
+      { identifier: 0, clientX: 100, clientY: 100 },
+      { identifier: 1, clientX: 100, clientY: 100 },
+    ]))
+    element.dispatchEvent(touch('touchmove', [{ identifier: 1, clientX: 150, clientY: 100 }]))
+    element.dispatchEvent(touch('touchmove', [{ identifier: 1, clientX: 200, clientY: 100 }]))
+
+    for (const call of onPinch.mock.calls) {
+      expect(Number.isFinite(call[0].scale)).toBe(true)
+    }
+    const lastScale = onPinch.mock.calls[onPinch.mock.calls.length - 1]![0].scale
+    expect(lastScale).toBeCloseTo(2)
+    controller.destroy()
+  })
+
+  it('swipe uses the velocity of the last moves when pointerup has the same position', () => {
+    let now = 1000
+    vi.spyOn(performance, 'now').mockImplementation(() => now)
+    const onSwipe = vi.fn()
+    const controller = createSwipeGesture(element, { onSwipe, velocityThreshold: 0.5, distanceThreshold: 100 })
+
+    element.dispatchEvent(pointer('pointerdown', 1, 100, 100))
+    now += 16
+    element.dispatchEvent(pointer('pointermove', 1, 120, 100))
+    now += 16
+    element.dispatchEvent(pointer('pointermove', 1, 140, 100))
+    now += 4
+    // Fast flick (40px in 32ms = 1.25px/ms) but below distance threshold; up at the last move position
+    element.dispatchEvent(pointer('pointerup', 1, 140, 100))
+
+    expect(onSwipe).toHaveBeenCalledTimes(1)
+    expect(onSwipe.mock.calls[0]![0].direction).toBe('right')
+    expect(onSwipe.mock.calls[0]![0].velocity.x).toBeGreaterThan(0.5)
+    controller.destroy()
+  })
+
+  it('swipe ignores stale velocity when the pointer was held still before release', () => {
+    let now = 1000
+    vi.spyOn(performance, 'now').mockImplementation(() => now)
+    const onSwipe = vi.fn()
+    const controller = createSwipeGesture(element, { onSwipe, velocityThreshold: 0.5, distanceThreshold: 100, maxDuration: 1000 })
+
+    element.dispatchEvent(pointer('pointerdown', 1, 100, 100))
+    now += 16
+    element.dispatchEvent(pointer('pointermove', 1, 140, 100))
+    now += 300
+    element.dispatchEvent(pointer('pointerup', 1, 140, 100))
+
+    expect(onSwipe).not.toHaveBeenCalled()
+    controller.destroy()
+  })
+
+  it('pointercancel never fires onSwipe and reports cancelled', () => {
+    const onSwipe = vi.fn()
+    const onSwipeEnd = vi.fn()
+    const controller = createSwipeGesture(element, { onSwipe, onSwipeEnd })
+
+    element.dispatchEvent(pointer('pointerdown', 1, 300, 100))
+    // Browsers may report cancel coordinates as 0,0
+    element.dispatchEvent(pointer('pointercancel', 1, 0, 0))
+
+    expect(onSwipe).not.toHaveBeenCalled()
+    expect(onSwipeEnd).toHaveBeenCalledTimes(1)
+    expect(onSwipeEnd.mock.calls[0]![0].cancelled).toBe(true)
+    expect(onSwipeEnd.mock.calls[0]![0].movement).toEqual({ x: 0, y: 0 })
+    controller.destroy()
+  })
+
+  it('long press reports cancelled on pointercancel', () => {
+    const onPressEnd = vi.fn()
+    const controller = createLongPressGesture(element, { onPressEnd })
+
+    element.dispatchEvent(pointer('pointerdown', 1, 100, 100))
+    element.dispatchEvent(pointer('pointercancel', 1, 0, 0))
+
+    expect(onPressEnd.mock.calls[0]![0].cancelled).toBe(true)
+    controller.destroy()
+  })
+})
+
+describe('Advanced Gestures lost pointerup recovery', () => {
+  let element: HTMLElement
+  let clock: TestClock
+
+  const pointer = (type: string, pointerId: number, clientX: number, clientY: number) =>
+    new PointerEvent(type, { pointerId, clientX, clientY, bubbles: true })
+
+  beforeEach(() => {
+    clock = installTestClock({ timers: true })
+    element = document.createElement('div')
+    document.body.appendChild(element)
+  })
+
+  afterEach(() => {
+    clock.uninstall()
+    element.remove()
+  })
+
+  const swipeRight = (pointerId: number) => {
+    element.dispatchEvent(pointer('pointerdown', pointerId, 0, 0))
+    clock.advance(16)
+    element.dispatchEvent(pointer('pointermove', pointerId, 100, 0))
+    clock.advance(16)
+    element.dispatchEvent(pointer('pointerup', pointerId, 100, 0))
+  }
+
+  it('swipe resets when the pointerup only reaches window', () => {
+    const onSwipe = vi.fn()
+    const onSwipeEnd = vi.fn()
+    const controller = createSwipeGesture(element, { onSwipe, onSwipeEnd })
+
+    element.dispatchEvent(pointer('pointerdown', 1, 0, 0))
+    // Element removed / released elsewhere: only window sees the pointerup
+    window.dispatchEvent(pointer('pointerup', 1, 0, 0))
+    expect(onSwipeEnd).toHaveBeenCalledTimes(1)
+
+    // Not locked: a new pointer can swipe
+    swipeRight(2)
+    expect(onSwipe).toHaveBeenCalledTimes(1)
+    expect(onSwipe.mock.calls[0]![0].direction).toBe('right')
+    controller.destroy()
+  })
+
+  it('swipe treats lostpointercapture as a cancel', () => {
+    const onSwipe = vi.fn()
+    const onSwipeEnd = vi.fn()
+    const controller = createSwipeGesture(element, { onSwipe, onSwipeEnd })
+
+    element.dispatchEvent(pointer('pointerdown', 1, 0, 0))
+    element.dispatchEvent(pointer('pointermove', 1, 100, 0))
+    element.dispatchEvent(pointer('lostpointercapture', 1, 100, 0))
+
+    expect(onSwipe).not.toHaveBeenCalled()
+    expect(onSwipeEnd).toHaveBeenCalledTimes(1)
+    expect(onSwipeEnd.mock.calls[0]![0].cancelled).toBe(true)
+
+    swipeRight(2)
+    expect(onSwipe).toHaveBeenCalledTimes(1)
+    controller.destroy()
+  })
+
+  it('swipe does not report twice when the pointerup bubbles to window', () => {
+    const onSwipeEnd = vi.fn()
+    const controller = createSwipeGesture(element, { onSwipeEnd })
+    swipeRight(1)
+    expect(onSwipeEnd).toHaveBeenCalledTimes(1)
+    controller.destroy()
+  })
+
+  it('swipe removes its window listeners on destroy', () => {
+    const onSwipeEnd = vi.fn()
+    const controller = createSwipeGesture(element, { onSwipeEnd })
+    element.dispatchEvent(pointer('pointerdown', 1, 0, 0))
+    controller.destroy()
+    window.dispatchEvent(pointer('pointerup', 1, 0, 0))
+    expect(onSwipeEnd).not.toHaveBeenCalled()
+  })
+
+  it('long press resets when the pointerup only reaches window', () => {
+    const onLongPress = vi.fn()
+    const onPressEnd = vi.fn()
+    const onPressStart = vi.fn()
+    const controller = createLongPressGesture(element, { threshold: 500, onLongPress, onPressStart, onPressEnd })
+
+    element.dispatchEvent(pointer('pointerdown', 1, 0, 0))
+    window.dispatchEvent(pointer('pointerup', 1, 0, 0))
+    expect(onPressEnd).toHaveBeenCalledTimes(1)
+    clock.advance(600)
+    expect(onLongPress).not.toHaveBeenCalled()
+
+    // A new press works
+    element.dispatchEvent(pointer('pointerdown', 2, 0, 0))
+    expect(onPressStart).toHaveBeenCalledTimes(2)
+    clock.advance(600)
+    expect(onLongPress).toHaveBeenCalledTimes(1)
+    element.dispatchEvent(pointer('pointerup', 2, 0, 0))
+    expect(onPressEnd).toHaveBeenCalledTimes(2)
+    controller.destroy()
+  })
+
+  it('long press cancels on lostpointercapture', () => {
+    const onLongPress = vi.fn()
+    const onPressEnd = vi.fn()
+    const controller = createLongPressGesture(element, { threshold: 500, onLongPress, onPressEnd })
+
+    element.dispatchEvent(pointer('pointerdown', 1, 0, 0))
+    element.dispatchEvent(pointer('lostpointercapture', 1, 0, 0))
+    expect(onPressEnd).toHaveBeenCalledTimes(1)
+    expect(onPressEnd.mock.calls[0]![0].cancelled).toBe(true)
+    clock.advance(600)
+    expect(onLongPress).not.toHaveBeenCalled()
+    controller.destroy()
   })
 })

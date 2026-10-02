@@ -78,6 +78,9 @@ export function useTrail<T extends Record<string, number>>(
 
     springsRef.current = springs
 
+    // Drop values of items that no longer exist (count decreased)
+    setCurrentValues(prev => (prev.length > count ? prev.slice(0, count) : prev))
+
     // Subscribe to all springs and update state
     const unsubscribers: (() => void)[] = []
 

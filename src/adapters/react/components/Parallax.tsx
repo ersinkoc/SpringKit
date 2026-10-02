@@ -18,6 +18,13 @@ import {
 } from 'react'
 import { createSpringValue } from '@oxog/springkit'
 import type { SpringConfig } from '@oxog/springkit'
+import { useStableSpringConfig } from '../utils/config.js'
+import { useShouldReduceMotion } from '../utils/reducedMotion.js'
+import { onPointerLeaveWindow } from '../utils/dom.js'
+
+const DEFAULT_PARALLAX_CONFIG: SpringConfig = { stiffness: 100, damping: 20 }
+const DEFAULT_MOUSE_PARALLAX_CONFIG: SpringConfig = { stiffness: 100, damping: 15 }
+const DEFAULT_TILT_CONFIG: SpringConfig = { stiffness: 300, damping: 20 }
 
 // ============ Parallax (Scroll-based) ============
 
@@ -81,9 +88,9 @@ export const Parallax = memo(forwardRef<HTMLDivElement, ParallaxProps>(
       children,
       speed = 0.5,
       direction = 'vertical',
-      config = { stiffness: 100, damping: 20 },
+      config: configProp,
       enabled = true,
-      offset = {},
+      offset,
       rootMargin = '100px',
       as: Component = 'div',
       className,
@@ -91,6 +98,12 @@ export const Parallax = memo(forwardRef<HTMLDivElement, ParallaxProps>(
     },
     ref
   ) {
+    const config = useStableSpringConfig(configProp, DEFAULT_PARALLAX_CONFIG)
+    // Reduced motion (MotionConfig or OS setting) keeps the element at rest
+    const reduceMotion = useShouldReduceMotion()
+    const isActive = enabled && !reduceMotion
+    const offsetX = offset?.x ?? 0
+    const offsetY = offset?.y ?? 0
     const innerRef = useRef<HTMLDivElement>(null)
     const combinedRef = (node: HTMLDivElement | null) => {
       innerRef.current = node
@@ -103,16 +116,16 @@ export const Parallax = memo(forwardRef<HTMLDivElement, ParallaxProps>(
 
     const springXRef = useRef<ReturnType<typeof createSpringValue> | null>(null)
     const springYRef = useRef<ReturnType<typeof createSpringValue> | null>(null)
-    const [transform, setTransform] = useState({ x: offset.x ?? 0, y: offset.y ?? 0 })
+    const [transform, setTransform] = useState({ x: offsetX, y: offsetY })
     const [isInView, setIsInView] = useState(false)
 
     // Initialize springs
     useEffect(() => {
-      springXRef.current = createSpringValue(offset.x ?? 0, {
+      springXRef.current = createSpringValue(offsetX, {
         ...config,
         onUpdate: (x) => setTransform((t) => ({ ...t, x })),
       })
-      springYRef.current = createSpringValue(offset.y ?? 0, {
+      springYRef.current = createSpringValue(offsetY, {
         ...config,
         onUpdate: (y) => setTransform((t) => ({ ...t, y })),
       })
@@ -121,7 +134,7 @@ export const Parallax = memo(forwardRef<HTMLDivElement, ParallaxProps>(
         springXRef.current?.destroy()
         springYRef.current?.destroy()
       }
-    }, [config, offset.x, offset.y])
+    }, [config, offsetX, offsetY])
 
     // Intersection observer
     useEffect(() => {
@@ -140,7 +153,12 @@ export const Parallax = memo(forwardRef<HTMLDivElement, ParallaxProps>(
 
     // Scroll handler
     useEffect(() => {
-      if (!enabled || !isInView) return
+      if (reduceMotion) {
+        springXRef.current?.jump(offsetX)
+        springYRef.current?.jump(offsetY)
+        return
+      }
+      if (!isActive || !isInView) return
 
       const handleScroll = () => {
         if (!innerRef.current) return
@@ -154,12 +172,12 @@ export const Parallax = memo(forwardRef<HTMLDivElement, ParallaxProps>(
         const centerX = (rect.left + rect.width / 2 - windowWidth / 2) / windowWidth
 
         if (direction === 'vertical' || direction === 'both') {
-          const yOffset = centerY * speed * 200 + (offset.y ?? 0)
+          const yOffset = centerY * speed * 200 + offsetY
           springYRef.current?.set(yOffset)
         }
 
         if (direction === 'horizontal' || direction === 'both') {
-          const xOffset = centerX * speed * 200 + (offset.x ?? 0)
+          const xOffset = centerX * speed * 200 + offsetX
           springXRef.current?.set(xOffset)
         }
       }
@@ -172,7 +190,7 @@ export const Parallax = memo(forwardRef<HTMLDivElement, ParallaxProps>(
         window.removeEventListener('scroll', handleScroll)
         window.removeEventListener('resize', handleScroll)
       }
-    }, [enabled, isInView, speed, direction, offset])
+    }, [isActive, reduceMotion, isInView, speed, direction, offsetX, offsetY])
 
     const transformStyle = useMemo(() => {
       const parts: string[] = []
@@ -263,7 +281,7 @@ export const MouseParallax = memo(forwardRef<HTMLDivElement, MouseParallaxProps>
       children,
       strength = 20,
       inverted = false,
-      config = { stiffness: 100, damping: 15 },
+      config: configProp,
       enabled = true,
       container,
       resetOnLeave = true,
@@ -273,6 +291,9 @@ export const MouseParallax = memo(forwardRef<HTMLDivElement, MouseParallaxProps>
     },
     ref
   ) {
+    const config = useStableSpringConfig(configProp, DEFAULT_MOUSE_PARALLAX_CONFIG)
+    // Reduced motion (MotionConfig or OS setting) keeps the element at rest
+    const reduceMotion = useShouldReduceMotion()
     const springXRef = useRef<ReturnType<typeof createSpringValue> | null>(null)
     const springYRef = useRef<ReturnType<typeof createSpringValue> | null>(null)
     const [transform, setTransform] = useState({ x: 0, y: 0 })
@@ -296,6 +317,11 @@ export const MouseParallax = memo(forwardRef<HTMLDivElement, MouseParallaxProps>
 
     // Mouse handler
     useEffect(() => {
+      if (reduceMotion) {
+        springXRef.current?.jump(0)
+        springYRef.current?.jump(0)
+        return
+      }
       if (!enabled) return
 
       // Capture target at mount time to ensure cleanup uses same target
@@ -340,9 +366,11 @@ export const MouseParallax = memo(forwardRef<HTMLDivElement, MouseParallaxProps>
         }
       }
 
+      // mouseleave is not fired on window; detect the pointer leaving the page instead
+      let removeWindowLeaveListener: (() => void) | null = null
       if (useWindow) {
         window.addEventListener('mousemove', handleMouseMove, { passive: true })
-        window.addEventListener('mouseleave', handleMouseLeave, { passive: true })
+        removeWindowLeaveListener = onPointerLeaveWindow(handleMouseLeave)
       } else {
         target.addEventListener('mousemove', handleMouseMove, { passive: true })
         target.addEventListener('mouseleave', handleMouseLeave, { passive: true })
@@ -351,13 +379,13 @@ export const MouseParallax = memo(forwardRef<HTMLDivElement, MouseParallaxProps>
       return () => {
         if (useWindow) {
           window.removeEventListener('mousemove', handleMouseMove)
-          window.removeEventListener('mouseleave', handleMouseLeave)
+          removeWindowLeaveListener?.()
         } else {
           target.removeEventListener('mousemove', handleMouseMove)
           target.removeEventListener('mouseleave', handleMouseLeave)
         }
       }
-    }, [enabled, container, strength, inverted, resetOnLeave])
+    }, [enabled, reduceMotion, container, strength, inverted, resetOnLeave])
 
     return React.createElement(
       Component as string,
@@ -432,7 +460,7 @@ export const TiltCard = memo(forwardRef<HTMLDivElement, TiltCardProps>(
       maxTilt = 20,
       perspective = 1000,
       scale = 1,
-      config = { stiffness: 300, damping: 20 },
+      config: configProp,
       enabled = true,
       glare = false,
       glareOpacity = 0.2,
@@ -442,6 +470,10 @@ export const TiltCard = memo(forwardRef<HTMLDivElement, TiltCardProps>(
     },
     ref
   ) {
+    const config = useStableSpringConfig(configProp, DEFAULT_TILT_CONFIG)
+    // Reduced motion (MotionConfig or OS setting) disables the tilt
+    const reduceMotion = useShouldReduceMotion()
+    const isActive = enabled && !reduceMotion
     const innerRef = useRef<HTMLDivElement>(null)
     const combinedRef = (node: HTMLDivElement | null) => {
       innerRef.current = node
@@ -488,7 +520,7 @@ export const TiltCard = memo(forwardRef<HTMLDivElement, TiltCardProps>(
 
     const handleMouseMove = useCallback(
       (e: React.MouseEvent) => {
-        if (!enabled || !innerRef.current) return
+        if (!isActive || !innerRef.current) return
 
         const rect = innerRef.current.getBoundingClientRect()
         const centerX = (e.clientX - rect.left) / rect.width - 0.5
@@ -512,7 +544,7 @@ export const TiltCard = memo(forwardRef<HTMLDivElement, TiltCardProps>(
 
         onTilt?.(tiltX, tiltY)
       },
-      [enabled, maxTilt, scale, glare, glareOpacity, onTilt]
+      [isActive, maxTilt, scale, glare, glareOpacity, onTilt]
     )
 
     const handleMouseLeave = useCallback(() => {
@@ -521,6 +553,15 @@ export const TiltCard = memo(forwardRef<HTMLDivElement, TiltCardProps>(
       springScaleRef.current?.set(1)
       springGlareRef.current?.set(0)
     }, [])
+
+    // Reduced motion turned on while tilted: snap back to rest
+    useEffect(() => {
+      if (!reduceMotion) return
+      springTiltXRef.current?.jump(0)
+      springTiltYRef.current?.jump(0)
+      springScaleRef.current?.jump(1)
+      springGlareRef.current?.jump(0)
+    }, [reduceMotion])
 
     return (
       <div

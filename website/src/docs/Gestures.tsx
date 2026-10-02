@@ -127,10 +127,14 @@ const drag = createDragSpring(element, {
             { option: 'rubberBand', desc: 'Enable elastic effect beyond bounds' },
             { option: 'rubberBandFactor', desc: 'Elasticity amount (0-1)' },
             { option: 'momentum', desc: 'Continue motion after release' },
-            { option: 'axis', desc: 'Lock to "x" or "y" axis' },
-            { option: 'onStart', desc: 'Called when drag starts' },
+            { option: 'momentumDecay', desc: 'Momentum deceleration rate (0-1, default 0.95)' },
+            { option: 'axis', desc: 'Lock to "x" or "y" axis (or use constraints.lockAxis)' },
+            { option: 'constraints', desc: 'bounds, constrainToParent, constrainToElement, lockAxis…' },
+            { option: 'snap', desc: 'Snap points / grid: { points, grid, snapOnRelease }' },
+            { option: 'onDragStart', desc: 'Called when drag starts with (event)' },
+            { option: 'onDrag', desc: 'Called while dragging with (x, y, event)' },
             { option: 'onUpdate', desc: 'Called on each frame with (x, y)' },
-            { option: 'onEnd', desc: 'Called when drag ends' },
+            { option: 'onDragEnd', desc: 'Called when drag ends with (x, y, velocity)' },
           ].map((item) => (
             <div key={item.option} className="flex items-center gap-4 p-3 rounded-lg bg-white/5 border border-white/10">
               <code className="text-orange-300 font-mono text-sm">{item.option}</code>
@@ -207,7 +211,7 @@ const scroll = createScrollSpring(container, {
             { option: 'bounce', desc: 'Enable bounce at edges' },
             { option: 'bounceStiffness', desc: 'Bounce spring stiffness' },
             { option: 'bounceDamping', desc: 'Bounce spring damping' },
-            { option: 'axis', desc: 'Lock to "x" or "y" scroll' },
+            { option: 'direction', desc: '"vertical" (default), "horizontal" or "both"' },
             { option: 'onScroll', desc: 'Called with (scrollX, scrollY)' },
             { option: 'onScrollStart', desc: 'Called when scroll starts' },
             { option: 'onScrollEnd', desc: 'Called when scroll ends' },

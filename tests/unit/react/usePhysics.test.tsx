@@ -1,6 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
-import { renderHook, act, waitFor } from '@testing-library/react'
-import React from 'react'
+import { renderHook, act } from '@testing-library/react'
 import {
   useSpringState,
   useMomentum,
@@ -13,7 +12,7 @@ import {
 } from '@oxog/springkit/react'
 
 // Mock requestAnimationFrame for physics simulations
-const mockRAF = vi.fn()
+const _mockRAF = vi.fn()
 let rafId = 0
 const rafCallbacks: Map<number, FrameRequestCallback> = new Map()
 

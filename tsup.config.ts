@@ -27,10 +27,10 @@ const base = {
 } as const satisfies Options
 
 const targets = {
-  // Main package
+  // Main package + the standalone testing helpers (no shared code)
   core: {
     ...base,
-    entry: ['src/index.ts'],
+    entry: { index: 'src/index.ts', 'testing/index': 'src/testing/index.ts' },
     outDir: 'dist',
   },
   // React adapter. Core is imported via the package's own name and kept

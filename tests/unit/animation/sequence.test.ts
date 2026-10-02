@@ -55,7 +55,7 @@ describe('animation orchestration', () => {
 
       await stagger(
         items,
-        (item, index) => {
+        (item, _index) => {
           results.push(item)
           return {
             start: () => ({ start: () => ({ finished: Promise.resolve() }), finished: Promise.resolve() }),
@@ -131,7 +131,7 @@ describe('animation orchestration', () => {
 
       await stagger(
         items,
-        (item) => ({
+        (_item) => ({
           start: () => ({ start: () => ({ finished: Promise.resolve() }), finished: Promise.resolve() }),
           finished: Promise.resolve(),
         }),
@@ -177,7 +177,7 @@ describe('animation orchestration', () => {
 
       const items = ['a', 'b']
       const startOrder: string[] = []
-      let resolvers: (() => void)[] = []
+      const resolvers: (() => void)[] = []
 
       await stagger(
         items,
@@ -223,7 +223,7 @@ describe('animation orchestration', () => {
       const items = ['x']
       await stagger(
         items,
-        (item) => {
+        (_item) => {
           return {
             start: () => ({ start: () => ({ finished: Promise.resolve() }), finished: Promise.resolve() }),
             finished: Promise.resolve(),
@@ -240,7 +240,7 @@ describe('animation orchestration', () => {
       const items = ['a', 'b']
       await stagger(
         items,
-        (item) => {
+        (_item) => {
           return {
             start: () => ({ start: () => ({ finished: Promise.resolve() }), finished: Promise.resolve() }),
             finished: Promise.resolve(),

@@ -126,38 +126,37 @@ function createFeeling(feeling) {
   }
 }
 function adjustSpeed(preset, speed) {
-  const stiffness = (preset.stiffness ?? 100) * speed;
-  const damping = (preset.damping ?? 10) * Math.sqrt(speed);
+  const safeSpeed = Number.isFinite(speed) && speed > 0 ? speed : 1;
+  const stiffness = (preset.stiffness ?? 100) * safeSpeed;
+  const damping = (preset.damping ?? 10) * Math.sqrt(safeSpeed);
   return { ...preset, stiffness, damping };
 }
 function adjustBounce(preset, bounce) {
   const minDamping = 5;
   const maxDamping = 40;
-  const damping = maxDamping - bounce * (maxDamping - minDamping);
+  const safeBounce = Number.isFinite(bounce) ? bounce : 0;
+  const damping = maxDamping - safeBounce * (maxDamping - minDamping);
   return { ...preset, damping: Math.max(minDamping, Math.min(maxDamping, damping)) };
 }
+function perceptualSpringConfig(durationMs, bounce = 0, mass = 1) {
+  const seconds = (Number.isFinite(durationMs) && durationMs > 0 ? durationMs : 500) / 1e3;
+  const safeBounce = Math.min(1, Math.max(-1, Number.isFinite(bounce) ? bounce : 0));
+  const safeMass = Number.isFinite(mass) && mass > 0 ? mass : 1;
+  const zeta = safeBounce >= 0 ? 1 - safeBounce : 1 / Math.max(1e-3, 1 + safeBounce);
+  const stiffness = Math.pow(2 * Math.PI / seconds, 2) * safeMass;
+  const damping = 4 * Math.PI * zeta * safeMass / seconds;
+  return { stiffness, damping, mass: safeMass };
+}
 function configFromDuration(ms) {
-  if (ms < 300) {
-    return { stiffness: 170, damping: 26 };
-  }
-  if (ms < 500) {
-    return { stiffness: 100, damping: 20 };
-  }
-  return { stiffness: 80, damping: 15 };
+  return perceptualSpringConfig(ms, 0);
 }
 function configFromBounce(bounce) {
-  if (bounce <= 0) {
-    return { stiffness: 170, damping: 26 };
-  }
-  if (bounce <= 0.25) {
-    return { stiffness: 200, damping: 12 };
-  }
-  return { stiffness: 200, damping: 8 };
+  return perceptualSpringConfig(500, bounce);
 }
 
 // src/core/physics.ts
 var FIXED_TIME_STEP = 1 / 60;
-function simulateSpring(position, velocity, target, config) {
+function simulateSpring(position, velocity, target, config, timeStep = FIXED_TIME_STEP) {
   const {
     stiffness = 100,
     damping = 10,
@@ -176,7 +175,7 @@ function simulateSpring(position, velocity, target, config) {
       isRest: true
     };
   }
-  const dt = FIXED_TIME_STEP;
+  const dt = Number.isFinite(timeStep) && timeStep >= 0 ? timeStep : FIXED_TIME_STEP;
   const springForce = stiffness * displacement;
   const dampingForce = absVelocity > 1e-4 ? damping * velocity : 0;
   const safeMass = mass === 0 ? 1e-3 : mass;
@@ -190,6 +189,66 @@ function simulateSpring(position, velocity, target, config) {
     velocity: newVelocity,
     isRest
   };
+}
+function springMotion(config, x0, v0) {
+  const stiffness = positiveOr(config.stiffness, 100);
+  const mass = positiveOr(config.mass, 1);
+  const damping = typeof config.damping === "number" && Number.isFinite(config.damping) && config.damping >= 0 ? config.damping : 10;
+  const omega0 = Math.sqrt(stiffness / mass);
+  const zeta = damping / (2 * Math.sqrt(stiffness * mass));
+  if (Math.abs(zeta - 1) < 1e-6) {
+    const b = v0 + omega0 * x0;
+    return (t) => {
+      const envelope = Math.exp(-omega0 * t);
+      return {
+        position: envelope * (x0 + b * t),
+        velocity: envelope * (b - omega0 * (x0 + b * t))
+      };
+    };
+  }
+  if (zeta < 1) {
+    const omegaD = omega0 * Math.sqrt(1 - zeta * zeta);
+    const b = (v0 + zeta * omega0 * x0) / omegaD;
+    return (t) => {
+      const envelope = Math.exp(-zeta * omega0 * t);
+      const cos = Math.cos(omegaD * t);
+      const sin = Math.sin(omegaD * t);
+      return {
+        position: envelope * (x0 * cos + b * sin),
+        velocity: envelope * ((b * omegaD - zeta * omega0 * x0) * cos - (x0 * omegaD + zeta * omega0 * b) * sin)
+      };
+    };
+  }
+  const root = omega0 * Math.sqrt(zeta * zeta - 1);
+  const r1 = -zeta * omega0 + root;
+  const r2 = -zeta * omega0 - root;
+  const c2 = (v0 - r1 * x0) / (r2 - r1);
+  const c1 = x0 - c2;
+  return (t) => {
+    const e1 = Math.exp(r1 * t);
+    const e2 = Math.exp(r2 * t);
+    return {
+      position: c1 * e1 + c2 * e2,
+      velocity: c1 * r1 * e1 + c2 * r2 * e2
+    };
+  };
+}
+function stepSpring(position, velocity, target, config, dt) {
+  const restSpeed = config.restSpeed ?? 0.01;
+  const restDelta = config.restDelta ?? 0.01;
+  if (Math.abs(target - position) <= restDelta && Math.abs(velocity) <= restSpeed) {
+    return { position: target, velocity: 0, isRest: true };
+  }
+  if (!(dt > 0)) {
+    return { position, velocity, isRest: false };
+  }
+  const state = springMotion(config, position - target, velocity)(dt);
+  const newPosition = target + state.position;
+  const isRest = Math.abs(state.position) <= restDelta && Math.abs(state.velocity) <= restSpeed;
+  return { position: newPosition, velocity: state.velocity, isRest };
+}
+function positiveOr(value, fallback) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
 }
 function calculatePeriod(stiffness, mass) {
   const safeStiffness = stiffness <= 0 ? 1e-3 : stiffness;
@@ -227,60 +286,83 @@ var AnimationState = /* @__PURE__ */ ((AnimationState2) => {
 var MAX_DELTA_TIME = 64;
 var AnimationLoop = class {
   constructor() {
+    // Strong set: an animation must stay alive while it is running, otherwise
+    // `spring(...).start()` without keeping the return value could be GC'd.
     this.animations = /* @__PURE__ */ new Set();
-    this.animationMap = /* @__PURE__ */ new WeakMap();
     this.rafId = null;
+    // The scheduler the pending frame was requested with. If the global
+    // requestAnimationFrame is swapped (e.g. a test clock is installed or
+    // removed) the pending frame is moved to the new scheduler, otherwise the
+    // loop would wait on a clock that is no longer driven.
+    this.scheduledWith = null;
     this.isRunning = false;
+    this.isTicking = false;
     this.lastTime = 0;
     this.nextId = 1;
     this.idMap = /* @__PURE__ */ new WeakMap();
     this.frameListeners = /* @__PURE__ */ new Set();
+    this.timeScale = 1;
+    this.timeScaleListeners = /* @__PURE__ */ new Set();
+    /**
+     * Clock that animations see. It advances by the real frame delta times
+     * `timeScale`, so slow motion / pausing needs no support from animations.
+     * Starts at a real timestamp so animations never see time 0.
+     */
+    this.animationTime = typeof performance !== "undefined" ? performance.now() : 0;
     // FinalizationRegistry for automatic cleanup notifications
     // Feature detection for older browsers (Safari < 14.1, IE11)
     this.registry = typeof FinalizationRegistry !== "undefined" ? new FinalizationRegistry((id) => {
       this.cleanupCallbacks.forEach((cb) => cb(id));
     }) : null;
     this.cleanupCallbacks = /* @__PURE__ */ new Set();
+    this.registered = /* @__PURE__ */ new WeakSet();
     /**
      * Single animation frame - optimized single-pass update + cleanup
      * Features:
-     * - WeakRef dereferencing with automatic cleanup of dead refs
      * - Delta time clamping for frame-drop resilience
      * - O(n) single-pass performance
      * - Frame listener notifications
      */
     this.tick = () => {
       const now = performance.now();
-      const rawDelta = now - this.lastTime;
-      const clampedDelta = Math.min(rawDelta, MAX_DELTA_TIME);
-      this.lastTime = now;
-      this.lastFrameDuration = clampedDelta;
-      for (const listener of this.frameListeners) {
-        try {
-          listener(clampedDelta);
-        } catch (e) {
-          console.error("[SpringKit] Frame listener error:", e);
+      this.rafId = null;
+      this.isTicking = true;
+      try {
+        const rawDelta = now - this.lastTime;
+        const clampedDelta = Math.min(Math.max(rawDelta, 0), MAX_DELTA_TIME);
+        this.lastTime = now;
+        const scaledDelta = clampedDelta * this.timeScale;
+        this.animationTime += scaledDelta;
+        if (clampedDelta > 0) {
+          this.lastFrameDuration = clampedDelta;
         }
-      }
-      const toRemove = [];
-      for (const ref of this.animations) {
-        const animation = ref.deref();
-        if (!animation) {
-          toRemove.push(ref);
-          continue;
+        for (const listener of this.frameListeners) {
+          try {
+            listener(clampedDelta);
+          } catch (e) {
+            console.error("[SpringKit] Frame listener error:", e);
+          }
         }
-        animation.update(now);
-        if (animation.isComplete()) {
-          toRemove.push(ref);
-          this.animationMap.delete(animation);
-          this.idMap.delete(animation);
+        const current = Array.from(this.animations);
+        for (let i = 0; i < current.length; i++) {
+          const animation = current[i];
+          if (!this.animations.has(animation)) continue;
+          try {
+            animation.update(this.animationTime, scaledDelta);
+          } catch (e) {
+            console.error("[SpringKit] Animation update error:", e);
+          }
+          if (animation.isComplete()) {
+            this.animations.delete(animation);
+            this.idMap.delete(animation);
+          }
         }
-      }
-      for (let i = 0; i < toRemove.length; i++) {
-        this.animations.delete(toRemove[i]);
+      } finally {
+        this.isTicking = false;
       }
       if (this.animations.size > 0) {
-        this.rafId = requestAnimationFrame(this.tick);
+        this.isRunning = true;
+        this.scheduleFrame();
       } else {
         this.stop();
       }
@@ -289,43 +371,29 @@ var AnimationLoop = class {
   }
   /**
    * Add an animation to the loop
-   * Uses WeakRef to prevent memory leaks if animation is garbage collected
+   * The loop holds a strong reference while the animation is active and
+   * releases it on completion or removal.
    * @returns Unique ID for this animation
    */
   add(animation) {
     const existingId = this.idMap.get(animation);
-    if (existingId !== void 0) return existingId;
-    if (this.animations.size > 0 && this.animations.size % 100 === 0) {
-      this.cleanupDeadRefs();
-    }
-    const id = this.nextId++;
-    const ref = new WeakRef(animation);
-    this.animations.add(ref);
-    this.animationMap.set(animation, ref);
+    if (existingId !== void 0 && this.animations.has(animation)) return existingId;
+    const id = existingId ?? this.nextId++;
+    this.animations.add(animation);
     this.idMap.set(animation, id);
-    this.registry?.register(animation, id);
-    this.start();
-    return id;
-  }
-  /**
-   * Clean up dead WeakRefs from the animations set
-   * Prevents memory bloat from accumulated dead references
-   */
-  cleanupDeadRefs() {
-    for (const ref of this.animations) {
-      if (ref.deref() === void 0) {
-        this.animations.delete(ref);
-      }
+    if (this.registry && !this.registered.has(animation)) {
+      this.registered.add(animation);
+      this.registry.register(animation, id);
     }
+    this.start();
+    this.rescheduleIfClockChanged();
+    return id;
   }
   /**
    * Remove an animation from the loop
    */
   remove(animation) {
-    const ref = this.animationMap.get(animation);
-    if (ref) {
-      this.animations.delete(ref);
-      this.animationMap.delete(animation);
+    if (this.animations.delete(animation)) {
       this.idMap.delete(animation);
     }
     if (this.animations.size === 0) {
@@ -355,33 +423,78 @@ var AnimationLoop = class {
     if (this.isRunning) return;
     this.isRunning = true;
     this.lastTime = performance.now();
+    if (this.isTicking) return;
     this.tick();
   }
   /**
    * Stop the animation loop
    */
+  scheduleFrame() {
+    this.scheduledWith = {
+      request: requestAnimationFrame,
+      cancel: cancelAnimationFrame
+    };
+    this.rafId = requestAnimationFrame(this.tick);
+  }
+  rescheduleIfClockChanged() {
+    if (this.rafId === null || this.isTicking || this.scheduledWith === null || this.scheduledWith.request === requestAnimationFrame) {
+      return;
+    }
+    try {
+      this.scheduledWith.cancel(this.rafId);
+    } catch {
+    }
+    this.rafId = null;
+    this.lastTime = performance.now();
+    this.scheduleFrame();
+  }
   stop() {
     this.isRunning = false;
     if (this.rafId !== null) {
-      cancelAnimationFrame(this.rafId);
+      (this.scheduledWith?.cancel ?? cancelAnimationFrame)(this.rafId);
       this.rafId = null;
     }
   }
   /**
-   * Get the number of active animations (including potentially dead refs)
+   * Slow down, speed up or freeze every loop-driven animation (springs,
+   * spring values, decay, MotionValues...) and every animation started with
+   * `animateNative()`. 1 = normal speed, 0.1 = 10x slow motion, 0 = frozen.
+   * Handy for inspecting motion while developing.
+   *
+   * Animations that run their own clock (e.g. timelines) are not affected.
+   */
+  setTimeScale(scale) {
+    const next = Number.isFinite(scale) && scale > 0 ? scale : 0;
+    if (next === this.timeScale) return;
+    this.timeScale = next;
+    for (const listener of this.timeScaleListeners) {
+      try {
+        listener(next);
+      } catch (e) {
+        console.error("[SpringKit] Time scale listener error:", e);
+      }
+    }
+  }
+  /** Current time scale (see {@link setTimeScale}) */
+  getTimeScale() {
+    return this.timeScale;
+  }
+  /** Subscribe to time scale changes; returns an unsubscribe function */
+  onTimeScaleChange(callback) {
+    this.timeScaleListeners.add(callback);
+    return () => this.timeScaleListeners.delete(callback);
+  }
+  /**
+   * Get the number of active animations
    */
   get size() {
     return this.animations.size;
   }
   /**
-   * Get count of actually alive animations (for debugging/testing)
+   * Get count of alive (active) animations (for debugging/testing)
    */
   getAliveCount() {
-    let count = 0;
-    for (const ref of this.animations) {
-      if (ref.deref()) count++;
-    }
-    return count;
+    return this.animations.size;
   }
   // Default to ~60fps
   /**
@@ -484,7 +597,7 @@ function validateDecayConfig(config) {
   }
   if (deceleration <= 0 || deceleration >= 1) {
     warnOnce(
-      `Deceleration should be between 0 and 1 (exclusive). Got ${deceleration}. Typical values are 0.99-0.999.`
+      `Deceleration should be between 0 and 1 (exclusive). Got ${deceleration}. Typical values are 0.99 (fast) to 0.998 (normal), applied per millisecond.`
     );
   }
 }
@@ -510,18 +623,27 @@ function clearWarnings() {
 }
 
 // src/core/spring.ts
+function safeCall(fn, ...args) {
+  if (!fn) return;
+  try {
+    fn(...args);
+  } catch (e) {
+    console.error("[SpringKit] Spring callback error:", e);
+  }
+}
 var SpringAnimationImpl = class {
   constructor(from, to, config = {}) {
     this.state = "idle" /* Idle */;
     this.resolveComplete = null;
     this.lastUpdateTime = 0;
+    this.destroyed = false;
     validateSpringConfig(config);
     this.from = validateAnimationValue(from, "spring.from");
     this.to = validateAnimationValue(to, "spring.to");
     this.clampedFrom = this.from;
     this.clampedTo = this.to;
     this.position = this.from;
-    this.velocity = config.velocity ?? 0;
+    this.velocity = validateAnimationValue(config.velocity ?? 0, "spring.velocity");
     this.target = this.to;
     this.config = {
       ...defaultConfig,
@@ -532,21 +654,35 @@ var SpringAnimationImpl = class {
       restSpeed: config.restSpeed ?? defaultConfig.restSpeed,
       restDelta: config.restDelta ?? defaultConfig.restDelta
     };
+    this.resetFinished();
+  }
+  /** Create a new pending `finished` promise for the next run */
+  resetFinished() {
     this.finished = new Promise((resolve) => {
       this.resolveComplete = resolve;
     });
   }
+  /** Resolve the current `finished` promise (once) */
+  settleFinished() {
+    const resolve = this.resolveComplete;
+    this.resolveComplete = null;
+    resolve?.();
+  }
   start() {
     if (this.state === "running" /* Running */) return this;
+    if (this.resolveComplete === null && !this.destroyed) {
+      this.resetFinished();
+    }
     this.state = "running" /* Running */;
     this.lastUpdateTime = 0;
-    this.config.onStart?.();
+    safeCall(this.config.onStart);
     globalLoop.add(this);
     return this;
   }
   stop() {
     this.state = "idle" /* Idle */;
     globalLoop.remove(this);
+    this.settleFinished();
   }
   pause() {
     if (this.state === "running" /* Running */) {
@@ -595,31 +731,23 @@ var SpringAnimationImpl = class {
       this.start();
     }
   }
-  update(now) {
+  update(now, deltaTime) {
     if (this.state !== "running" /* Running */) return;
-    if (this.lastUpdateTime === 0) {
-      this.lastUpdateTime = now;
-    }
-    const elapsed = (now - this.lastUpdateTime) / 1e3;
+    const elapsedMs = this.lastUpdateTime === 0 ? deltaTime ?? 0 : now - this.lastUpdateTime;
+    const elapsed = elapsedMs / 1e3;
     this.lastUpdateTime = now;
     const MAX_DELTA_TIME2 = 1 / 15;
-    const FIXED_TIME_STEP2 = 1 / 60;
-    const safeElapsed = Math.min(elapsed, MAX_DELTA_TIME2);
-    const steps = Math.max(1, Math.ceil(safeElapsed / FIXED_TIME_STEP2));
-    let currentPosition = this.position;
-    let currentVelocity = this.velocity;
-    let isRest = false;
-    for (let i = 0; i < steps && !isRest; i++) {
-      const result = simulateSpring(
-        currentPosition,
-        currentVelocity,
-        this.target,
-        this.config
-      );
-      currentPosition = result.position;
-      currentVelocity = result.velocity;
-      isRest = result.isRest;
-    }
+    const safeElapsed = Math.min(Math.max(elapsed, 0), MAX_DELTA_TIME2);
+    const result = stepSpring(
+      this.position,
+      this.velocity,
+      this.target,
+      this.config,
+      safeElapsed
+    );
+    const currentPosition = result.position;
+    const currentVelocity = result.velocity;
+    const isRest = result.isRest;
     this.position = currentPosition;
     this.velocity = currentVelocity;
     if (this.config.clamp) {
@@ -627,16 +755,16 @@ var SpringAnimationImpl = class {
       const max = Math.max(this.clampedFrom, this.clampedTo);
       this.position = clamp(this.position, min, max);
     }
-    this.config.onUpdate?.(this.position);
+    safeCall(this.config.onUpdate, this.position);
     if (isRest) {
       this.state = "complete" /* Complete */;
       globalLoop.remove(this);
       this.position = this.target;
       this.velocity = 0;
-      this.config.onUpdate?.(this.position);
-      this.config.onComplete?.();
-      this.config.onRest?.();
-      this.resolveComplete?.();
+      safeCall(this.config.onUpdate, this.position);
+      safeCall(this.config.onComplete);
+      safeCall(this.config.onRest);
+      this.settleFinished();
     }
   }
   isAnimating() {
@@ -655,9 +783,8 @@ var SpringAnimationImpl = class {
     return this.velocity;
   }
   destroy() {
+    this.destroyed = true;
     this.stop();
-    this.resolveComplete?.();
-    this.resolveComplete = null;
     this.config.onUpdate = void 0;
     this.config.onStart = void 0;
     this.config.onComplete = void 0;
@@ -678,9 +805,7 @@ var SpringValueImpl = class {
     this.isNotifying = false;
     this.value = validateAnimationValue(initial, "createSpringValue.initial");
     this.config = { ...defaultConfig, ...config };
-    this.finishedPromise = new Promise((resolve) => {
-      this.resolveComplete = resolve;
-    });
+    this.finishedPromise = Promise.resolve();
   }
   get() {
     return this.value;
@@ -691,6 +816,7 @@ var SpringValueImpl = class {
   set(to, config = {}) {
     if (this.destroyed) return;
     const validTo = validateAnimationValue(to, "SpringValue.set");
+    const carriedVelocity = this.currentAnimation?.isAnimating() ? this.currentAnimation.getVelocity() : void 0;
     if (this.currentAnimation) {
       this.currentAnimation.destroy();
       this.currentAnimation = null;
@@ -702,6 +828,9 @@ var SpringValueImpl = class {
       this.resolveComplete = resolve;
     });
     const mergedConfig = { ...this.config, ...config };
+    if (config.velocity === void 0 && carriedVelocity !== void 0) {
+      mergedConfig.velocity = carriedVelocity;
+    }
     const originalOnUpdate = mergedConfig.onUpdate;
     const originalOnComplete = mergedConfig.onComplete;
     this.currentAnimation = spring(this.value, validTo, {
@@ -726,6 +855,7 @@ var SpringValueImpl = class {
     if (this.currentAnimation) {
       this.currentAnimation.destroy();
       this.currentAnimation = null;
+      this.resolveComplete?.();
     }
     this.value = validTo;
     this.notify();
@@ -804,7 +934,6 @@ var SpringGroupImpl = class {
       this.values.set(key, springValue);
     }
     this.finishedPromise = Promise.resolve();
-    this.resetPromise();
   }
   resetPromise() {
     this.finishedPromise = new Promise((resolve) => {
@@ -824,6 +953,7 @@ var SpringGroupImpl = class {
   set(values, config = {}) {
     if (this.destroyed) return;
     this.resetPromise();
+    const resolveBatch = this.resolveComplete;
     const promises = [];
     for (const [key, value] of Object.entries(values)) {
       const springValue = this.values.get(key);
@@ -833,9 +963,7 @@ var SpringGroupImpl = class {
       }
     }
     Promise.all(promises).then(() => {
-      if (this.resolveComplete && !this.destroyed) {
-        this.resolveComplete();
-      }
+      resolveBatch?.();
     });
   }
   jump(values) {
@@ -932,9 +1060,10 @@ function mergeVariants(...variants) {
   const merged = {};
   for (const variant of variants) {
     if (variant) {
+      const previousTransition = merged.transition;
       Object.assign(merged, variant);
       if (variant.transition) {
-        merged.transition = { ...merged.transition, ...variant.transition };
+        merged.transition = { ...previousTransition, ...variant.transition };
       }
     }
   }
@@ -976,9 +1105,10 @@ function parseValueWithUnit(value) {
 function buildTransformString(values) {
   const transforms = [];
   if (values.x !== void 0 || values.y !== void 0) {
-    const x = values.x ?? 0;
-    const y = values.y ?? 0;
-    transforms.push(`translate(${x}px, ${y}px)`);
+    const toLength = (v) => typeof v === "number" ? `${v}px` : v;
+    const x = toLength(values.x ?? 0);
+    const y = toLength(values.y ?? 0);
+    transforms.push(`translate(${x}, ${y})`);
   }
   if (values.scale !== void 0) {
     transforms.push(`scale(${values.scale})`);
@@ -1061,10 +1191,9 @@ function createOrchestration(parentAnim, childrenAnims, options = {}) {
   const children = async () => {
     await Promise.all(
       childrenAnims.map(
-        (anim, i) => new Promise((resolve) => {
-          setTimeout(async () => {
-            await anim();
-            resolve();
+        (anim, i) => new Promise((resolve, reject) => {
+          setTimeout(() => {
+            Promise.resolve().then(anim).then(resolve, reject);
           }, delays[i]);
         })
       )
@@ -1157,18 +1286,18 @@ var variantPresets = {
     animate: { x: 0, opacity: 1 },
     exit: { x: 100, opacity: 0 }
   },
-  /** Container with staggered children */
+  /** Container with staggered children (stagger and delays in ms) */
   staggerContainer: {
     initial: {},
     animate: {
       transition: {
-        staggerChildren: 0.1,
-        delayChildren: 0.1
+        staggerChildren: 100,
+        delayChildren: 100
       }
     },
     exit: {
       transition: {
-        staggerChildren: 0.05,
+        staggerChildren: 50,
         staggerDirection: -1
       }
     }
@@ -1212,10 +1341,13 @@ async function parallel(animations) {
 }
 async function stagger(items, animate2, options = {}) {
   const { delay = 0, from = "first" } = options;
+  if (items.length === 0) return;
   let startIndex = 0;
   if (from === "last") startIndex = items.length - 1;
   else if (from === "center") startIndex = Math.floor(items.length / 2);
-  else if (typeof from === "number") startIndex = from;
+  else if (typeof from === "number") {
+    startIndex = Number.isFinite(from) ? Math.min(Math.max(Math.round(from), 0), items.length - 1) : 0;
+  }
   const indices = [];
   const used = /* @__PURE__ */ new Set();
   indices.push(startIndex);
@@ -1232,7 +1364,7 @@ async function stagger(items, animate2, options = {}) {
       used.add(left);
     }
   }
-  const getDelay = typeof delay === "function" ? delay : (_i) => delay;
+  const getDelay = typeof delay === "function" ? (i) => delay(i) : (i) => Math.abs(indices[i] - startIndex) * delay;
   const animations = [];
   const timeoutIds = [];
   for (let i = 0; i < indices.length; i++) {
@@ -1261,7 +1393,6 @@ var TrailImpl = class {
   constructor(count, config = {}) {
     this.subscribers = /* @__PURE__ */ new Set();
     this.frameCount = 0;
-    this.pendingUpdates = /* @__PURE__ */ new Map();
     // Track timeout IDs for cleanup to prevent memory leaks
     this.pendingTimeouts = /* @__PURE__ */ new Set();
     this.destroyed = false;
@@ -1283,7 +1414,6 @@ var TrailImpl = class {
     for (let i = 0; i < this.springs.length; i++) {
       const delayFrames = (i + 1) * this.followDelay;
       const targetFrame = this.frameCount + delayFrames;
-      this.pendingUpdates.set(i, targetFrame);
       this.scheduleFollowerUpdate(i, targetValue, targetFrame, delayFrames);
     }
   }
@@ -1297,10 +1427,7 @@ var TrailImpl = class {
       const timeoutId = setTimeout(() => {
         this.pendingTimeouts.delete(timeoutId);
         if (this.destroyed) return;
-        const currentTarget = this.pendingUpdates.get(index);
-        if (currentTarget === targetFrame) {
-          this.springs[index].set(targetValue);
-        }
+        this.springs[index].set(targetValue);
       }, delayMs);
       this.pendingTimeouts.add(timeoutId);
     }
@@ -1309,6 +1436,7 @@ var TrailImpl = class {
     this.leader.set(value);
   }
   jump(value) {
+    this.clearPendingTimeouts();
     this.leader.jump(value);
     for (const spring2 of this.springs) {
       spring2.jump(value);
@@ -1319,15 +1447,16 @@ var TrailImpl = class {
   }
   subscribe(callback) {
     this.subscribers.add(callback);
+    let initialized = false;
+    const handler = () => {
+      if (initialized) this.safeNotify(callback);
+    };
     const unsubscribers = [];
     for (const spring2 of this.springs) {
-      unsubscribers.push(
-        spring2.subscribe(() => {
-          this.notify();
-        })
-      );
+      unsubscribers.push(spring2.subscribe(handler));
     }
-    callback(this.getValues());
+    initialized = true;
+    this.safeNotify(callback);
     return () => {
       this.subscribers.delete(callback);
       for (const unsubscribe of unsubscribers) {
@@ -1335,24 +1464,27 @@ var TrailImpl = class {
       }
     };
   }
-  notify() {
-    const values = this.getValues();
-    for (const subscriber of this.subscribers) {
-      subscriber(values);
+  safeNotify(callback) {
+    try {
+      callback(this.getValues());
+    } catch (e) {
+      console.error("[SpringKit] Trail subscriber error:", e);
     }
   }
-  destroy() {
-    this.destroyed = true;
+  clearPendingTimeouts() {
     for (const timeoutId of this.pendingTimeouts) {
       clearTimeout(timeoutId);
     }
     this.pendingTimeouts.clear();
+  }
+  destroy() {
+    this.destroyed = true;
+    this.clearPendingTimeouts();
     this.leader.destroy();
     for (const spring2 of this.springs) {
       spring2.destroy();
     }
     this.subscribers.clear();
-    this.pendingUpdates.clear();
   }
 };
 function createTrail(count, config) {
@@ -1360,62 +1492,117 @@ function createTrail(count, config) {
 }
 
 // src/animation/decay.ts
+var MAX_DELTA_MS = 64;
+var DEFAULT_DECELERATION = 0.998;
+var DEFAULT_REST_DELTA = 0.5;
 var DecayAnimationImpl = class {
   constructor(config) {
+    this.elapsed = 0;
+    this.lastUpdateTime = 0;
     this.state = "idle" /* Idle */;
-    this.rafId = null;
     this.resolveComplete = null;
+    this.destroyed = false;
     validateDecayConfig(config);
-    this.value = 0;
-    this.velocity = validateAnimationValue(config.velocity, "decay.velocity");
-    const rawDecel = config.deceleration ?? 0.998;
-    this.deceleration = validateAnimationValue(rawDecel, "decay.deceleration");
-    if (this.deceleration <= 0 || this.deceleration >= 1) {
-      this.deceleration = 0.998;
-    }
-    this.clampRange = config.clamp;
-    this.state = "idle" /* Idle */;
     this.config = config;
+    this.from = config.from !== void 0 && Number.isFinite(config.from) ? config.from : 0;
+    this.value = this.from;
+    this.clampRange = config.clamp;
+    this.restDelta = config.restDelta !== void 0 && config.restDelta > 0 ? config.restDelta : DEFAULT_REST_DELTA;
+    const rawDecel = validateAnimationValue(
+      config.deceleration ?? DEFAULT_DECELERATION,
+      "decay.deceleration"
+    );
+    const deceleration = rawDecel > 0 && rawDecel < 1 ? rawDecel : DEFAULT_DECELERATION;
+    this.logDecel = Math.log(deceleration);
+    let velocityMs = validateAnimationValue(config.velocity, "decay.velocity") / 1e3;
+    let target = this.from - velocityMs / this.logDecel;
+    if (config.modifyTarget) {
+      const modified = config.modifyTarget(target);
+      if (Number.isFinite(modified)) {
+        target = modified;
+        velocityMs = (target - this.from) * -this.logDecel;
+      }
+    }
+    this.velocityMs = velocityMs;
+    this.target = target;
+    this.resetFinished();
+  }
+  /** Create a new pending `finished` promise for the next run */
+  resetFinished() {
     this.finished = new Promise((resolve) => {
       this.resolveComplete = resolve;
     });
   }
+  /** Resolve the current `finished` promise (once) */
+  settleFinished() {
+    const resolve = this.resolveComplete;
+    this.resolveComplete = null;
+    resolve?.();
+  }
   start() {
     if (this.state === "running" /* Running */) return this;
+    if (this.resolveComplete === null && !this.destroyed) {
+      this.resetFinished();
+    }
     this.state = "running" /* Running */;
+    this.lastUpdateTime = 0;
     globalLoop.add(this);
     return this;
   }
   stop() {
-    this.state = "idle" /* Idle */;
+    if (this.state === "running" /* Running */) {
+      this.state = "idle" /* Idle */;
+    }
     globalLoop.remove(this);
+    this.settleFinished();
   }
-  update(_now) {
+  getValue() {
+    return this.value;
+  }
+  getVelocity() {
+    if (this.state === "complete" /* Complete */) return 0;
+    return this.velocityMs * Math.exp(this.logDecel * this.elapsed) * 1e3;
+  }
+  update(now, deltaTime) {
     if (this.state !== "running" /* Running */) return;
-    this.velocity *= this.deceleration;
-    this.value += this.velocity;
+    const rawElapsed = this.lastUpdateTime === 0 ? deltaTime ?? 0 : now - this.lastUpdateTime;
+    this.lastUpdateTime = now;
+    this.elapsed += Math.min(Math.max(rawElapsed, 0), MAX_DELTA_MS);
+    const decayFactor = Math.exp(this.logDecel * this.elapsed);
+    const velocityMs = this.velocityMs * decayFactor;
+    const remaining = Math.abs(velocityMs / this.logDecel);
+    let done = remaining < this.restDelta;
+    this.value = done ? this.target : this.from + this.velocityMs * (decayFactor - 1) / this.logDecel;
     if (this.clampRange) {
       const [min, max] = this.clampRange;
-      this.value = clamp(this.value, min, max);
-      if (this.value <= min && this.velocity < 0 || this.value >= max && this.velocity > 0) {
-        this.velocity = 0;
+      const clamped = clamp(this.value, min, max);
+      if (clamped !== this.value) {
+        this.value = clamped;
+        done = true;
       }
     }
-    this.config.onUpdate?.(this.value);
-    if (Math.abs(this.velocity) < 0.01) {
+    try {
+      this.config.onUpdate?.(this.value);
+    } catch (error) {
+      console.error("[SpringKit] Error in decay onUpdate callback:", error);
+    }
+    if (done) {
       this.state = "complete" /* Complete */;
       globalLoop.remove(this);
-      this.config.onComplete?.();
-      this.resolveComplete?.();
+      try {
+        this.config.onComplete?.();
+      } catch (error) {
+        console.error("[SpringKit] Error in decay onComplete callback:", error);
+      }
+      this.settleFinished();
     }
   }
   isComplete() {
     return this.state === "complete" /* Complete */;
   }
   destroy() {
+    this.destroyed = true;
     this.stop();
-    this.resolveComplete?.();
-    this.resolveComplete = null;
     this.config.onUpdate = void 0;
     this.config.onComplete = void 0;
   }
@@ -1425,14 +1612,19 @@ function decay(config) {
 }
 
 // src/animation/keyframes.ts
+var MAX_FRAME_MS = 64;
+var TIME_EPSILON = 1e-6;
 function keyframes(values, options = {}) {
   const {
     config = {},
     times,
+    duration,
     onKeyframe,
     onComplete,
     onUpdate
   } = options;
+  const totalDuration = typeof duration === "number" && Number.isFinite(duration) && duration > 0 ? duration : 0;
+  const timed = totalDuration > 0;
   const normalizedKeyframes = values.map((v, i) => {
     if (typeof v === "number") {
       return {
@@ -1449,6 +1641,7 @@ function keyframes(values, options = {}) {
     }
   });
   normalizedKeyframes.sort((a, b) => (a.at ?? 0) - (b.at ?? 0));
+  const dueTimes = normalizedKeyframes.map((kf) => Math.max(0, kf.at ?? 0) * totalDuration);
   let currentIndex = 0;
   let isPlaying = false;
   let isPaused = false;
@@ -1457,103 +1650,189 @@ function keyframes(values, options = {}) {
   let destroyed = false;
   let pendingRafId = null;
   let pendingTimeoutId = null;
+  let pendingResolve = null;
+  let runId = 0;
+  let interrupted = false;
+  let elapsed = 0;
+  let lastFrameTime = null;
+  const now = () => typeof performance !== "undefined" ? performance.now() : Date.now();
+  const advanceClock = (timestamp) => {
+    if (lastFrameTime !== null) {
+      const delta = Math.min(Math.max(timestamp - lastFrameTime, 0), MAX_FRAME_MS);
+      elapsed += delta * globalLoop.getTimeScale();
+    }
+    lastFrameTime = timestamp;
+  };
+  const waitUntil = (done, id) => new Promise((resolve) => {
+    if (done()) {
+      resolve();
+      return;
+    }
+    pendingResolve = resolve;
+    const finish = () => {
+      pendingResolve = null;
+      resolve();
+    };
+    const frame = (timestamp) => {
+      pendingRafId = null;
+      if (destroyed || id !== runId) {
+        finish();
+        return;
+      }
+      advanceClock(timestamp);
+      if (done()) {
+        finish();
+      } else {
+        pendingRafId = requestAnimationFrame(frame);
+      }
+    };
+    pendingRafId = requestAnimationFrame(frame);
+  });
   const createSpring = () => {
     if (spring2) {
       spring2.destroy();
     }
-    const currentKf = normalizedKeyframes[currentIndex];
-    const springConfig = currentKf?.config ?? config;
-    spring2 = createSpringValue(currentValue, springConfig);
+    spring2 = createSpringValue(currentValue, config);
     spring2.subscribe((value) => {
       currentValue = value;
       onUpdate?.(value);
     });
   };
-  const animateToNext = async () => {
-    if (destroyed || isPaused) return false;
+  const cancelWait = () => {
+    if (pendingRafId !== null) {
+      cancelAnimationFrame(pendingRafId);
+      pendingRafId = null;
+    }
+    if (pendingTimeoutId !== null) {
+      clearTimeout(pendingTimeoutId);
+      pendingTimeoutId = null;
+    }
+    const resolve = pendingResolve;
+    pendingResolve = null;
+    resolve?.();
+  };
+  const transitionTo = async (targetKf, id) => {
+    if (!spring2) return;
+    spring2.set(targetKf.value, targetKf.config ?? config);
+    if (timed) {
+      if (currentIndex < normalizedKeyframes.length - 1) return;
+      const due = dueTimes[currentIndex] ?? 0;
+      await waitUntil(
+        () => elapsed >= due - TIME_EPSILON && !(spring2?.isAnimating() ?? false),
+        id
+      );
+      return;
+    }
+    await new Promise((resolve) => {
+      pendingResolve = resolve;
+      const finish = () => {
+        pendingResolve = null;
+        resolve();
+      };
+      const checkComplete = () => {
+        pendingRafId = null;
+        if (destroyed || id !== runId) {
+          finish();
+          return;
+        }
+        if (spring2 && !spring2.isAnimating()) {
+          finish();
+        } else {
+          pendingRafId = requestAnimationFrame(checkComplete);
+        }
+      };
+      pendingTimeoutId = setTimeout(() => {
+        pendingTimeoutId = null;
+        checkComplete();
+      }, 16);
+    });
+  };
+  const animateToNext = async (id) => {
+    if (destroyed || isPaused || id !== runId) return false;
     if (currentIndex >= normalizedKeyframes.length - 1) return false;
+    if (timed) {
+      const due = dueTimes[currentIndex] ?? 0;
+      await waitUntil(() => elapsed >= due - TIME_EPSILON, id);
+      if (destroyed || isPaused || id !== runId) return false;
+    }
     currentIndex++;
     const targetKf = normalizedKeyframes[currentIndex];
     if (!targetKf) return false;
-    if (targetKf.config) {
-      createSpring();
-    }
     onKeyframe?.(currentIndex);
-    if (spring2) {
-      spring2.set(targetKf.value);
-      await new Promise((resolve) => {
-        const checkComplete = () => {
-          pendingRafId = null;
-          if (destroyed || isPaused) {
-            resolve();
-            return;
-          }
-          if (spring2 && !spring2.isAnimating()) {
-            resolve();
-          } else {
-            pendingRafId = requestAnimationFrame(checkComplete);
-          }
-        };
-        pendingTimeoutId = setTimeout(() => {
-          pendingTimeoutId = null;
-          if (!destroyed) {
-            checkComplete();
-          } else {
-            resolve();
-          }
-        }, 16);
-      });
+    await transitionTo(targetKf, id);
+    return id === runId && !destroyed && !isPaused;
+  };
+  const run = async (id) => {
+    if (interrupted) {
+      interrupted = false;
+      const targetKf = normalizedKeyframes[currentIndex];
+      if (targetKf) {
+        await transitionTo(targetKf, id);
+      }
     }
-    return true;
+    while (await animateToNext(id)) {
+    }
+    if (id === runId && !isPaused && !destroyed) {
+      isPlaying = false;
+      onComplete?.();
+    }
   };
   const animation = {
     play: async () => {
       if (destroyed) return;
       if (isPlaying) return;
+      cancelWait();
+      const id = ++runId;
       isPlaying = true;
       isPaused = false;
       if (currentIndex >= normalizedKeyframes.length - 1) {
         currentIndex = 0;
         currentValue = normalizedKeyframes[0]?.value ?? 0;
+        interrupted = false;
+        elapsed = 0;
       }
+      lastFrameTime = now();
       createSpring();
-      onKeyframe?.(0);
-      while (await animateToNext()) {
-      }
-      if (!isPaused && !destroyed) {
-        isPlaying = false;
-        onComplete?.();
-      }
+      onKeyframe?.(currentIndex);
+      await run(id);
     },
     pause: () => {
+      if (destroyed) return;
+      if (isPlaying) {
+        interrupted = spring2?.isAnimating() ?? false;
+      }
       isPaused = true;
       isPlaying = false;
+      runId++;
+      if (lastFrameTime !== null) advanceClock(now());
+      lastFrameTime = null;
       if (spring2) {
         spring2.stop();
       }
+      cancelWait();
     },
     resume: () => {
       if (!isPaused || destroyed) return;
       isPaused = false;
       isPlaying = true;
-      const continueAnimation = async () => {
-        while (await animateToNext()) {
-        }
-        if (!isPaused && !destroyed) {
-          isPlaying = false;
-          onComplete?.();
-        }
-      };
-      continueAnimation();
+      cancelWait();
+      lastFrameTime = now();
+      const id = ++runId;
+      void run(id);
     },
     stop: () => {
+      runId++;
       isPaused = false;
       isPlaying = false;
+      interrupted = false;
       currentIndex = 0;
       currentValue = normalizedKeyframes[0]?.value ?? 0;
+      elapsed = 0;
+      lastFrameTime = null;
       if (spring2) {
         spring2.jump(currentValue);
       }
+      cancelWait();
     },
     get: () => currentValue,
     getCurrentKeyframe: () => currentIndex,
@@ -1561,6 +1840,8 @@ function keyframes(values, options = {}) {
     jumpTo: (index) => {
       if (index < 0 || index >= normalizedKeyframes.length) return;
       currentIndex = index;
+      interrupted = false;
+      elapsed = dueTimes[index] ?? 0;
       const targetValue = normalizedKeyframes[index]?.value ?? 0;
       currentValue = targetValue;
       if (spring2) {
@@ -1573,14 +1854,8 @@ function keyframes(values, options = {}) {
       destroyed = true;
       isPlaying = false;
       isPaused = false;
-      if (pendingRafId !== null) {
-        cancelAnimationFrame(pendingRafId);
-        pendingRafId = null;
-      }
-      if (pendingTimeoutId !== null) {
-        clearTimeout(pendingTimeoutId);
-        pendingTimeoutId = null;
-      }
+      runId++;
+      cancelWait();
       if (spring2) {
         spring2.destroy();
         spring2 = null;
@@ -1642,6 +1917,7 @@ var pxProperties = /* @__PURE__ */ new Set([
   "letterSpacing",
   "lineHeight"
 ]);
+var elementTransforms = /* @__PURE__ */ new WeakMap();
 function buildTransform(values) {
   const parts = [];
   const x = values.get("x");
@@ -1687,7 +1963,13 @@ function applyStylesToElement(element, values) {
     }
   });
   if (transformValues.size > 0) {
-    el.style.transform = buildTransform(transformValues);
+    let stored = elementTransforms.get(element);
+    if (!stored) {
+      stored = /* @__PURE__ */ new Map();
+      elementTransforms.set(element, stored);
+    }
+    transformValues.forEach((value, property) => stored.set(property, value));
+    el.style.transform = buildTransform(stored);
   }
   Object.entries(styleValues).forEach(([prop, val]) => {
     el.style.setProperty(prop, val);
@@ -1697,9 +1979,14 @@ function parseCurrentValue(element, property) {
   const el = element;
   const computed = getComputedStyle(el);
   if (property === "opacity") {
-    return parseFloat(computed.opacity) || 1;
+    const opacity = parseFloat(computed.opacity);
+    return Number.isNaN(opacity) ? 1 : opacity;
   }
   if (transformProperties.has(property)) {
+    const stored = elementTransforms.get(element)?.get(property);
+    if (stored !== void 0) {
+      return stored;
+    }
     const transform = computed.transform;
     if (transform === "none") {
       if (property === "scale" || property === "scaleX" || property === "scaleY") {
@@ -1724,11 +2011,11 @@ function animate(elementOrSelector, target, options = {}) {
   }
   const springs = /* @__PURE__ */ new Map();
   const currentValues = /* @__PURE__ */ new Map();
+  const currentTargets = /* @__PURE__ */ new Map();
   let isRunning = true;
   let isPaused = false;
   let resolveFinished;
   const rafIds = /* @__PURE__ */ new Set();
-  const timeoutIds = /* @__PURE__ */ new Set();
   let delayTimeoutId = null;
   const finished = new Promise((resolve, _reject) => {
     resolveFinished = resolve;
@@ -1737,9 +2024,23 @@ function animate(elementOrSelector, target, options = {}) {
     const entries = Object.entries(target);
     let completedCount = 0;
     const totalAnimations = entries.length;
+    if (totalAnimations === 0) {
+      if (isRunning) {
+        isRunning = false;
+        try {
+          onComplete?.();
+        } catch {
+        }
+        resolveFinished();
+      }
+      return;
+    }
+    const toNumber = (v) => typeof v === "string" ? parseFloat(v) || 0 : v;
     entries.forEach(([property, value]) => {
-      const values = Array.isArray(value) ? value : [value];
-      const startValue = parseCurrentValue(element, property);
+      const list = Array.isArray(value) ? value : [value];
+      const hasFrom = list.length > 1;
+      const values = hasFrom ? list.slice(1) : list;
+      const startValue = hasFrom ? toNumber(list[0]) : parseCurrentValue(element, property);
       const spring2 = createSpringValue(startValue, {
         stiffness: springConfig.stiffness ?? 100,
         damping: springConfig.damping ?? 10,
@@ -1762,27 +2063,22 @@ function animate(elementOrSelector, target, options = {}) {
       const animateKeyframes = async () => {
         for (const targetValue of values) {
           if (!isRunning) break;
-          const numValue = typeof targetValue === "string" ? parseFloat(targetValue) || 0 : targetValue;
+          const numValue = toNumber(targetValue);
           await new Promise((resolve) => {
-            spring2.set(numValue);
+            currentTargets.set(property, numValue);
+            if (!isPaused) {
+              spring2.set(numValue);
+            }
             let checkId = null;
             const checkDone = () => {
               if (checkId !== null) {
                 rafIds.delete(checkId);
-                timeoutIds.delete(checkId);
               }
-              if (!isRunning || !spring2.isAnimating()) {
+              if (!isRunning || !isPaused && !spring2.isAnimating()) {
                 resolve();
-              } else if (!isPaused) {
+              } else {
                 checkId = requestAnimationFrame(checkDone);
                 rafIds.add(checkId);
-              } else {
-                const timeoutId = setTimeout(() => {
-                  timeoutIds.delete(timeoutId);
-                  checkDone();
-                }, 100);
-                checkId = timeoutId;
-                timeoutIds.add(timeoutId);
               }
             };
             checkId = requestAnimationFrame(checkDone);
@@ -1812,10 +2108,6 @@ function animate(elementOrSelector, target, options = {}) {
       cancelAnimationFrame(id);
     });
     rafIds.clear();
-    timeoutIds.forEach((id) => {
-      clearTimeout(id);
-    });
-    timeoutIds.clear();
     if (delayTimeoutId !== null) {
       clearTimeout(delayTimeoutId);
       delayTimeoutId = null;
@@ -1829,10 +2121,17 @@ function animate(elementOrSelector, target, options = {}) {
       resolveFinished();
     },
     pause: () => {
+      if (!isRunning || isPaused) return;
       isPaused = true;
+      springs.forEach((spring2) => spring2.stop());
     },
     resume: () => {
+      if (!isPaused) return;
       isPaused = false;
+      if (!isRunning) return;
+      currentTargets.forEach((value, property) => {
+        springs.get(property)?.set(value);
+      });
     },
     getProgress: () => {
       let totalProgress = 0;
@@ -1878,8 +2177,15 @@ var defaultInterpolateOptions = {
 var InterpolationImpl = class {
   constructor(source, input, output, options = {}) {
     this.source = source;
-    this.input = input;
-    this.output = output;
+    const length = Math.min(input.length, output.length);
+    let normalizedInput = input.slice(0, length);
+    let normalizedOutput = output.slice(0, length);
+    if (length > 1 && normalizedInput[0] > normalizedInput[length - 1]) {
+      normalizedInput = normalizedInput.reverse();
+      normalizedOutput = normalizedOutput.reverse();
+    }
+    this.input = normalizedInput;
+    this.output = normalizedOutput;
     this.options = { ...defaultInterpolateOptions, ...options };
   }
   get() {
@@ -1892,8 +2198,8 @@ var InterpolationImpl = class {
   interpolate(value) {
     const { input, output } = this;
     const { extrapolate, extrapolateLeft, extrapolateRight, clamp: clamp2 } = this.options;
-    if (input.length === 1) {
-      return output[0];
+    if (input.length <= 1) {
+      return output[0] ?? 0;
     }
     if (value < input[0]) {
       const mode = this.getExtrapolationMode(extrapolateLeft, extrapolate);
@@ -1938,14 +2244,226 @@ function interpolate(value, input, output, options) {
   return new InterpolationImpl(value, input, output, options);
 }
 
+// src/utils/color.ts
+var NUMBER = /[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?/.source;
+var FUNCTIONAL_COLOR_REGEX = new RegExp(
+  String.raw`^(rgba?|hsla?)\(\s*(${NUMBER})(deg|%)?\s*,?\s*(${NUMBER})(%)?\s*,?\s*(${NUMBER})(%)?\s*(?:[,/]\s*(${NUMBER})(%)?\s*)?\)$`,
+  "i"
+);
+function parseColorRGBA(color) {
+  const input = color.trim();
+  if (input.toLowerCase() === "transparent") {
+    return { r: 0, g: 0, b: 0, a: 0 };
+  }
+  if (/^#([0-9a-f]{3}|[0-9a-f]{4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(input)) {
+    return { ...hexToRgb(input), a: hexAlpha(input) };
+  }
+  const match = input.match(FUNCTIONAL_COLOR_REGEX);
+  if (match) {
+    const fn = match[1].toLowerCase();
+    const alphaValue = match[8];
+    let a = 1;
+    if (alphaValue !== void 0) {
+      a = parseFloat(alphaValue) / (match[9] ? 100 : 1);
+      a = Math.max(0, Math.min(1, a));
+    }
+    if (fn.startsWith("rgb")) {
+      const channel = (value, percent) => Math.round(percent ? parseFloat(value) / 100 * 255 : parseFloat(value));
+      return {
+        r: channel(match[2], match[3] === "%" ? "%" : void 0),
+        g: channel(match[4], match[5]),
+        b: channel(match[6], match[7]),
+        a
+      };
+    }
+    return {
+      ...hslToRgb(parseFloat(match[2]), parseFloat(match[4]), parseFloat(match[6])),
+      a
+    };
+  }
+  return { r: 0, g: 0, b: 0, a: 1 };
+}
+function parseColor(color) {
+  const { r, g, b } = parseColorRGBA(color);
+  return { r, g, b };
+}
+function hexAlpha(hex) {
+  const cleanHex = hex.replace("#", "");
+  if (cleanHex.length === 4) {
+    return parseInt(cleanHex.charAt(3) + cleanHex.charAt(3), 16) / 255;
+  }
+  if (cleanHex.length === 8) {
+    return parseInt(cleanHex.slice(6, 8), 16) / 255;
+  }
+  return 1;
+}
+function rgbToHex(r, g, b) {
+  const toHex = (n) => {
+    const clamped = Math.round(Math.max(0, Math.min(255, n)));
+    return clamped.toString(16).padStart(2, "0");
+  };
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+function hexToRgb(hex) {
+  const cleanHex = hex.replace("#", "");
+  if (cleanHex.length === 3 || cleanHex.length === 4) {
+    return {
+      r: parseInt(cleanHex.charAt(0) + cleanHex.charAt(0), 16),
+      g: parseInt(cleanHex.charAt(1) + cleanHex.charAt(1), 16),
+      b: parseInt(cleanHex.charAt(2) + cleanHex.charAt(2), 16)
+    };
+  }
+  return {
+    r: parseInt(cleanHex.slice(0, 2), 16),
+    g: parseInt(cleanHex.slice(2, 4), 16),
+    b: parseInt(cleanHex.slice(4, 6), 16)
+  };
+}
+function hslToRgb(h, s, l) {
+  h = (h % 360 + 360) % 360;
+  s = Math.max(0, Math.min(100, s)) / 100;
+  l = Math.max(0, Math.min(100, l)) / 100;
+  if (s === 0) {
+    const gray = Math.round(l * 255);
+    return { r: gray, g: gray, b: gray };
+  }
+  const hue2rgb = (p2, q2, t) => {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p2 + (q2 - p2) * 6 * t;
+    if (t < 1 / 2) return q2;
+    if (t < 2 / 3) return p2 + (q2 - p2) * (2 / 3 - t) * 6;
+    return p2;
+  };
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  return {
+    r: Math.round(hue2rgb(p, q, h / 360 + 1 / 3) * 255),
+    g: Math.round(hue2rgb(p, q, h / 360) * 255),
+    b: Math.round(hue2rgb(p, q, h / 360 - 1 / 3) * 255)
+  };
+}
+function rgbToHsl(r, g, b) {
+  r = Math.max(0, Math.min(255, r)) / 255;
+  g = Math.max(0, Math.min(255, g)) / 255;
+  b = Math.max(0, Math.min(255, b)) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+  let h = 0;
+  let s = 0;
+  if (delta !== 0) {
+    s = (max + min) / 2 > 0.5 ? delta / (2 - max - min) : delta / (max + min);
+    if (max === r) {
+      h = ((g - b) / delta + (g < b ? 6 : 0)) / 6;
+    } else if (max === g) {
+      h = ((b - r) / delta + 2) / 6;
+    } else {
+      h = ((r - g) / delta + 4) / 6;
+    }
+  }
+  return {
+    h: Math.round(h * 360),
+    s: Math.round(s * 100),
+    l: Math.round((max + min) / 2 * 100)
+  };
+}
+function srgbToLinear(channel) {
+  const abs = Math.abs(channel);
+  const linear = abs <= 0.04045 ? abs / 12.92 : Math.pow((abs + 0.055) / 1.055, 2.4);
+  return channel < 0 ? -linear : linear;
+}
+function linearToSrgb(channel) {
+  const abs = Math.abs(channel);
+  const encoded = abs <= 31308e-7 ? abs * 12.92 : 1.055 * Math.pow(abs, 1 / 2.4) - 0.055;
+  return channel < 0 ? -encoded : encoded;
+}
+function linearRgbToOklab(r, g, b) {
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return {
+    l: 0.2104542553 * l + 0.793617785 * m - 0.0040720468 * s,
+    a: 1.9779984951 * l - 2.428592205 * m + 0.4505937099 * s,
+    b: 0.0259040371 * l + 0.7827717662 * m - 0.808675766 * s
+  };
+}
+function oklabToLinearRgb(L, a, b) {
+  const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+  const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+  const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+  return {
+    r: 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s,
+    g: -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s,
+    b: -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s
+  };
+}
+function rgbToOklab(r, g, b) {
+  return linearRgbToOklab(srgbToLinear(r / 255), srgbToLinear(g / 255), srgbToLinear(b / 255));
+}
+function oklabToRgb(L, a, b) {
+  const linear = oklabToLinearRgb(L, a, b);
+  return {
+    r: linearToSrgb(linear.r) * 255,
+    g: linearToSrgb(linear.g) * 255,
+    b: linearToSrgb(linear.b) * 255
+  };
+}
+function toSpace(color, space) {
+  if (space === "oklab") {
+    const { l, a, b } = rgbToOklab(color.r, color.g, color.b);
+    return [l, a, b];
+  }
+  if (space === "linear") {
+    return [srgbToLinear(color.r / 255), srgbToLinear(color.g / 255), srgbToLinear(color.b / 255)];
+  }
+  return [color.r, color.g, color.b];
+}
+function fromSpace(c, space) {
+  if (space === "oklab") {
+    return oklabToRgb(c[0], c[1], c[2]);
+  }
+  if (space === "linear") {
+    return { r: linearToSrgb(c[0]) * 255, g: linearToSrgb(c[1]) * 255, b: linearToSrgb(c[2]) * 255 };
+  }
+  return { r: c[0], g: c[1], b: c[2] };
+}
+function mixColorsRGBA(from, to, t, space = "srgb") {
+  const fromAlpha = Math.max(0, Math.min(1, from.a));
+  const toAlpha = Math.max(0, Math.min(1, to.a));
+  const alpha = fromAlpha + (toAlpha - fromAlpha) * t;
+  const a = toSpace(from, space);
+  const b = toSpace(to, space);
+  const mixed = [0, 0, 0];
+  for (let i = 0; i < 3; i++) {
+    const premultiplied = a[i] * fromAlpha + (b[i] * toAlpha - a[i] * fromAlpha) * t;
+    mixed[i] = alpha > 0 ? premultiplied / alpha : 0;
+  }
+  const rgb = alpha > 0 ? fromSpace(mixed, space) : { r: 0, g: 0, b: 0 };
+  return { ...rgb, a: alpha };
+}
+function formatRGBA(color) {
+  const channel = (v) => Math.round(Math.max(0, Math.min(255, v)));
+  const rgb = `${channel(color.r)}, ${channel(color.g)}, ${channel(color.b)}`;
+  const alpha = Math.round(Math.max(0, Math.min(1, color.a)) * 1e3) / 1e3;
+  return alpha >= 1 ? `rgb(${rgb})` : `rgba(${rgb}, ${alpha})`;
+}
+
 // src/interpolation/color.ts
 var MAX_COLOR_CACHE_SIZE = 1e3;
 var colorCache = /* @__PURE__ */ new Map();
 var ColorInterpolationImpl = class {
   constructor(source, input, colorStrings, options = {}) {
     this.source = source;
-    this.input = input;
-    this.colors = colorStrings.map((c) => this.parseColorCached(c));
+    const length = Math.min(input.length, colorStrings.length);
+    let normalizedInput = input.slice(0, length);
+    let colors = colorStrings.slice(0, length).map((c) => this.parseColorCached(c));
+    if (length > 1 && normalizedInput[0] > normalizedInput[length - 1]) {
+      normalizedInput = normalizedInput.reverse();
+      colors = colors.reverse();
+    }
+    this.input = normalizedInput;
+    this.colors = colors;
     this.options = options;
   }
   /**
@@ -1973,9 +2491,9 @@ var ColorInterpolationImpl = class {
   get() {
     let value = typeof this.source === "function" ? this.source() : this.source.get();
     const { extrapolate, extrapolateLeft, extrapolateRight } = this.options;
-    if (this.input.length === 1) {
-      const [r2, g2, b2] = this.colors[0];
-      return `rgb(${r2}, ${g2}, ${b2})`;
+    if (this.input.length <= 1 || !Number.isFinite(value)) {
+      const [r, g, b, a] = this.colors[0] ?? [0, 0, 0, 1];
+      return this.format(r, g, b, a);
     }
     if (value < this.input[0]) {
       const mode = extrapolateLeft ?? extrapolate ?? "extend";
@@ -1998,80 +2516,26 @@ var ColorInterpolationImpl = class {
     }
     const inputRange = this.input[i] - this.input[i - 1];
     const ratio = inputRange !== 0 ? (value - this.input[i - 1]) / inputRange : 0;
-    const r = this.lerp(this.colors[i - 1][0], this.colors[i][0], ratio);
-    const g = this.lerp(this.colors[i - 1][1], this.colors[i][1], ratio);
-    const b = this.lerp(this.colors[i - 1][2], this.colors[i][2], ratio);
-    return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
+    const from = this.colors[i - 1];
+    const to = this.colors[i];
+    const mixed = mixColorsRGBA(
+      { r: from[0], g: from[1], b: from[2], a: from[3] },
+      { r: to[0], g: to[1], b: to[2], a: to[3] },
+      ratio,
+      this.options.space
+    );
+    return this.format(mixed.r, mixed.g, mixed.b, mixed.a);
+  }
+  /**
+   * Format channels as a CSS color. Opaque colors keep the `rgb()` form,
+   * translucent ones use `rgba()` so alpha is not silently dropped.
+   */
+  format(r, g, b, a) {
+    return formatRGBA({ r, g, b, a });
   }
   parseColorInternal(color) {
-    const hexMatch = color.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
-    if (hexMatch) {
-      const hex = hexMatch[1];
-      if (hex.length === 3) {
-        return [
-          parseInt(hex.charAt(0) + hex.charAt(0), 16),
-          parseInt(hex.charAt(1) + hex.charAt(1), 16),
-          parseInt(hex.charAt(2) + hex.charAt(2), 16)
-        ];
-      }
-      return [
-        parseInt(hex.slice(0, 2), 16),
-        parseInt(hex.slice(2, 4), 16),
-        parseInt(hex.slice(4, 6), 16)
-      ];
-    }
-    const rgbMatch = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/i);
-    if (rgbMatch) {
-      return [
-        parseInt(rgbMatch[1], 10),
-        parseInt(rgbMatch[2], 10),
-        parseInt(rgbMatch[3], 10)
-      ];
-    }
-    const rgbaMatch = color.match(/rgba\((\d+),\s*(\d+),\s*(\d+),\s*[\d.]+\)/i);
-    if (rgbaMatch) {
-      return [
-        parseInt(rgbaMatch[1], 10),
-        parseInt(rgbaMatch[2], 10),
-        parseInt(rgbaMatch[3], 10)
-      ];
-    }
-    const hslMatch = color.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/i);
-    if (hslMatch) {
-      return this.hslToRgb(
-        parseInt(hslMatch[1], 10),
-        parseInt(hslMatch[2], 10),
-        parseInt(hslMatch[3], 10)
-      );
-    }
-    return [0, 0, 0];
-  }
-  hslToRgb(h, s, l) {
-    h = (h % 360 + 360) % 360;
-    s = Math.max(0, Math.min(100, s)) / 100;
-    l = Math.max(0, Math.min(100, l)) / 100;
-    if (s === 0) {
-      const gray = Math.round(l * 255);
-      return [gray, gray, gray];
-    }
-    const hue2rgb = (p2, q2, t) => {
-      if (t < 0) t += 1;
-      if (t > 1) t -= 1;
-      if (t < 1 / 6) return p2 + (q2 - p2) * 6 * t;
-      if (t < 1 / 2) return q2;
-      if (t < 2 / 3) return p2 + (q2 - p2) * (2 / 3 - t) * 6;
-      return p2;
-    };
-    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-    const p = 2 * l - q;
-    return [
-      Math.round(hue2rgb(p, q, h / 360 + 1 / 3) * 255),
-      Math.round(hue2rgb(p, q, h / 360) * 255),
-      Math.round(hue2rgb(p, q, h / 360 - 1 / 3) * 255)
-    ];
-  }
-  lerp(a, b, t) {
-    return a + (b - a) * t;
+    const { r, g, b, a } = parseColorRGBA(color);
+    return [r, g, b, a];
   }
 };
 function interpolateColor(value, input, colors, options) {
@@ -2083,7 +2547,6 @@ var defaultDragConfig = {
   axis: "both",
   rubberBand: false,
   rubberBandFactor: 0.5,
-  elasticBounce: 0.3,
   momentum: true,
   momentumDecay: 0.95,
   stiffness: 200,
@@ -2093,6 +2556,12 @@ var defaultDragConfig = {
   restDelta: 0.01,
   clamp: false
 };
+var VELOCITY_STALE_MS = 100;
+function projectOnDiagonal(dx, dy) {
+  const sign = dx * dy < 0 ? -1 : 1;
+  const amount = (dx + sign * dy) / 2;
+  return { x: amount, y: sign * amount };
+}
 var DragSpringImpl = class {
   constructor(element, config = {}) {
     this.enabled = true;
@@ -2107,9 +2576,24 @@ var DragSpringImpl = class {
     this.snapTimeoutId = null;
     this.snapGeneration = 0;
     this.destroyed = false;
+    /** Pointer that owns the current drag (other pointers are ignored) */
+    this.activePointerId = null;
+    /** Bounds resolved at drag start (explicit bounds + element constraints) */
+    this.dragBounds = { left: -Infinity, right: Infinity, top: -Infinity, bottom: Infinity };
     this.onPointerDown = (e) => {
       if (!this.enabled || e.button !== 0) return;
+      if (this._isDragging) {
+        const activeId = this.activePointerId;
+        if (activeId !== null && e.pointerId !== activeId && (this.element.hasPointerCapture?.(activeId) ?? true)) {
+          return;
+        }
+        this.endDrag(activeId);
+      }
       this._isDragging = true;
+      this.activePointerId = e.pointerId;
+      this.springX.jump(this.position.x);
+      this.springY.jump(this.position.y);
+      this.dragBounds = this.getEffectiveBounds();
       this.startPosition = { ...this.position };
       this.pointerStart = { x: e.clientX, y: e.clientY };
       this.lastPosition = { x: e.clientX, y: e.clientY };
@@ -2124,6 +2608,7 @@ var DragSpringImpl = class {
       }
     };
     this.onPointerMove = (e) => {
+      if (!this._isDragging || e.pointerId !== this.activePointerId) return;
       const now = performance.now();
       const dt = now - this.lastTime;
       const safeDt = Math.min(Math.max(dt, 16), 100);
@@ -2138,26 +2623,22 @@ var DragSpringImpl = class {
       };
       this.lastPosition = { x: e.clientX, y: e.clientY };
       this.lastTime = now;
-      let newX = this.startPosition.x + (e.clientX - this.pointerStart.x);
-      let newY = this.startPosition.y + (e.clientY - this.pointerStart.y);
-      if (this.config.bounds) {
-        newX = this.applyBounds(
-          newX,
-          this.config.bounds.left ?? -Infinity,
-          this.config.bounds.right ?? Infinity,
-          "x"
-        );
-        newY = this.applyBounds(
-          newY,
-          this.config.bounds.top ?? -Infinity,
-          this.config.bounds.bottom ?? Infinity,
-          "y"
-        );
+      let deltaX = e.clientX - this.pointerStart.x;
+      let deltaY = e.clientY - this.pointerStart.y;
+      if (this.config.constraints?.lockToDiagonal) {
+        const diagonal = projectOnDiagonal(deltaX, deltaY);
+        deltaX = diagonal.x;
+        deltaY = diagonal.y;
       }
-      if (this.config.axis === "x") {
-        newY = 0;
-      } else if (this.config.axis === "y") {
-        newX = 0;
+      let newX = this.startPosition.x + deltaX;
+      let newY = this.startPosition.y + deltaY;
+      newX = this.applyBounds(newX, this.dragBounds.left, this.dragBounds.right, "x");
+      newY = this.applyBounds(newY, this.dragBounds.top, this.dragBounds.bottom, "y");
+      const lockAxis = this.config.constraints?.lockAxis;
+      if (lockAxis === "x" || this.config.axis === "x") {
+        newY = this.startPosition.y;
+      } else if (lockAxis === "y" || this.config.axis === "y") {
+        newX = this.startPosition.x;
       }
       this.position = { x: newX, y: newY };
       if (this.config.onDrag) {
@@ -2168,16 +2649,13 @@ var DragSpringImpl = class {
       }
     };
     this.onPointerUp = (e) => {
-      this._isDragging = false;
-      if (this.element && document.contains(this.element)) {
-        try {
-          this.element.releasePointerCapture(e.pointerId);
-        } catch {
-        }
-        this.element.removeEventListener("pointermove", this.onPointerMove);
-        this.element.removeEventListener("pointerup", this.onPointerUp);
-        this.element.removeEventListener("pointercancel", this.onPointerUp);
+      if (!this._isDragging || e.pointerId !== this.activePointerId) return;
+      this.springX.jump(this.position.x);
+      this.springY.jump(this.position.y);
+      if (performance.now() - this.lastTime > VELOCITY_STALE_MS) {
+        this.velocity = { x: 0, y: 0 };
       }
+      this.endDrag(e.pointerId);
       if (this.config.snap?.snapOnRelease !== false) {
         const snapPoint = this.findNearestSnapPoint();
         if (snapPoint) {
@@ -2264,12 +2742,28 @@ var DragSpringImpl = class {
     }
     return clamp(value, actualMin, actualMax);
   }
+  /**
+   * Leave drag mode: release pointer capture and remove move/up listeners
+   */
+  endDrag(pointerId) {
+    this._isDragging = false;
+    this.activePointerId = null;
+    if (pointerId !== null) {
+      try {
+        this.element.releasePointerCapture(pointerId);
+      } catch {
+      }
+    }
+    this.element.removeEventListener("pointermove", this.onPointerMove);
+    this.element.removeEventListener("pointerup", this.onPointerUp);
+    this.element.removeEventListener("pointercancel", this.onPointerUp);
+  }
   findNearestSnapPoint() {
     const snap = this.config.snap;
     if (!snap) return null;
     if (snap.grid) {
-      const gridX = Math.round(this.position.x / snap.grid.x) * snap.grid.x;
-      const gridY = Math.round(this.position.y / snap.grid.y) * snap.grid.y;
+      const gridX = snap.grid.x === 0 ? this.position.x : Math.round(this.position.x / snap.grid.x) * snap.grid.x;
+      const gridY = snap.grid.y === 0 ? this.position.y : Math.round(this.position.y / snap.grid.y) * snap.grid.y;
       return { x: gridX, y: gridY };
     }
     if (snap.points && snap.points.length > 0) {
@@ -2300,23 +2794,33 @@ var DragSpringImpl = class {
       bottom: this.config.bounds?.bottom ?? this.config.constraints?.bounds?.bottom ?? Infinity
     };
     const constraints = this.config.constraints;
+    const layoutOrigin = () => {
+      const elementRect = this.element.getBoundingClientRect();
+      return {
+        left: elementRect.left - this.position.x,
+        top: elementRect.top - this.position.y,
+        width: elementRect.width,
+        height: elementRect.height
+      };
+    };
     if (constraints?.constrainToParent && this.element.parentElement) {
       const parent = this.element.parentElement;
       const parentRect = parent.getBoundingClientRect();
-      const elementRect = this.element.getBoundingClientRect();
+      const element = layoutOrigin();
       const padding = this.normalizePadding(constraints.constraintPadding);
-      bounds.left = Math.max(bounds.left, padding.left);
-      bounds.right = Math.min(bounds.right, parentRect.width - elementRect.width - padding.right);
-      bounds.top = Math.max(bounds.top, padding.top);
-      bounds.bottom = Math.min(bounds.bottom, parentRect.height - elementRect.height - padding.bottom);
+      const offsetX = element.left - parentRect.left;
+      const offsetY = element.top - parentRect.top;
+      bounds.left = Math.max(bounds.left, padding.left - offsetX);
+      bounds.right = Math.min(bounds.right, parentRect.width - element.width - padding.right - offsetX);
+      bounds.top = Math.max(bounds.top, padding.top - offsetY);
+      bounds.bottom = Math.min(bounds.bottom, parentRect.height - element.height - padding.bottom - offsetY);
     }
     if (constraints?.constrainToElement) {
       const constraintRect = constraints.constrainToElement.getBoundingClientRect();
-      const elementRect = this.element.getBoundingClientRect();
-      const parentRect = this.element.parentElement?.getBoundingClientRect() ?? { left: 0, top: 0 };
+      const elementRect = layoutOrigin();
       const padding = this.normalizePadding(constraints.constraintPadding);
-      const offsetX = constraintRect.left - parentRect.left;
-      const offsetY = constraintRect.top - parentRect.top;
+      const offsetX = constraintRect.left - elementRect.left;
+      const offsetY = constraintRect.top - elementRect.top;
       bounds.left = Math.max(bounds.left, offsetX + padding.left);
       bounds.right = Math.min(bounds.right, offsetX + constraintRect.width - elementRect.width - padding.right);
       bounds.top = Math.max(bounds.top, offsetY + padding.top);
@@ -2341,7 +2845,7 @@ var DragSpringImpl = class {
   disable() {
     this.enabled = false;
     if (this._isDragging) {
-      this._isDragging = false;
+      this.endDrag(this.activePointerId);
     }
   }
   isEnabled() {
@@ -2393,6 +2897,11 @@ var DragSpringImpl = class {
     this.springY.set(safeY);
   }
   release(velocityX, velocityY) {
+    if (this.config.constraints?.lockToDiagonal) {
+      const diagonal = projectOnDiagonal(velocityX, velocityY);
+      velocityX = diagonal.x;
+      velocityY = diagonal.y;
+    }
     const bounds = this.getEffectiveBounds();
     const { left, right, top, bottom } = bounds;
     let targetX = this.position.x;
@@ -2411,6 +2920,8 @@ var DragSpringImpl = class {
       targetX = modified.x;
       targetY = modified.y;
     }
+    const unclampedX = targetX;
+    const unclampedY = targetY;
     targetX = clamp(targetX, left, right);
     targetY = clamp(targetY, top, bottom);
     if (this.config.onBoundsHit) {
@@ -2419,12 +2930,26 @@ var DragSpringImpl = class {
       if (this.position.y < top) this.config.onBoundsHit("top");
       if (this.position.y > bottom) this.config.onBoundsHit("bottom");
     }
+    const hitX = targetX !== unclampedX || this.position.x < left || this.position.x > right;
+    const hitY = targetY !== unclampedY || this.position.y < top || this.position.y > bottom;
     if (targetX !== this.position.x || this.position.x < left || this.position.x > right) {
-      this.springX.set(targetX, { velocity: velocityX });
+      this.springX.set(targetX, { velocity: velocityX, ...hitX ? this.getBounceConfig() : {} });
     }
     if (targetY !== this.position.y || this.position.y < top || this.position.y > bottom) {
-      this.springY.set(targetY, { velocity: velocityY });
+      this.springY.set(targetY, { velocity: velocityY, ...hitY ? this.getBounceConfig() : {} });
     }
+  }
+  /**
+   * Damping override for bound hits derived from `elasticBounce`
+   * (0 = critically damped, 1 = barely damped). Empty when unset.
+   */
+  getBounceConfig() {
+    const bounce = this.config.elasticBounce;
+    if (bounce === void 0 || !Number.isFinite(bounce)) return {};
+    const stiffness = this.config.stiffness ?? defaultDragConfig.stiffness;
+    const mass = this.config.mass ?? defaultDragConfig.mass;
+    const dampingRatio = Math.max(0.05, 1 - clamp(bounce, 0, 1));
+    return { damping: 2 * Math.sqrt(stiffness * mass) * dampingRatio };
   }
   snapToNearest() {
     const snapPoint = this.findNearestSnapPoint();
@@ -2463,9 +2988,7 @@ var DragSpringImpl = class {
       this.snapTimeoutId = null;
     }
     this.element.removeEventListener("pointerdown", this.onPointerDown);
-    this.element.removeEventListener("pointermove", this.onPointerMove);
-    this.element.removeEventListener("pointerup", this.onPointerUp);
-    this.element.removeEventListener("pointercancel", this.onPointerUp);
+    this.endDrag(this._isDragging ? this.activePointerId : null);
     this.springX.destroy();
     this.springY.destroy();
   }
@@ -2487,6 +3010,8 @@ var defaultScrollConfig = {
   restDelta: 0.01,
   clamp: false
 };
+var LINE_HEIGHT_PX = 16;
+var PAGE_HEIGHT_FALLBACK_PX = 800;
 var ScrollSpringImpl = class {
   constructor(container, config = {}) {
     this.scroll = { x: 0, y: 0 };
@@ -2501,8 +3026,9 @@ var ScrollSpringImpl = class {
         this.isScrolling = true;
         this.config.onScrollStart?.();
       }
-      let deltaX = e.deltaX;
-      let deltaY = e.deltaY;
+      const deltaScale = e.deltaMode === 1 ? LINE_HEIGHT_PX : e.deltaMode === 2 ? this.container.clientHeight || PAGE_HEIGHT_FALLBACK_PX : 1;
+      let deltaX = e.deltaX * deltaScale;
+      let deltaY = e.deltaY * deltaScale;
       if (this.config.direction === "horizontal") {
         deltaY = 0;
       } else if (this.config.direction === "vertical") {
@@ -2562,10 +3088,20 @@ var ScrollSpringImpl = class {
   startScrollLoop() {
     this.springX.set(this.target.x);
     this.springY.set(this.target.y);
+    if (this.pendingRafId !== null) {
+      cancelAnimationFrame(this.pendingRafId);
+      this.pendingRafId = null;
+    }
     const checkEnd = () => {
       this.pendingRafId = null;
       if (this.destroyed) return;
       const settled = Math.abs(this.scroll.x - this.target.x) < 0.1 && Math.abs(this.scroll.y - this.target.y) < 0.1 && !this.springX.isAnimating() && !this.springY.isAnimating();
+      if (settled && this.isScrolling && this.config.bounce && this.clampTargetToBounds()) {
+        this.springX.set(this.target.x);
+        this.springY.set(this.target.y);
+        this.pendingRafId = requestAnimationFrame(checkEnd);
+        return;
+      }
       if (settled && this.isScrolling) {
         this.isScrolling = false;
         this.config.onScrollEnd?.();
@@ -2574,6 +3110,19 @@ var ScrollSpringImpl = class {
       }
     };
     checkEnd();
+  }
+  /**
+   * Clamp the scroll target into the scrollable range.
+   * @returns true if the target was outside the range
+   */
+  clampTargetToBounds() {
+    const maxScrollX = Math.max(0, this.container.scrollWidth - this.container.clientWidth);
+    const maxScrollY = Math.max(0, this.container.scrollHeight - this.container.clientHeight);
+    const x = Math.max(0, Math.min(this.target.x, maxScrollX));
+    const y = Math.max(0, Math.min(this.target.y, maxScrollY));
+    const changed = x !== this.target.x || y !== this.target.y;
+    this.target = { x, y };
+    return changed;
   }
   getScroll() {
     return { ...this.scroll };
@@ -2635,14 +3184,22 @@ function getCenter(p1, p2) {
   };
 }
 function rubberBand(value, min, max, factor) {
+  const f = clamp(factor, 0, 1);
   if (value < min) {
-    return min - Math.pow(min - value, factor);
+    return min - (min - value) * f;
   }
   if (value > max) {
-    return max + Math.pow(value - max, factor);
+    return max + (value - max) * f;
   }
   return value;
 }
+function normalizeAngleDelta(delta) {
+  let d = delta % 360;
+  if (d > 180) d -= 360;
+  if (d < -180) d += 360;
+  return d;
+}
+var VELOCITY_STALE_MS2 = 100;
 function createPinchGesture(element, config = {}) {
   const {
     minScale = 0.1,
@@ -2719,6 +3276,12 @@ function createPinchGesture(element, config = {}) {
       const currentDistance = getDistance(p1, p2);
       const now = performance.now();
       const dt = now - lastTime;
+      if (initialDistance === 0) {
+        initialDistance = currentDistance;
+        initialScale = currentScale;
+        lastTime = now;
+        return;
+      }
       let newScale = initialScale * (currentDistance / initialDistance);
       if (enableRubberBand) {
         newScale = rubberBand(newScale, minScale, maxScale, rubberBandFactor);
@@ -2796,6 +3359,8 @@ function createRotateGesture(element, config = {}) {
   let startTime = 0;
   let lastTime = 0;
   let angleOffset = 0;
+  let lastRawAngle = 0;
+  let accumulatedDelta = 0;
   const touches = /* @__PURE__ */ new Map();
   const createState = (event, first = false, last = false) => {
     const touchArray = Array.from(touches.values());
@@ -2827,6 +3392,8 @@ function createRotateGesture(element, config = {}) {
       const p1 = touchArray[0];
       const p2 = touchArray[1];
       initialAngle = getAngle(p1, p2);
+      lastRawAngle = initialAngle;
+      accumulatedDelta = 0;
       startTime = performance.now();
       lastTime = startTime;
       lastAngle = currentAngle;
@@ -2848,9 +3415,9 @@ function createRotateGesture(element, config = {}) {
       const newAngle = getAngle(p1, p2);
       const now = performance.now();
       const dt = now - lastTime;
-      let angleDelta = newAngle - initialAngle;
-      if (angleDelta > 180) angleDelta -= 360;
-      if (angleDelta < -180) angleDelta += 360;
+      accumulatedDelta += normalizeAngleDelta(newAngle - lastRawAngle);
+      lastRawAngle = newAngle;
+      const angleDelta = accumulatedDelta;
       if (Math.abs(angleDelta) >= threshold) {
         currentAngle = angleOffset + angleDelta;
         velocity = dt > 0 ? (currentAngle - lastAngle) / dt * 1e3 : 0;
@@ -2909,17 +3476,18 @@ function createSwipeGesture(element, config = {}) {
   let startTime = 0;
   let lastTime = 0;
   let pointerId = null;
-  const createState = (event, first = false, last = false, direction = null) => {
+  let moveVelocity = { x: 0, y: 0 };
+  const createState = (event, first = false, last = false, direction = null, point = { x: event.clientX, y: event.clientY }, velocityOverride, cancelled = false) => {
     const now = performance.now();
     const duration = now - startTime;
     const dt = now - lastTime;
     const movement = {
-      x: event.clientX - startPoint.x,
-      y: event.clientY - startPoint.y
+      x: point.x - startPoint.x,
+      y: point.y - startPoint.y
     };
-    const velocity = {
-      x: dt > 0 ? (event.clientX - lastPoint.x) / dt : 0,
-      y: dt > 0 ? (event.clientY - lastPoint.y) / dt : 0
+    const velocity = velocityOverride ?? {
+      x: dt > 0 ? (point.x - lastPoint.x) / dt : 0,
+      y: dt > 0 ? (point.y - lastPoint.y) / dt : 0
     };
     return {
       active,
@@ -2927,7 +3495,7 @@ function createSwipeGesture(element, config = {}) {
       last,
       event,
       elapsedTime: duration,
-      cancelled: false,
+      cancelled,
       direction,
       velocity,
       distance: movement,
@@ -2963,13 +3531,22 @@ function createSwipeGesture(element, config = {}) {
     lastPoint = { ...startPoint };
     startTime = performance.now();
     lastTime = startTime;
+    moveVelocity = { x: 0, y: 0 };
     active = true;
     element.setPointerCapture(e.pointerId);
+    addSwipeEndGuards();
     onSwipeStart?.(createState(e, true, false));
   };
   const handlePointerMove = (e) => {
     if (!enabled || !active || e.pointerId !== pointerId) return;
     const now = performance.now();
+    const dt = now - lastTime;
+    if (dt > 0) {
+      moveVelocity = {
+        x: (e.clientX - lastPoint.x) / dt,
+        y: (e.clientY - lastPoint.y) / dt
+      };
+    }
     lastPoint = { x: e.clientX, y: e.clientY };
     lastTime = now;
   };
@@ -2977,19 +3554,19 @@ function createSwipeGesture(element, config = {}) {
     if (!active || e.pointerId !== pointerId) return;
     active = false;
     pointerId = null;
-    const duration = performance.now() - startTime;
+    removeSwipeEndGuards();
+    const now = performance.now();
+    const duration = now - startTime;
     if (duration <= maxDuration) {
       const movement = {
         x: e.clientX - startPoint.x,
         y: e.clientY - startPoint.y
       };
-      const dt = performance.now() - lastTime;
-      const velocity = {
-        x: dt > 0 ? (e.clientX - lastPoint.x) / dt : 0,
-        y: dt > 0 ? (e.clientY - lastPoint.y) / dt : 0
-      };
+      const dt = now - lastTime;
+      const movedSinceLastSample = e.clientX !== lastPoint.x || e.clientY !== lastPoint.y;
+      const velocity = movedSinceLastSample && dt > 0 ? { x: (e.clientX - lastPoint.x) / dt, y: (e.clientY - lastPoint.y) / dt } : dt <= VELOCITY_STALE_MS2 ? moveVelocity : { x: 0, y: 0 };
       const direction = detectDirection(movement, velocity);
-      const state = createState(e, false, true, direction);
+      const state = createState(e, false, true, direction, void 0, velocity);
       if (direction) {
         onSwipe?.(state);
       }
@@ -3002,10 +3579,36 @@ function createSwipeGesture(element, config = {}) {
     } catch {
     }
   };
+  const handlePointerCancel = (e) => {
+    if (!active || e.pointerId !== pointerId) return;
+    active = false;
+    pointerId = null;
+    removeSwipeEndGuards();
+    onSwipeEnd?.(createState(e, false, true, null, lastPoint, { x: 0, y: 0 }, true));
+    try {
+      element.releasePointerCapture(e.pointerId);
+    } catch {
+    }
+  };
+  const handleLostCapture = (e) => handlePointerCancel(e);
+  const addSwipeEndGuards = () => {
+    element.addEventListener("lostpointercapture", handleLostCapture);
+    if (typeof window !== "undefined") {
+      window.addEventListener("pointerup", handlePointerUp);
+      window.addEventListener("pointercancel", handlePointerCancel);
+    }
+  };
+  function removeSwipeEndGuards() {
+    element.removeEventListener("lostpointercapture", handleLostCapture);
+    if (typeof window !== "undefined") {
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerCancel);
+    }
+  }
   element.addEventListener("pointerdown", handlePointerDown);
   element.addEventListener("pointermove", handlePointerMove);
   element.addEventListener("pointerup", handlePointerUp);
-  element.addEventListener("pointercancel", handlePointerUp);
+  element.addEventListener("pointercancel", handlePointerCancel);
   return {
     enable: () => {
       enabled = true;
@@ -3018,7 +3621,10 @@ function createSwipeGesture(element, config = {}) {
       element.removeEventListener("pointerdown", handlePointerDown);
       element.removeEventListener("pointermove", handlePointerMove);
       element.removeEventListener("pointerup", handlePointerUp);
-      element.removeEventListener("pointercancel", handlePointerUp);
+      element.removeEventListener("pointercancel", handlePointerCancel);
+      removeSwipeEndGuards();
+      active = false;
+      pointerId = null;
     }
   };
 }
@@ -3037,13 +3643,13 @@ function createLongPressGesture(element, config = {}) {
   let startTime = 0;
   let timerId = null;
   let pointerId = null;
-  const createState = (event, first = false, last = false) => ({
+  const createState = (event, first = false, last = false, cancelled = false) => ({
     active,
     first,
     last,
     event,
     elapsedTime: performance.now() - startTime,
-    cancelled: false,
+    cancelled,
     position: startPoint,
     duration: performance.now() - startTime,
     triggered
@@ -3056,6 +3662,7 @@ function createLongPressGesture(element, config = {}) {
     active = true;
     triggered = false;
     element.setPointerCapture(e.pointerId);
+    addPressEndGuards();
     onPressStart?.(createState(e, true, false));
     timerId = setTimeout(() => {
       if (active && !triggered) {
@@ -3080,16 +3687,31 @@ function createLongPressGesture(element, config = {}) {
     if (!active || e.pointerId !== pointerId) return;
     active = false;
     pointerId = null;
+    removePressEndGuards();
     if (timerId) {
       clearTimeout(timerId);
       timerId = null;
     }
-    onPressEnd?.(createState(e, false, true));
+    onPressEnd?.(createState(e, false, true, e.type !== "pointerup"));
     try {
       element.releasePointerCapture(e.pointerId);
     } catch {
     }
   };
+  const addPressEndGuards = () => {
+    element.addEventListener("lostpointercapture", handlePointerUp);
+    if (typeof window !== "undefined") {
+      window.addEventListener("pointerup", handlePointerUp);
+      window.addEventListener("pointercancel", handlePointerUp);
+    }
+  };
+  function removePressEndGuards() {
+    element.removeEventListener("lostpointercapture", handlePointerUp);
+    if (typeof window !== "undefined") {
+      window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", handlePointerUp);
+    }
+  }
   element.addEventListener("pointerdown", handlePointerDown);
   element.addEventListener("pointermove", handlePointerMove);
   element.addEventListener("pointerup", handlePointerUp);
@@ -3108,10 +3730,14 @@ function createLongPressGesture(element, config = {}) {
     isEnabled: () => enabled,
     destroy: () => {
       if (timerId) clearTimeout(timerId);
+      timerId = null;
       element.removeEventListener("pointerdown", handlePointerDown);
       element.removeEventListener("pointermove", handlePointerMove);
       element.removeEventListener("pointerup", handlePointerUp);
       element.removeEventListener("pointercancel", handlePointerUp);
+      removePressEndGuards();
+      active = false;
+      pointerId = null;
     }
   };
 }
@@ -3137,125 +3763,58 @@ function createGestures(element, config) {
   };
 }
 
-// src/utils/color.ts
-function parseColor(color) {
-  const hexMatch = color.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
-  if (hexMatch) {
-    return hexToRgb(color);
-  }
-  const rgbMatch = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/i);
-  if (rgbMatch) {
-    return {
-      r: parseInt(rgbMatch[1], 10),
-      g: parseInt(rgbMatch[2], 10),
-      b: parseInt(rgbMatch[3], 10)
-    };
-  }
-  const rgbaMatch = color.match(/rgba\((\d+),\s*(\d+),\s*(\d+),\s*[\d.]+\)/i);
-  if (rgbaMatch) {
-    return {
-      r: parseInt(rgbaMatch[1], 10),
-      g: parseInt(rgbaMatch[2], 10),
-      b: parseInt(rgbaMatch[3], 10)
-    };
-  }
-  const hslMatch = color.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/i);
-  if (hslMatch) {
-    return hslToRgb(
-      parseInt(hslMatch[1], 10),
-      parseInt(hslMatch[2], 10),
-      parseInt(hslMatch[3], 10)
-    );
-  }
-  return { r: 0, g: 0, b: 0 };
-}
-function rgbToHex(r, g, b) {
-  const toHex = (n) => {
-    const clamped = Math.round(Math.max(0, Math.min(255, n)));
-    return clamped.toString(16).padStart(2, "0");
-  };
-  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
-}
-function hexToRgb(hex) {
-  const cleanHex = hex.replace("#", "");
-  if (cleanHex.length === 3) {
-    return {
-      r: parseInt(cleanHex.charAt(0) + cleanHex.charAt(0), 16),
-      g: parseInt(cleanHex.charAt(1) + cleanHex.charAt(1), 16),
-      b: parseInt(cleanHex.charAt(2) + cleanHex.charAt(2), 16)
-    };
-  }
-  return {
-    r: parseInt(cleanHex.slice(0, 2), 16),
-    g: parseInt(cleanHex.slice(2, 4), 16),
-    b: parseInt(cleanHex.slice(4, 6), 16)
-  };
-}
-function hslToRgb(h, s, l) {
-  h = (h % 360 + 360) % 360;
-  s = Math.max(0, Math.min(100, s)) / 100;
-  l = Math.max(0, Math.min(100, l)) / 100;
-  if (s === 0) {
-    const gray = Math.round(l * 255);
-    return { r: gray, g: gray, b: gray };
-  }
-  const hue2rgb = (p2, q2, t) => {
-    if (t < 0) t += 1;
-    if (t > 1) t -= 1;
-    if (t < 1 / 6) return p2 + (q2 - p2) * 6 * t;
-    if (t < 1 / 2) return q2;
-    if (t < 2 / 3) return p2 + (q2 - p2) * (2 / 3 - t) * 6;
-    return p2;
-  };
-  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
-  const p = 2 * l - q;
-  return {
-    r: Math.round(hue2rgb(p, q, h / 360 + 1 / 3) * 255),
-    g: Math.round(hue2rgb(p, q, h / 360) * 255),
-    b: Math.round(hue2rgb(p, q, h / 360 - 1 / 3) * 255)
-  };
-}
-function rgbToHsl(r, g, b) {
-  r = Math.max(0, Math.min(255, r)) / 255;
-  g = Math.max(0, Math.min(255, g)) / 255;
-  b = Math.max(0, Math.min(255, b)) / 255;
-  const max = Math.max(r, g, b);
-  const min = Math.min(r, g, b);
-  const delta = max - min;
-  let h = 0;
-  let s = 0;
-  if (delta !== 0) {
-    s = (max + min) / 2 > 0.5 ? delta / (2 - max - min) : delta / (max + min);
-    if (max === r) {
-      h = ((g - b) / delta + (g < b ? 6 : 0)) / 6;
-    } else if (max === g) {
-      h = ((b - r) / delta + 2) / 6;
-    } else {
-      h = ((r - g) / delta + 4) / 6;
-    }
-  }
-  return {
-    h: Math.round(h * 360),
-    s: Math.round(s * 100),
-    l: Math.round((max + min) / 2 * 100)
-  };
-}
-
 // src/scroll/scroll-linked.ts
-function lerpColor(colorA, colorB, t) {
-  const a = parseColor(colorA);
-  const b = parseColor(colorB);
-  return rgbToHex(
-    Math.round(lerp(a.r, b.r, t)),
-    Math.round(lerp(a.g, b.g, t)),
-    Math.round(lerp(a.b, b.b, t))
-  );
+var MAX_SMOOTHING_FACTOR = 0.95;
+function resolveSmoothing(smooth) {
+  const rest = { restDelta: 1e-4, restSpeed: 1e-3 };
+  if (typeof smooth === "number") {
+    if (!Number.isFinite(smooth) || smooth <= 0) return null;
+    const omega = -Math.log(Math.min(smooth, MAX_SMOOTHING_FACTOR)) * 60;
+    const mass = Math.max(1, 100 / (omega * omega));
+    return { ...rest, mass, stiffness: mass * omega * omega, damping: 2 * mass * omega };
+  }
+  if (smooth && typeof smooth === "object") return { ...rest, ...smooth };
+  return null;
+}
+function createSmoother(smooth, onChange) {
+  const config = resolveSmoothing(smooth);
+  if (!config) return null;
+  const value = createSpringValue(0, config);
+  let initialized = false;
+  let target = 0;
+  value.subscribe((v) => {
+    if (initialized) onChange(v);
+  });
+  return {
+    set: (next) => {
+      if (!Number.isFinite(next)) return;
+      if (!initialized) {
+        target = next;
+        value.jump(next);
+        initialized = true;
+        return;
+      }
+      if (next === target) return;
+      target = next;
+      value.set(next);
+    },
+    get: () => value.get(),
+    destroy: () => value.destroy()
+  };
+}
+function lerpColor(colorA, colorB, t, space) {
+  const mixed = mixColorsRGBA(parseColorRGBA(colorA), parseColorRGBA(colorB), t, space);
+  return mixed.a >= 1 ? rgbToHex(mixed.r, mixed.g, mixed.b) : formatRGBA(mixed);
+}
+var isColorString = (value) => typeof value === "string" && (value.startsWith("#") || value.startsWith("rgb") || value.startsWith("hsl") || value.trim().toLowerCase() === "transparent");
+function getVisibleRatio(rect, windowHeight) {
+  if (rect.height <= 0) return 0;
+  return clamp((Math.min(rect.bottom, windowHeight) - Math.max(rect.top, 0)) / rect.height, 0, 1);
 }
 function createScrollProgress(element, options = {}) {
   const { offset = ["start", "end"], smooth = 0 } = options;
   let progress = 0;
-  let smoothedProgress = 0;
-  let lastScrollY = 0;
+  let lastScrollY = typeof window !== "undefined" ? window.scrollY : 0;
   let lastTime = performance.now();
   let velocity = 0;
   let direction = 0;
@@ -3285,14 +3844,14 @@ function createScrollProgress(element, options = {}) {
       const scrollRange = scrollEnd - scrollStart;
       newProgress = scrollRange !== 0 ? clamp((scrollY - scrollStart) / scrollRange, 0, 1) : scrollY >= scrollEnd ? 1 : 0;
       isInView = rect.top < windowHeight && rect.bottom > 0;
-      visibleRatio = isInView ? clamp((Math.min(rect.bottom, windowHeight) - Math.max(rect.top, 0)) / rect.height, 0, 1) : 0;
+      visibleRatio = isInView ? getVisibleRatio(rect, windowHeight) : 0;
     } else {
       const documentHeight = document.documentElement.scrollHeight - windowHeight;
       newProgress = documentHeight > 0 ? clamp(scrollY / documentHeight, 0, 1) : 0;
     }
-    if (smooth > 0) {
-      smoothedProgress = lerp(smoothedProgress, newProgress, 1 - smooth);
-      progress = smoothedProgress;
+    if (smoother) {
+      smoother.set(newProgress);
+      progress = smoother.get();
     } else {
       progress = newProgress;
     }
@@ -3314,16 +3873,22 @@ function createScrollProgress(element, options = {}) {
       }
     });
   };
+  const smoother = createSmoother(smooth, (value) => {
+    if (destroyed) return;
+    progress = value;
+    latestInfo = { ...latestInfo, progress: value };
+    notify(latestInfo);
+  });
   const onScroll = () => {
     if (rafId || destroyed) return;
     rafId = requestAnimationFrame(() => {
       rafId = null;
       if (destroyed) return;
-      const info = calculateProgress();
-      notify(info);
+      latestInfo = calculateProgress();
+      notify(latestInfo);
     });
   };
-  const initialInfo = calculateProgress();
+  let latestInfo = calculateProgress();
   window.addEventListener("scroll", onScroll, { passive: true });
   window.addEventListener("resize", onScroll, { passive: true });
   return {
@@ -3331,7 +3896,11 @@ function createScrollProgress(element, options = {}) {
     getInfo: () => calculateProgress(),
     subscribe: (callback) => {
       subscribers.add(callback);
-      callback(initialInfo);
+      try {
+        callback(latestInfo);
+      } catch (e) {
+        console.error("[SpringKit] ScrollProgress subscriber error:", e);
+      }
       return () => subscribers.delete(callback);
     },
     destroy: () => {
@@ -3340,6 +3909,7 @@ function createScrollProgress(element, options = {}) {
       if (rafId) cancelAnimationFrame(rafId);
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
+      smoother?.destroy();
       subscribers.clear();
     }
   };
@@ -3356,6 +3926,7 @@ function createParallax(element, config = {}) {
   let observer = null;
   let pendingRafId = null;
   let destroyed = false;
+  const originalTransform = element.style.transform;
   const update = () => {
     if (!isInView) return;
     const rect = element.getBoundingClientRect();
@@ -3404,7 +3975,7 @@ function createParallax(element, config = {}) {
       }
       observer?.disconnect();
       window.removeEventListener("scroll", onScroll);
-      element.style.transform = "";
+      element.style.transform = originalTransform;
     }
   };
 }
@@ -3423,8 +3994,19 @@ function createScrollTrigger(element, config = {}) {
   let isActive = false;
   let progress = 0;
   let hasEntered = false;
-  let smoothedProgress = 0;
   let rafId = null;
+  let destroyed = false;
+  let latestInfo = null;
+  const smoother = typeof scrub === "number" ? createSmoother(scrub, (value) => {
+    if (destroyed || !latestInfo) return;
+    progress = value;
+    latestInfo = { ...latestInfo, progress: value };
+    try {
+      onProgress?.(latestInfo);
+    } catch (e) {
+      console.error("[SpringKit] ScrollTrigger onProgress error:", e);
+    }
+  }) : null;
   const getPosition = (pos, rect) => {
     if (typeof pos === "number") return pos;
     switch (pos) {
@@ -3441,33 +4023,39 @@ function createScrollTrigger(element, config = {}) {
     const windowHeight = window.innerHeight;
     const startPos = getPosition(start, rect) + startOffset;
     const endPos = getPosition(end, rect) + endOffset;
-    const triggerStart = windowHeight;
-    const triggerEnd = 0;
-    const triggerRange = triggerStart - triggerEnd;
-    const startProgress = triggerRange !== 0 ? (triggerStart - startPos) / triggerRange : 0;
-    const endProgress = triggerRange !== 0 ? (triggerStart - endPos) / triggerRange : 1;
-    const progressRange = endProgress - startProgress;
-    const rawProgress = progressRange !== 0 ? clamp((startProgress - 0) / progressRange, 0, 1) : startProgress >= 0 ? 1 : 0;
-    if (typeof scrub === "number" && scrub > 0) {
-      smoothedProgress = lerp(smoothedProgress, rawProgress, 1 - scrub);
-      progress = smoothedProgress;
+    const scrolled = windowHeight - startPos;
+    const scrollDistance = windowHeight + (endPos - startPos);
+    const rawProgress = scrollDistance > 0 ? clamp(scrolled / scrollDistance, 0, 1) : scrolled >= 0 ? 1 : 0;
+    const isInView = rect.top < windowHeight && rect.bottom > 0;
+    const visibleRatio = isInView ? getVisibleRatio(rect, windowHeight) : 0;
+    latestInfo = {
+      progress: rawProgress,
+      scrollY: window.scrollY,
+      velocity: 0,
+      direction: 0,
+      isInView,
+      visibleRatio
+    };
+    if (smoother) {
+      smoother.set(rawProgress);
+      progress = smoother.get();
     } else {
       progress = rawProgress;
     }
-    const isInView = rect.top < windowHeight && rect.bottom > 0;
     return {
       progress,
       scrollY: window.scrollY,
       velocity: 0,
       direction: 0,
       isInView,
-      visibleRatio: isInView ? clamp((Math.min(rect.bottom, windowHeight) - Math.max(rect.top, 0)) / rect.height, 0, 1) : 0
+      visibleRatio
     };
   };
   const onScroll = () => {
-    if (rafId) return;
+    if (rafId || destroyed) return;
     rafId = requestAnimationFrame(() => {
       rafId = null;
+      if (destroyed) return;
       const info = calculateProgress();
       const wasActive = isActive;
       isActive = info.progress > 0 && info.progress < 1;
@@ -3505,19 +4093,22 @@ function createScrollTrigger(element, config = {}) {
       calculateProgress();
     },
     destroy: () => {
+      destroyed = true;
       if (rafId) cancelAnimationFrame(rafId);
+      rafId = null;
       window.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
+      smoother?.destroy();
     }
   };
 }
 function createScrollLinkedValue(scrollProgress, config) {
-  const { inputRange, outputRange, clamp: shouldClamp = true, easing } = config;
+  const { inputRange, outputRange, clamp: shouldClamp = true, easing, colorSpace, smooth } = config;
   if (inputRange.length !== outputRange.length) {
     throw new Error("inputRange and outputRange must have the same length");
   }
   const firstOutput = outputRange[0];
-  const isColorOutput = typeof firstOutput === "string" && (firstOutput.startsWith("#") || firstOutput.startsWith("rgb") || firstOutput.startsWith("hsl"));
+  const isColorOutput = isColorString(firstOutput);
   let currentValue = firstOutput ?? 0;
   const subscribers = /* @__PURE__ */ new Set();
   const interpolate2 = (progress) => {
@@ -3535,7 +4126,7 @@ function createScrollLinkedValue(scrollProgress, config) {
         break;
       }
       if (p > next) {
-        segmentIndex = i + 1;
+        segmentIndex = Math.min(i + 1, Math.max(inputRange.length - 2, 0));
       }
     }
     const segmentStart = inputRange[segmentIndex] ?? 0;
@@ -3544,23 +4135,47 @@ function createScrollLinkedValue(scrollProgress, config) {
     const startValue = outputRange[segmentIndex] ?? 0;
     const endValue = outputRange[segmentIndex + 1] ?? startValue;
     if (isColorOutput && typeof startValue === "string" && typeof endValue === "string") {
-      return lerpColor(startValue, endValue, segmentProgress);
+      return lerpColor(startValue, endValue, segmentProgress, colorSpace);
     }
     return lerp(startValue, endValue, segmentProgress);
   };
+  let destroyed = false;
+  const update = (progress) => {
+    if (destroyed) return;
+    currentValue = interpolate2(progress);
+    subscribers.forEach((cb) => {
+      try {
+        cb(currentValue);
+      } catch (e) {
+        console.error("[SpringKit] ScrollLinkedValue subscriber error:", e);
+      }
+    });
+  };
+  const smoother = createSmoother(smooth, update);
+  let hasValue = false;
   const unsubscribe = scrollProgress.subscribe((info) => {
-    currentValue = interpolate2(info.progress);
-    subscribers.forEach((cb) => cb(currentValue));
+    if (!smoother) return update(info.progress);
+    smoother.set(info.progress);
+    if (!hasValue) {
+      hasValue = true;
+      update(smoother.get());
+    }
   });
   return {
     get: () => currentValue,
     subscribe: (callback) => {
       subscribers.add(callback);
-      callback(currentValue);
+      try {
+        callback(currentValue);
+      } catch (e) {
+        console.error("[SpringKit] ScrollLinkedValue subscriber error:", e);
+      }
       return () => subscribers.delete(callback);
     },
     destroy: () => {
+      destroyed = true;
       unsubscribe();
+      smoother?.destroy();
       subscribers.clear();
     }
   };
@@ -3579,6 +4194,29 @@ var scrollEasings = {
 };
 
 // src/animation/timeline.ts
+var elementTransforms2 = /* @__PURE__ */ new WeakMap();
+var SETTLE_THRESHOLD = 1e-3;
+var MAX_SETTLE_TIME = 10;
+function springCurve(config) {
+  const motion = springMotion(config, 1, 0);
+  const stiffness = config.stiffness !== void 0 && config.stiffness > 0 ? config.stiffness : 100;
+  const mass = config.mass !== void 0 && config.mass > 0 ? config.mass : 1;
+  const omega = Math.sqrt(stiffness / mass);
+  const dt = 1 / 240;
+  let settleTime = MAX_SETTLE_TIME;
+  for (let t = dt; t < MAX_SETTLE_TIME; t += dt) {
+    const state = motion(t);
+    if (Math.hypot(state.position, state.velocity / omega) < SETTLE_THRESHOLD) {
+      settleTime = t;
+      break;
+    }
+  }
+  return (progress) => {
+    if (progress <= 0) return 0;
+    if (progress >= 1) return 1;
+    return 1 - motion(progress * settleTime).position;
+  };
+}
 var timelineIdCounter = 0;
 function createTimeline(config = {}) {
   const timelineInstanceId = ++timelineIdCounter;
@@ -3606,9 +4244,11 @@ function createTimeline(config = {}) {
   let repeatCount = 0;
   let rafId = null;
   let repeatDelayTimeoutId = null;
-  let lastFrameTime = 0;
+  let lastFrameTime = null;
   let hasStarted = false;
   let insertTime = 0;
+  let includeStartPosition = true;
+  const now = () => typeof performance !== "undefined" ? performance.now() : Date.now();
   const parsePosition = (position) => {
     if (position === void 0) {
       return insertTime;
@@ -3657,8 +4297,34 @@ function createTimeline(config = {}) {
     if (typeof target === "string") {
       return document.querySelector(target);
     }
-    if (target instanceof HTMLElement) {
+    if (typeof HTMLElement !== "undefined" && target instanceof HTMLElement) {
       return target;
+    }
+    return null;
+  };
+  const createAdapter = (target) => {
+    const element = resolveTarget(target);
+    if (element) {
+      return {
+        read: (keys) => getCurrentElementValues(element, keys),
+        write: (values) => applyPropsToElement(element, values)
+      };
+    }
+    if (typeof target === "object" && target !== null && !(typeof Node !== "undefined" && target instanceof Node)) {
+      const object = target;
+      return {
+        read: (keys) => {
+          const current = {};
+          for (const key of keys) {
+            const value = object[key];
+            current[key] = typeof value === "number" && Number.isFinite(value) ? value : 0;
+          }
+          return current;
+        },
+        write: (values) => {
+          Object.assign(object, values);
+        }
+      };
     }
     return null;
   };
@@ -3672,69 +4338,77 @@ function createTimeline(config = {}) {
     return result;
   };
   const applyPropsToElement = (element, props) => {
-    const transforms = [];
     const cssProps = {};
+    let stored = elementTransforms2.get(element);
+    let transformChanged = false;
     for (const [key, value] of Object.entries(props)) {
-      switch (key) {
-        case "x":
-          transforms.push(`translateX(${value}px)`);
-          break;
-        case "y":
-          transforms.push(`translateY(${value}px)`);
-          break;
-        case "z":
-          transforms.push(`translateZ(${value}px)`);
-          break;
-        case "scale":
-          transforms.push(`scale(${value})`);
-          break;
-        case "scaleX":
-          transforms.push(`scaleX(${value})`);
-          break;
-        case "scaleY":
-          transforms.push(`scaleY(${value})`);
-          break;
-        case "rotate":
-        case "rotation":
-          transforms.push(`rotate(${value}deg)`);
-          break;
-        case "rotateX":
-          transforms.push(`rotateX(${value}deg)`);
-          break;
-        case "rotateY":
-          transforms.push(`rotateY(${value}deg)`);
-          break;
-        case "rotateZ":
-          transforms.push(`rotateZ(${value}deg)`);
-          break;
-        case "skewX":
-          transforms.push(`skewX(${value}deg)`);
-          break;
-        case "skewY":
-          transforms.push(`skewY(${value}deg)`);
-          break;
-        case "opacity":
-          cssProps.opacity = String(value);
-          break;
-        default:
-          cssProps[key] = typeof value === "number" ? `${value}px` : String(value);
+      if (transformFunction(key, 0) !== null) {
+        if (!stored) {
+          stored = /* @__PURE__ */ new Map();
+          elementTransforms2.set(element, stored);
+        }
+        stored.set(key, value);
+        transformChanged = true;
+      } else if (key === "opacity") {
+        cssProps.opacity = String(value);
+      } else {
+        cssProps[key] = `${value}px`;
       }
     }
-    if (transforms.length > 0) {
+    if (transformChanged && stored) {
+      const transforms = [];
+      stored.forEach((value, key) => {
+        const fn = transformFunction(key, value);
+        if (fn) transforms.push(fn);
+      });
       element.style.transform = transforms.join(" ");
     }
     for (const [prop, val] of Object.entries(cssProps)) {
       element.style[prop] = val;
     }
   };
-  const getCurrentElementValues = (element, props) => {
+  const transformFunction = (key, value) => {
+    switch (key) {
+      case "x":
+        return `translateX(${value}px)`;
+      case "y":
+        return `translateY(${value}px)`;
+      case "z":
+        return `translateZ(${value}px)`;
+      case "scale":
+        return `scale(${value})`;
+      case "scaleX":
+        return `scaleX(${value})`;
+      case "scaleY":
+        return `scaleY(${value})`;
+      case "rotate":
+      case "rotation":
+        return `rotate(${value}deg)`;
+      case "rotateX":
+        return `rotateX(${value}deg)`;
+      case "rotateY":
+        return `rotateY(${value}deg)`;
+      case "rotateZ":
+        return `rotateZ(${value}deg)`;
+      case "skewX":
+        return `skewX(${value}deg)`;
+      case "skewY":
+        return `skewY(${value}deg)`;
+      default:
+        return null;
+    }
+  };
+  const getCurrentElementValues = (element, keys) => {
     const current = {};
     const computed = getComputedStyle(element);
-    for (const key of Object.keys(props)) {
+    const stored = elementTransforms2.get(element);
+    for (const key of keys) {
       switch (key) {
-        case "opacity":
-          current[key] = parseFloat(computed.opacity) || 1;
+        case "opacity": {
+          const opacity = parseFloat(computed.opacity);
+          current[key] = Number.isNaN(opacity) ? 1 : opacity;
           break;
+        }
         case "x":
         case "y":
         case "z":
@@ -3748,7 +4422,7 @@ function createTimeline(config = {}) {
         case "rotateZ":
         case "skewX":
         case "skewY":
-          current[key] = key.startsWith("scale") ? 1 : 0;
+          current[key] = stored?.get(key) ?? (key.startsWith("scale") ? 1 : 0);
           break;
         default:
           current[key] = parseFloat(computed.getPropertyValue(key)) || 0;
@@ -3757,16 +4431,86 @@ function createTimeline(config = {}) {
     return current;
   };
   const MAX_DELTA_TIME2 = 64;
+  const scheduleTick = () => {
+    if (rafId !== null) {
+      cancelAnimationFrame(rafId);
+    }
+    rafId = requestAnimationFrame(tick);
+  };
+  const isCrossed = (positionMs, prevTime, nextTime, includeStart) => {
+    const prevMs = prevTime * 1e3;
+    const nextMs = nextTime * 1e3;
+    if (nextMs >= prevMs) {
+      return (includeStart ? positionMs >= Math.floor(prevMs) : positionMs > prevMs) && positionMs <= nextMs;
+    }
+    return (includeStart ? positionMs <= prevMs : positionMs < Math.floor(prevMs)) && positionMs >= Math.floor(nextMs);
+  };
+  const segmentProgressAt = (segment, time) => {
+    const segmentDuration = segment.endTime - segment.startTime;
+    return segmentDuration > 0 ? clamp((time - segment.startTime) / segmentDuration, 0, 1) : time >= segment.endTime ? 1 : 0;
+  };
+  const renderSegment = (segment, progress, force) => {
+    const changed = progress !== segment.lastProgress;
+    if (!changed && !force) return false;
+    segment.lastProgress = progress;
+    const { adapter } = segment;
+    const keys = Object.keys(segment.toValues);
+    if (adapter && keys.length > 0) {
+      const from = segment.fromValues ?? (segment.fromValues = adapter.read(keys));
+      const eased = segment.curve(progress);
+      const values = {};
+      for (const key of keys) {
+        const start = from[key] ?? 0;
+        values[key] = start + ((segment.toValues[key] ?? 0) - start) * eased;
+      }
+      adapter.write(values);
+    }
+    return changed;
+  };
+  const renderAt = (time, events) => {
+    let restored = false;
+    for (let i = segments.length - 1; i >= 0; i--) {
+      const segment = segments[i];
+      if (time < segment.startTime && segment.lastProgress > 0) {
+        renderSegment(segment, 0, false);
+        restored = true;
+        if (events) segment.props.onUpdate?.(0);
+      }
+    }
+    for (const segment of segments) {
+      if (time < segment.startTime) {
+        segment.isActive = false;
+        segment.isComplete = false;
+        continue;
+      }
+      const progress = segmentProgressAt(segment, time);
+      if (progress < 1) segment.isComplete = false;
+      if (!segment.isActive) {
+        segment.isActive = true;
+        if (events) segment.props.onStart?.();
+      }
+      const changed = renderSegment(segment, progress, restored);
+      if (events && changed) segment.props.onUpdate?.(progress);
+      if (progress >= 1 && !segment.isComplete) {
+        segment.isComplete = true;
+        if (events) segment.props.onComplete?.();
+      }
+    }
+  };
   const tick = (timestamp) => {
+    rafId = null;
     if (!isPlaying || isPaused) return;
-    const rawDelta = lastFrameTime ? timestamp - lastFrameTime : 0;
-    const deltaTime = Math.min(rawDelta, MAX_DELTA_TIME2) / 1e3;
+    const rawDelta = lastFrameTime !== null ? timestamp - lastFrameTime : 0;
+    const deltaTime = Math.min(Math.max(rawDelta, 0), MAX_DELTA_TIME2) / 1e3 * globalLoop.getTimeScale();
     lastFrameTime = timestamp;
+    const prevTime = currentTime;
     currentTime += isReversed ? -deltaTime : deltaTime;
     currentTime = clamp(currentTime, 0, totalDuration);
-    const callbacksAtTime = callbacks.get(Math.floor(currentTime * 1e3));
-    if (callbacksAtTime) {
-      callbacksAtTime.forEach((cb) => {
+    const includeStart = includeStartPosition;
+    includeStartPosition = false;
+    const crossedCallbacks = Array.from(callbacks.keys()).filter((ms) => isCrossed(ms, prevTime, currentTime, includeStart)).sort((a, b) => isReversed ? b - a : a - b);
+    for (const ms of crossedCallbacks) {
+      callbacks.get(ms)?.forEach((cb) => {
         try {
           cb();
         } catch (e) {
@@ -3774,9 +4518,13 @@ function createTimeline(config = {}) {
         }
       });
     }
-    const pauseCallback = pauses.get(Math.floor(currentTime * 1e3));
-    if (pauseCallback !== void 0) {
+    const crossedPauses = Array.from(pauses.keys()).filter((ms) => isCrossed(ms, prevTime, currentTime, includeStart)).sort((a, b) => isReversed ? b - a : a - b);
+    const pauseMs = crossedPauses[0];
+    if (pauseMs !== void 0) {
       isPaused = true;
+      currentTime = clamp(pauseMs / 1e3, 0, totalDuration);
+      renderAt(currentTime, true);
+      const pauseCallback = pauses.get(pauseMs);
       try {
         pauseCallback?.();
       } catch (e) {
@@ -3784,22 +4532,7 @@ function createTimeline(config = {}) {
       }
       return;
     }
-    for (const segment of segments) {
-      const segmentDuration = segment.endTime - segment.startTime;
-      const segmentProgress = segmentDuration > 0 ? clamp((currentTime - segment.startTime) / segmentDuration, 0, 1) : currentTime >= segment.endTime ? 1 : 0;
-      const shouldBeActive = currentTime >= segment.startTime && currentTime <= segment.endTime;
-      if (shouldBeActive && !segment.isActive) {
-        segment.isActive = true;
-        segment.props.onStart?.();
-      }
-      if (segment.isActive && segment.spring) {
-        segment.props.onUpdate?.(segmentProgress);
-      }
-      if (shouldBeActive && segmentProgress >= 1 && !segment.isComplete) {
-        segment.isComplete = true;
-        segment.props.onComplete?.();
-      }
-    }
+    renderAt(currentTime, true);
     onUpdate?.(totalDuration > 0 ? currentTime / totalDuration : 1);
     if (isReversed && currentTime <= 0 || !isReversed && currentTime >= totalDuration) {
       if (repeat === -1 || repeatCount < repeat) {
@@ -3808,7 +4541,8 @@ function createTimeline(config = {}) {
         if (yoyo) {
           isReversed = !isReversed;
         } else {
-          currentTime = 0;
+          currentTime = isReversed ? totalDuration : 0;
+          includeStartPosition = true;
           segments.forEach((s) => {
             s.isActive = false;
             s.isComplete = false;
@@ -3817,7 +4551,8 @@ function createTimeline(config = {}) {
         if (repeatDelay > 0) {
           repeatDelayTimeoutId = setTimeout(() => {
             repeatDelayTimeoutId = null;
-            rafId = requestAnimationFrame(tick);
+            lastFrameTime = null;
+            scheduleTick();
           }, repeatDelay * 1e3);
           return;
         }
@@ -3827,111 +4562,53 @@ function createTimeline(config = {}) {
         return;
       }
     }
-    rafId = requestAnimationFrame(tick);
+    scheduleTick();
+  };
+  const addSegment = (target, props, position, toValues, fromValues, adapter) => {
+    const startTime = parsePosition(position) + (props.delay || 0);
+    const duration = props.duration || 0.5;
+    const endTime = startTime + duration;
+    const segment = {
+      id: `segment_${timelineInstanceId}_${segmentIdCounter++}`,
+      target,
+      props,
+      startTime,
+      endTime,
+      adapter: Object.keys(toValues).length > 0 ? adapter : null,
+      fromValues,
+      toValues,
+      curve: props.ease ?? springCurve({ ...defaults, ...props.spring }),
+      lastProgress: -1,
+      isActive: false,
+      isComplete: false
+    };
+    if (segment.adapter && fromValues) {
+      segment.adapter.write(fromValues);
+    }
+    segments.push(segment);
+    insertTime = endTime;
+    totalDuration = Math.max(totalDuration, endTime);
   };
   const timeline = {
     to(target, props, position) {
-      const startTime = parsePosition(position) + (props.delay || 0);
-      const duration = props.duration || 0.5;
-      const endTime = startTime + duration;
-      const element = resolveTarget(target);
-      const numericProps = extractNumericProps(props);
-      const segment = {
-        id: `segment_${timelineInstanceId}_${segmentIdCounter++}`,
-        target,
-        props,
-        startTime,
-        endTime,
-        spring: null,
-        isActive: false,
-        isComplete: false
-      };
-      if (element && Object.keys(numericProps).length > 0) {
-        const currentValues = getCurrentElementValues(element, numericProps);
-        const springConfig = { ...defaults, ...props.spring };
-        segment.spring = createSpringGroup(currentValues, springConfig);
-        segment.spring.subscribe((values) => {
-          applyPropsToElement(element, values);
-        });
-        const originalOnStart = segment.props.onStart;
-        segment.props.onStart = () => {
-          segment.spring?.set(numericProps);
-          originalOnStart?.();
-        };
-      }
-      segments.push(segment);
-      insertTime = endTime;
-      totalDuration = Math.max(totalDuration, endTime);
+      addSegment(target, props, position, extractNumericProps(props), null, createAdapter(target));
       return timeline;
     },
     from(target, props, position) {
-      const startTime = parsePosition(position) + (props.delay || 0);
-      const duration = props.duration || 0.5;
-      const endTime = startTime + duration;
-      const element = resolveTarget(target);
-      const numericProps = extractNumericProps(props);
-      const segment = {
-        id: `segment_${timelineInstanceId}_${segmentIdCounter++}`,
-        target,
-        props,
-        startTime,
-        endTime,
-        spring: null,
-        isActive: false,
-        isComplete: false
-      };
-      if (element && Object.keys(numericProps).length > 0) {
-        const targetValues = getCurrentElementValues(element, numericProps);
-        const springConfig = { ...defaults, ...props.spring };
-        segment.spring = createSpringGroup(numericProps, springConfig);
-        applyPropsToElement(element, numericProps);
-        segment.spring.subscribe((values) => {
-          applyPropsToElement(element, values);
-        });
-        const originalOnStart = segment.props.onStart;
-        segment.props.onStart = () => {
-          segment.spring?.set(targetValues);
-          originalOnStart?.();
-        };
-      }
-      segments.push(segment);
-      insertTime = endTime;
-      totalDuration = Math.max(totalDuration, endTime);
+      const adapter = createAdapter(target);
+      const fromValues = extractNumericProps(props);
+      const toValues = adapter ? adapter.read(Object.keys(fromValues)) : fromValues;
+      addSegment(target, props, position, toValues, fromValues, adapter);
       return timeline;
     },
     fromTo(target, fromProps, toProps, position) {
-      const startTime = parsePosition(position) + (toProps.delay || 0);
-      const duration = toProps.duration || 0.5;
-      const endTime = startTime + duration;
-      const element = resolveTarget(target);
-      const fromNumeric = extractNumericProps(fromProps);
-      const toNumeric = extractNumericProps(toProps);
-      const segment = {
-        id: `segment_${timelineInstanceId}_${segmentIdCounter++}`,
-        target,
-        props: toProps,
-        startTime,
-        endTime,
-        spring: null,
-        isActive: false,
-        isComplete: false
+      const adapter = createAdapter(target);
+      const toValues = extractNumericProps(toProps);
+      const fromValues = {
+        ...adapter ? adapter.read(Object.keys(toValues)) : toValues,
+        ...extractNumericProps(fromProps)
       };
-      if (element && Object.keys(toNumeric).length > 0) {
-        const springConfig = { ...defaults, ...toProps.spring };
-        segment.spring = createSpringGroup(fromNumeric, springConfig);
-        applyPropsToElement(element, fromNumeric);
-        segment.spring.subscribe((values) => {
-          applyPropsToElement(element, values);
-        });
-        const originalOnStart = segment.props.onStart;
-        segment.props.onStart = () => {
-          segment.spring?.set(toNumeric);
-          originalOnStart?.();
-        };
-      }
-      segments.push(segment);
-      insertTime = endTime;
-      totalDuration = Math.max(totalDuration, endTime);
+      addSegment(target, toProps, position, toValues, fromValues, adapter);
       return timeline;
     },
     addLabel(label, position) {
@@ -3948,11 +4625,11 @@ function createTimeline(config = {}) {
       return timeline;
     },
     set(target, props, position) {
-      const element = resolveTarget(target);
-      if (element) {
+      const adapter = createAdapter(target);
+      if (adapter) {
         const time = parsePosition(position);
         this.call(() => {
-          applyPropsToElement(element, extractNumericProps(props));
+          adapter.write(extractNumericProps(props));
         }, time);
       }
       return timeline;
@@ -3969,8 +4646,8 @@ function createTimeline(config = {}) {
       }
       isPlaying = true;
       isPaused = false;
-      lastFrameTime = 0;
-      rafId = requestAnimationFrame(tick);
+      lastFrameTime = now();
+      scheduleTick();
       return timeline;
     },
     pause() {
@@ -3984,8 +4661,8 @@ function createTimeline(config = {}) {
     resume() {
       if (isPaused) {
         isPaused = false;
-        lastFrameTime = 0;
-        rafId = requestAnimationFrame(tick);
+        lastFrameTime = now();
+        scheduleTick();
       }
       return timeline;
     },
@@ -3997,6 +4674,7 @@ function createTimeline(config = {}) {
       currentTime = isReversed ? totalDuration : 0;
       repeatCount = 0;
       hasStarted = false;
+      includeStartPosition = true;
       segments.forEach((s) => {
         s.isActive = false;
         s.isComplete = false;
@@ -4009,6 +4687,20 @@ function createTimeline(config = {}) {
       } else {
         currentTime = clamp(position, 0, totalDuration);
       }
+      segments.forEach((s) => {
+        if (currentTime < s.startTime) {
+          s.isActive = false;
+          s.isComplete = false;
+        } else if (currentTime < s.endTime) {
+          s.isComplete = false;
+        }
+      });
+      const flags = segments.map((s) => [s.isActive, s.isComplete]);
+      renderAt(currentTime, false);
+      segments.forEach((s, i) => {
+        [s.isActive, s.isComplete] = flags[i];
+      });
+      includeStartPosition = true;
       return timeline;
     },
     kill() {
@@ -4021,7 +4713,6 @@ function createTimeline(config = {}) {
         clearTimeout(repeatDelayTimeoutId);
         repeatDelayTimeoutId = null;
       }
-      segments.forEach((s) => s.spring?.destroy());
       segments.length = 0;
       labels.clear();
       callbacks.clear();
@@ -4053,6 +4744,19 @@ function allTo(targets, props) {
 }
 
 // src/svg/morph.ts
+var PARAM_COUNTS = {
+  M: 2,
+  L: 2,
+  H: 1,
+  V: 1,
+  C: 6,
+  S: 4,
+  Q: 4,
+  T: 2,
+  A: 7,
+  Z: 0
+};
+var PATH_NUMBER_REGEX = /[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?/gi;
 function parsePath(d) {
   const commands = [];
   const regex = /([MLCQAZHVST])([^MLCQAZHVST]*)/gi;
@@ -4062,51 +4766,96 @@ function parsePath(d) {
     const valuesStr = matchItem[2];
     if (!typeChar || valuesStr === void 0) continue;
     const type = typeChar.toUpperCase();
-    const values = valuesStr.trim().split(/[\s,]+/).filter((v) => v !== "").map(parseFloat).filter((v) => !isNaN(v));
-    commands.push({ type, values });
+    const relative = typeChar !== type;
+    const values = (valuesStr.match(PATH_NUMBER_REGEX) ?? []).map(parseFloat).filter((v) => !isNaN(v));
+    const count = PARAM_COUNTS[type];
+    if (count === 0 || values.length <= count) {
+      commands.push({ type, values, relative });
+      continue;
+    }
+    for (let i = 0; i + count <= values.length; i += count) {
+      commands.push({
+        type: type === "M" && i > 0 ? "L" : type,
+        values: values.slice(i, i + count),
+        relative
+      });
+    }
   }
   return commands;
 }
 function toAbsolute(commands) {
+  let currentX = 0;
+  let currentY = 0;
+  let startX = 0;
+  let startY = 0;
   return commands.map((cmd) => {
-    const { type, values } = cmd;
+    const { type, values, relative } = cmd;
     const absValues = [...values];
+    if (relative) {
+      const offsetPair = (i) => {
+        const x = absValues[i];
+        const y = absValues[i + 1];
+        if (x !== void 0) absValues[i] = x + currentX;
+        if (y !== void 0) absValues[i + 1] = y + currentY;
+      };
+      switch (type) {
+        case "H":
+          if (absValues[0] !== void 0) absValues[0] += currentX;
+          break;
+        case "V":
+          if (absValues[0] !== void 0) absValues[0] += currentY;
+          break;
+        case "A":
+          offsetPair(5);
+          break;
+        case "Z":
+          break;
+        default:
+          for (let i = 0; i < absValues.length; i += 2) offsetPair(i);
+      }
+    }
     switch (type) {
       case "M":
-        values[0] ?? 0;
-        values[1] ?? 0;
+        currentX = absValues[0] ?? 0;
+        currentY = absValues[1] ?? 0;
+        startX = currentX;
+        startY = currentY;
         break;
       case "L":
-        values[0] ?? 0;
-        values[1] ?? 0;
+        currentX = absValues[0] ?? 0;
+        currentY = absValues[1] ?? 0;
         break;
       case "H":
-        absValues[0] = values[0] ?? 0;
-        values[0] ?? 0;
+        absValues[0] = absValues[0] ?? 0;
+        currentX = absValues[0];
         break;
       case "V":
-        absValues[0] = values[0] ?? 0;
-        values[0] ?? 0;
+        absValues[0] = absValues[0] ?? 0;
+        currentY = absValues[0];
         break;
       case "C":
-        values[4] ?? 0;
-        values[5] ?? 0;
+        currentX = absValues[4] ?? 0;
+        currentY = absValues[5] ?? 0;
         break;
       case "Q":
-        values[2] ?? 0;
-        values[3] ?? 0;
+        currentX = absValues[2] ?? 0;
+        currentY = absValues[3] ?? 0;
         break;
       case "A":
-        values[5] ?? 0;
-        values[6] ?? 0;
+        currentX = absValues[5] ?? 0;
+        currentY = absValues[6] ?? 0;
         break;
       case "S":
-        values[2] ?? 0;
-        values[3] ?? 0;
+        currentX = absValues[2] ?? 0;
+        currentY = absValues[3] ?? 0;
         break;
       case "T":
-        values[0] ?? 0;
-        values[1] ?? 0;
+        currentX = absValues[0] ?? 0;
+        currentY = absValues[1] ?? 0;
+        break;
+      case "Z":
+        currentX = startX;
+        currentY = startY;
         break;
     }
     return { type, values: absValues };
@@ -4158,6 +4907,10 @@ function samplePathFallback(commands, samples) {
         cp1x: cmd.values[0] ?? 0,
         cp1y: cmd.values[1] ?? 0
       });
+    } else if (cmd.type === "S") {
+      points.push({ x: cmd.values[2] ?? 0, y: cmd.values[3] ?? 0 });
+    } else if (cmd.type === "T") {
+      points.push({ x: cmd.values[0] ?? 0, y: cmd.values[1] ?? 0 });
     } else if (cmd.type === "A") {
       points.push({ x: cmd.values[5] ?? 0, y: cmd.values[6] ?? 0 });
     } else if (cmd.type === "H") {
@@ -4207,7 +4960,7 @@ function samplePath(commands, samples) {
   document.body.appendChild(svg);
   try {
     const totalLength = path.getTotalLength();
-    const step = totalLength / (samples - 1);
+    const step = samples > 1 ? totalLength / (samples - 1) : 0;
     for (let i = 0; i < samples; i++) {
       const point = path.getPointAtLength(i * step);
       points.push({ x: point.x, y: point.y });
@@ -4245,6 +4998,7 @@ function createMorph(initialPath, config = {}) {
   let toPoints = [];
   let currentPoints = [];
   const subscribers = /* @__PURE__ */ new Set();
+  let completed = false;
   const initialCommands = parsePath(initialPath);
   fromPoints = samplePath(toAbsolute(initialCommands), samples);
   currentPoints = [...fromPoints];
@@ -4264,7 +5018,8 @@ function createMorph(initialPath, config = {}) {
         console.error("[SpringKit] Morph subscriber error:", e);
       }
     });
-    if (progress >= 0.999) {
+    if (progress >= 0.999 && !completed) {
+      completed = true;
       onComplete?.();
     }
   });
@@ -4282,6 +5037,7 @@ function createMorph(initialPath, config = {}) {
       while (toPoints.length < fromPoints.length) {
         toPoints.push(toPoints[toPoints.length - 1] || { x: 0, y: 0 });
       }
+      completed = false;
       progressSpring.jump(0);
       progressSpring.set(1);
     },
@@ -4322,7 +5078,7 @@ function createMorphSequence(paths, config = {}) {
   let currentIndex = 0;
   const firstPath = paths[0];
   const morph = createMorph(firstPath, config);
-  return {
+  const sequence2 = {
     getPath: () => morph.getPath(),
     getCurrentIndex: () => currentIndex,
     morphToIndex(index) {
@@ -4333,15 +5089,18 @@ function createMorphSequence(paths, config = {}) {
         morph.morphTo(targetPath);
       }
     },
+    // Use the local object instead of `this` so detached calls work
+    // (e.g. passing sequence.morphToNext directly as an event handler)
     morphToNext() {
-      this.morphToIndex((currentIndex + 1) % paths.length);
+      sequence2.morphToIndex((currentIndex + 1) % paths.length);
     },
     morphToPrevious() {
-      this.morphToIndex((currentIndex - 1 + paths.length) % paths.length);
+      sequence2.morphToIndex((currentIndex - 1 + paths.length) % paths.length);
     },
     subscribe: (callback) => morph.subscribe(callback),
     destroy: () => morph.destroy()
   };
+  return sequence2;
 }
 var shapes = {
   /**
@@ -4442,7 +5201,8 @@ function measureElement(element) {
     y: rect.top + window.scrollY,
     width: rect.width,
     height: rect.height,
-    opacity: parseFloat(styles.opacity) || 1,
+    // Note: `|| 1` would turn a real opacity of 0 into 1
+    opacity: Number.isNaN(parseFloat(styles.opacity)) ? 1 : parseFloat(styles.opacity),
     borderRadius: parseFloat(styles.borderRadius) || 0,
     scaleX: 1,
     scaleY: 1
@@ -4459,15 +5219,37 @@ function applyTransform(element, from, to, current) {
     element.style.opacity = String(current.opacity);
   }
   if (current.borderRadius !== void 0) {
-    const compensatedRadius = current.borderRadius / Math.max(scaleX, scaleY);
-    element.style.borderRadius = `${compensatedRadius}px`;
+    const radiusX = scaleX === 0 ? 0 : current.borderRadius / scaleX;
+    const radiusY = scaleY === 0 ? 0 : current.borderRadius / scaleY;
+    element.style.borderRadius = radiusX === radiusY ? `${radiusX}px` : `${radiusX}px / ${radiusY}px`;
   }
 }
-function resetTransform(element) {
-  element.style.transform = "";
-  element.style.transformOrigin = "";
-  element.style.opacity = "";
-  element.style.borderRadius = "";
+function saveStyles(entry) {
+  if (entry.savedStyles) return;
+  const { style } = entry.element;
+  entry.savedStyles = {
+    transform: style.transform,
+    transformOrigin: style.transformOrigin,
+    opacity: style.opacity,
+    borderRadius: style.borderRadius
+  };
+}
+function resetTransform(entry) {
+  if (entry.pendingRafId !== null) {
+    cancelAnimationFrame(entry.pendingRafId);
+    entry.pendingRafId = null;
+  }
+  entry.spring?.destroy();
+  entry.spring = null;
+  entry.isAnimating = false;
+  const saved = entry.savedStyles;
+  if (!saved) return;
+  entry.savedStyles = null;
+  const { style } = entry.element;
+  style.transform = saved.transform;
+  style.transformOrigin = saved.transformOrigin;
+  style.opacity = saved.opacity;
+  style.borderRadius = saved.borderRadius;
 }
 function createLayoutGroup(config = {}) {
   const {
@@ -4475,8 +5257,7 @@ function createLayoutGroup(config = {}) {
     onAnimationStart,
     onAnimationComplete,
     crossfade = false,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    transition: _transition = {}
+    transition = {}
   } = config;
   const elements = /* @__PURE__ */ new Map();
   const previousMeasurements = /* @__PURE__ */ new Map();
@@ -4494,7 +5275,8 @@ function createLayoutGroup(config = {}) {
         measurement,
         spring: null,
         isAnimating: false,
-        pendingRafId: null
+        pendingRafId: null,
+        savedStyles: null
       });
       if (!previousMeasurements.has(id)) {
         previousMeasurements.set(id, measurement);
@@ -4508,11 +5290,7 @@ function createLayoutGroup(config = {}) {
     if (index !== -1) {
       const entry = group[index];
       previousMeasurements.set(id, measureElement(element));
-      if (entry.pendingRafId !== null) {
-        cancelAnimationFrame(entry.pendingRafId);
-        entry.pendingRafId = null;
-      }
-      entry.spring?.destroy();
+      resetTransform(entry);
       group.splice(index, 1);
       if (group.length === 0) {
         elements.delete(id);
@@ -4520,7 +5298,12 @@ function createLayoutGroup(config = {}) {
     }
   };
   const animateElement = (entry, from, to) => {
+    if (entry.pendingRafId !== null) {
+      cancelAnimationFrame(entry.pendingRafId);
+      entry.pendingRafId = null;
+    }
     entry.spring?.destroy();
+    saveStyles(entry);
     const initialValues = {
       x: from.x,
       y: from.y,
@@ -4551,12 +5334,14 @@ function createLayoutGroup(config = {}) {
     if (to.borderRadius !== void 0) {
       targetValues.borderRadius = to.borderRadius;
     }
-    entry.spring.set(targetValues);
+    for (const [key, value] of Object.entries(targetValues)) {
+      const propertyConfig = transition[key];
+      entry.spring.set({ [key]: value }, propertyConfig ?? {});
+    }
     const checkComplete = () => {
       entry.pendingRafId = null;
       if (entry.spring && !entry.spring.isAnimating()) {
-        entry.isAnimating = false;
-        resetTransform(entry.element);
+        resetTransform(entry);
         onAnimationComplete?.(entry.id);
       } else if (entry.isAnimating) {
         entry.pendingRafId = requestAnimationFrame(checkComplete);
@@ -4567,7 +5352,11 @@ function createLayoutGroup(config = {}) {
   const update = () => {
     for (const [id, group] of elements) {
       for (const entry of group) {
-        const previousMeasurement = previousMeasurements.get(id);
+        let previousMeasurement = previousMeasurements.get(id);
+        if (entry.isAnimating) {
+          previousMeasurement = measureElement(entry.element);
+          resetTransform(entry);
+        }
         const currentMeasurement = measureElement(entry.element);
         if (previousMeasurement) {
           const hasChanged = previousMeasurement.x !== currentMeasurement.x || previousMeasurement.y !== currentMeasurement.y || previousMeasurement.width !== currentMeasurement.width || previousMeasurement.height !== currentMeasurement.height;
@@ -4591,12 +5380,7 @@ function createLayoutGroup(config = {}) {
   const destroy = () => {
     for (const group of elements.values()) {
       for (const entry of group) {
-        if (entry.pendingRafId !== null) {
-          cancelAnimationFrame(entry.pendingRafId);
-          entry.pendingRafId = null;
-        }
-        entry.spring?.destroy();
-        resetTransform(entry.element);
+        resetTransform(entry);
       }
     }
     elements.clear();
@@ -4614,9 +5398,10 @@ var groupIdCounter = 0;
 function createSharedLayoutContext() {
   const groups = /* @__PURE__ */ new Map();
   return {
-    createGroup(id) {
+    createGroup(id, config) {
       const groupId = id ?? `layout-group-${groupIdCounter++}`;
-      const group = createLayoutGroup();
+      groups.get(groupId)?.destroy();
+      const group = createLayoutGroup(config);
       groups.set(groupId, group);
       return group;
     },
@@ -4697,9 +5482,12 @@ function createAutoLayout(config = {}) {
         });
         mutation.removedNodes.forEach((node) => {
           if (node instanceof HTMLElement) {
-            const id = node.getAttribute(attribute);
-            if (id) {
-              group.unregister(id, node);
+            const removed = [node, ...Array.from(node.querySelectorAll(`[${attribute}]`))];
+            for (const el of removed) {
+              const id = el.getAttribute(attribute);
+              if (id && el instanceof HTMLElement) {
+                group.unregister(id, el);
+              }
             }
           }
         });
@@ -4830,6 +5618,12 @@ function gridStagger(config) {
   } = config;
   const rows = Math.ceil(count / columns);
   const delays = [];
+  let maxRadialDistance = 0;
+  if (direction === "radial") {
+    for (let i = 0; i < count; i++) {
+      maxRadialDistance = Math.max(maxRadialDistance, gridDistance(i, columns, rows, origin));
+    }
+  }
   for (let i = 0; i < count; i++) {
     const col = i % columns;
     const row = Math.floor(i / columns);
@@ -4841,19 +5635,15 @@ function gridStagger(config) {
       case "column":
         t = col / Math.max(columns - 1, 1);
         break;
-      case "diagonal":
-        t = (col + row) / (columns + rows - 2);
+      case "diagonal": {
+        const diagonalSpan = columns + rows - 2;
+        t = diagonalSpan > 0 ? (col + row) / diagonalSpan : 0;
         break;
+      }
       case "radial":
       default: {
-        const maxDistance = gridDistance(
-          origin === "center" ? 0 : count - 1,
-          columns,
-          rows,
-          origin === "center" ? "top-left" : origin
-        );
         const distance = gridDistance(i, columns, rows, origin);
-        t = maxDistance > 0 ? distance / maxDistance : 0;
+        t = maxRadialDistance > 0 ? distance / maxRadialDistance : 0;
         break;
       }
     }
@@ -4902,13 +5692,15 @@ function spiralStagger(config) {
   const rows = Math.ceil(count / columns);
   const spiral = [];
   const visited = /* @__PURE__ */ new Set();
+  const mirror = direction === "counter-clockwise";
+  const cellIndex = (row, col) => row * columns + (mirror ? columns - 1 - col : col);
   let top = 0;
   let bottom = rows - 1;
   let left = 0;
   let right = columns - 1;
   while (top <= bottom && left <= right) {
     for (let col = left; col <= right; col++) {
-      const idx = top * columns + col;
+      const idx = cellIndex(top, col);
       if (idx < count && !visited.has(`${top},${col}`)) {
         spiral.push(idx);
         visited.add(`${top},${col}`);
@@ -4916,7 +5708,7 @@ function spiralStagger(config) {
     }
     top++;
     for (let row = top; row <= bottom; row++) {
-      const idx = row * columns + right;
+      const idx = cellIndex(row, right);
       if (idx < count && !visited.has(`${row},${right}`)) {
         spiral.push(idx);
         visited.add(`${row},${right}`);
@@ -4925,7 +5717,7 @@ function spiralStagger(config) {
     right--;
     if (top <= bottom) {
       for (let col = right; col >= left; col--) {
-        const idx = bottom * columns + col;
+        const idx = cellIndex(bottom, col);
         if (idx < count && !visited.has(`${bottom},${col}`)) {
           spiral.push(idx);
           visited.add(`${bottom},${col}`);
@@ -4935,7 +5727,7 @@ function spiralStagger(config) {
     }
     if (left <= right) {
       for (let row = bottom; row >= top; row--) {
-        const idx = row * columns + left;
+        const idx = cellIndex(row, left);
         if (idx < count && !visited.has(`${row},${left}`)) {
           spiral.push(idx);
           visited.add(`${row},${left}`);
@@ -4945,9 +5737,6 @@ function spiralStagger(config) {
     }
   }
   if (startFrom === "center") {
-    spiral.reverse();
-  }
-  if (direction === "counter-clockwise") {
     spiral.reverse();
   }
   const delays = new Array(count).fill(0);
@@ -5075,20 +5864,16 @@ var MotionValue = class {
       this._isAnimating = true;
       this._emit("animationStart");
       this._springValue.set(newValue);
-      const targetValue = newValue;
       const checkEnd = () => {
         if (this._destroyed) {
           this._checkEndRafId = null;
           return;
         }
-        const velocity = Math.abs(this._springValue?.getVelocity() ?? 0);
-        const currentValue = this._springValue?.get() ?? 0;
-        const isAtRest = velocity < 0.01;
-        const isNearTarget = Math.abs(currentValue - targetValue) < 0.01;
-        if (isAtRest || isNearTarget) {
+        const isSettled = !(this._springValue?.isAnimating() ?? false);
+        if (isSettled) {
           this._isAnimating = false;
           this._checkEndRafId = null;
-          this._emit("animationEnd");
+          this._emitEnd("animationComplete");
         } else if (this._isAnimating) {
           this._checkEndRafId = requestAnimationFrame(checkEnd);
         } else {
@@ -5097,9 +5882,17 @@ var MotionValue = class {
       };
       this._checkEndRafId = requestAnimationFrame(checkEnd);
     } else {
+      const wasAnimating = this._isAnimating;
+      if (typeof newValue === "number" && this._springValue) {
+        this._springValue.jump(newValue);
+      }
+      this._isAnimating = false;
       this._value = newValue;
       this._velocity = 0;
       this._notify();
+      if (wasAnimating) {
+        this._emitEnd("animationCancel");
+      }
     }
   }
   /**
@@ -5107,6 +5900,11 @@ var MotionValue = class {
    */
   jump(newValue) {
     if (this._destroyed) return;
+    if (this._checkEndRafId !== null) {
+      cancelAnimationFrame(this._checkEndRafId);
+      this._checkEndRafId = null;
+    }
+    const wasAnimating = this._isAnimating;
     this._value = newValue;
     this._velocity = 0;
     if (typeof newValue === "number" && this._springValue) {
@@ -5114,6 +5912,9 @@ var MotionValue = class {
     }
     this._isAnimating = false;
     this._notify();
+    if (wasAnimating) {
+      this._emitEnd("animationCancel");
+    }
   }
   /**
    * Stop any running animation at current position
@@ -5126,8 +5927,11 @@ var MotionValue = class {
     if (this._springValue) {
       this._springValue.stop();
     }
+    const wasAnimating = this._isAnimating;
     this._isAnimating = false;
-    this._emit("animationEnd");
+    if (wasAnimating) {
+      this._emitEnd("animationCancel");
+    }
   }
   /**
    * Subscribe to value changes
@@ -5166,10 +5970,15 @@ var MotionValue = class {
    * Destroy and cleanup
    */
   destroy() {
+    if (this._destroyed) return;
     this._destroyed = true;
     if (this._checkEndRafId !== null) {
       cancelAnimationFrame(this._checkEndRafId);
       this._checkEndRafId = null;
+    }
+    if (this._isAnimating) {
+      this._isAnimating = false;
+      this._emitEnd("animationCancel");
     }
     this._subscribers.clear();
     this._eventListeners.clear();
@@ -5187,6 +5996,14 @@ var MotionValue = class {
       }
     });
     this._emit("change");
+  }
+  /**
+   * Signal the end of an animation: `reason` (animationComplete or
+   * animationCancel) followed by `animationEnd` (kept for compatibility)
+   */
+  _emitEnd(reason) {
+    this._emit(reason);
+    this._emit("animationEnd");
   }
   _emit(event) {
     this._eventListeners.get(event)?.forEach((callback) => {
@@ -5229,6 +6046,277 @@ function mapRange2(source, inputRange, outputRange, options = {}) {
   });
 }
 
+// src/native/solver.ts
+var MAX_DURATION_MS = 1e4;
+var SETTLE_STEP_MS = 1;
+function solveSpring(config = {}, from = 0, to = 1) {
+  const stiffness = positiveOr2(config.stiffness, 100);
+  const damping = Math.max(0, finiteOr(config.damping, 10));
+  const mass = positiveOr2(config.mass, 1);
+  const v0 = finiteOr(config.velocity, 0);
+  const distance = Math.abs(to - from);
+  const scale = distance > 0 ? distance : 1;
+  const restDelta = positiveOr2(config.restDelta, scale * 1e-3);
+  const restSpeed = positiveOr2(config.restSpeed, scale * 0.01);
+  const omega0 = Math.sqrt(stiffness / mass);
+  const zeta = damping / (2 * Math.sqrt(stiffness * mass));
+  const x0 = from - to;
+  const isCritical = Math.abs(zeta - 1) < 1e-6;
+  const motion = springMotion({ stiffness, damping, mass }, x0, v0);
+  const displacement = (t) => {
+    const s = motion(t);
+    return { value: s.position, velocity: s.velocity };
+  };
+  const isSettled = (t) => {
+    const s = displacement(t / 1e3);
+    return Math.abs(s.value) <= restDelta && Math.abs(s.velocity) <= restSpeed;
+  };
+  let duration = 0;
+  if (distance > 0 || v0 !== 0) {
+    duration = MAX_DURATION_MS;
+    const period = zeta < 1 && !isCritical ? 2 * Math.PI / (omega0 * Math.sqrt(1 - zeta * zeta)) : 0;
+    const lookAheadMs = Math.min(MAX_DURATION_MS, Math.max(50, period * 1e3));
+    for (let t = 0; t <= MAX_DURATION_MS; t += SETTLE_STEP_MS) {
+      if (!isSettled(t)) continue;
+      let stays = true;
+      for (let u = t; u <= t + lookAheadMs; u += 4) {
+        if (!isSettled(u)) {
+          stays = false;
+          break;
+        }
+      }
+      if (stays) {
+        duration = t;
+        break;
+      }
+    }
+  }
+  return {
+    from,
+    to,
+    duration,
+    at(t) {
+      if (!(t > 0)) return { value: from, velocity: v0 };
+      if (t >= duration) return { value: to, velocity: 0 };
+      const s = displacement(t / 1e3);
+      return { value: to + s.value, velocity: s.velocity };
+    }
+  };
+}
+function defineSpring(options = {}) {
+  return perceptualSpringConfig(
+    options.duration ?? 500,
+    options.bounce ?? 0,
+    options.mass ?? 1
+  );
+}
+function finiteOr(value, fallback) {
+  return typeof value === "number" && Number.isFinite(value) ? value : fallback;
+}
+function positiveOr2(value, fallback) {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+// src/native/easing.ts
+var MAX_CACHE_SIZE = 64;
+var cache = /* @__PURE__ */ new Map();
+function springEasing(options = {}) {
+  const precision = options.precision !== void 0 && options.precision > 0 ? options.precision : 2e-3;
+  const key = [
+    options.stiffness,
+    options.damping,
+    options.mass,
+    options.velocity,
+    options.restSpeed,
+    options.restDelta,
+    precision
+  ].join("|");
+  const cached = cache.get(key);
+  if (cached) return cached;
+  const solver = solveSpring(options, 0, 1);
+  const duration = Math.max(1, Math.round(solver.duration));
+  const sampleCount = Math.min(2e3, Math.max(64, Math.ceil(duration / 2)));
+  const samples = [];
+  for (let i = 0; i <= sampleCount; i++) {
+    const progress = i / sampleCount;
+    samples.push([progress, solver.at(progress * duration).value]);
+  }
+  samples[sampleCount] = [1, 1];
+  const points = simplify(samples, precision);
+  const easing = `linear(${points.map(
+    ([t, v], i) => i === 0 || i === points.length - 1 ? round(v, 4) : `${round(v, 4)} ${round(t * 100, 2)}%`
+  ).join(", ")})`;
+  const result = {
+    easing,
+    duration,
+    toString: () => `${duration}ms ${easing}`
+  };
+  if (cache.size >= MAX_CACHE_SIZE) {
+    const oldest = cache.keys().next().value;
+    if (oldest !== void 0) cache.delete(oldest);
+  }
+  cache.set(key, result);
+  return result;
+}
+function springTransition(properties, options = {}) {
+  const { easing, duration } = springEasing(options);
+  const list = typeof properties === "string" ? [properties] : properties;
+  return list.map((property) => `${property} ${duration}ms ${easing}`).join(", ");
+}
+var linearSupport;
+function supportsLinearEasing() {
+  if (linearSupport === void 0) {
+    try {
+      linearSupport = typeof CSS !== "undefined" && typeof CSS.supports === "function" && CSS.supports("transition-timing-function", "linear(0, 1)");
+    } catch {
+      linearSupport = false;
+    }
+  }
+  return linearSupport;
+}
+function simplify(points, tolerance) {
+  const keep = new Uint8Array(points.length);
+  keep[0] = 1;
+  keep[points.length - 1] = 1;
+  const stack = [[0, points.length - 1]];
+  while (stack.length > 0) {
+    const [start, end] = stack.pop();
+    const [t0, v0] = points[start];
+    const [t1, v1] = points[end];
+    let maxError = 0;
+    let index = -1;
+    for (let i = start + 1; i < end; i++) {
+      const [t, v] = points[i];
+      const expected = t1 === t0 ? v0 : v0 + (v1 - v0) * (t - t0) / (t1 - t0);
+      const error = Math.abs(v - expected);
+      if (error > maxError) {
+        maxError = error;
+        index = i;
+      }
+    }
+    if (maxError > tolerance && index !== -1) {
+      keep[index] = 1;
+      stack.push([start, index], [index, end]);
+    }
+  }
+  return points.filter((_, i) => keep[i] === 1);
+}
+function round(value, digits) {
+  const factor = Math.pow(10, digits);
+  const rounded = Math.round(value * factor) / factor;
+  return Object.is(rounded, -0) ? 0 : rounded;
+}
+
+// src/native/animate-native.ts
+var FALLBACK_EASING = "cubic-bezier(0.22, 1, 0.36, 1)";
+function animateNative(element, keyframes2, options = {}) {
+  const {
+    delay = 0,
+    persist = true,
+    respectReducedMotion = true,
+    onComplete,
+    ...springOptions
+  } = options;
+  const compiled = springEasing(springOptions);
+  const reduced = respectReducedMotion && prefersReducedMotion();
+  const duration = reduced ? 0 : compiled.duration;
+  const canAnimate = typeof element.animate === "function";
+  if (!canAnimate) {
+    applyFinalKeyframe(element, keyframes2);
+    onComplete?.();
+    return {
+      animation: null,
+      duration,
+      finished: Promise.resolve(),
+      play: noop,
+      pause: noop,
+      cancel: noop,
+      finish: noop,
+      reverse: noop,
+      seek: noop
+    };
+  }
+  const animation = element.animate(keyframes2, {
+    duration,
+    delay: reduced ? 0 : Math.max(0, delay),
+    easing: supportsLinearEasing() ? compiled.easing : FALLBACK_EASING,
+    fill: "both"
+  });
+  const applyTimeScale = (scale) => {
+    if (typeof animation.updatePlaybackRate === "function") {
+      animation.updatePlaybackRate(scale);
+    } else {
+      animation.playbackRate = scale;
+    }
+  };
+  if (globalLoop.getTimeScale() !== 1) applyTimeScale(globalLoop.getTimeScale());
+  const unsubscribeTimeScale = globalLoop.onTimeScaleChange(applyTimeScale);
+  const finished = animation.finished.then(
+    () => {
+      unsubscribeTimeScale();
+      if (persist) {
+        try {
+          animation.commitStyles();
+        } catch {
+          applyFinalKeyframe(element, keyframes2);
+        }
+        animation.cancel();
+      }
+      try {
+        onComplete?.();
+      } catch (error) {
+        console.error("[SpringKit]", error);
+      }
+    },
+    // Rejected with AbortError when cancelled — that's a normal outcome
+    () => {
+      unsubscribeTimeScale();
+    }
+  );
+  return {
+    animation,
+    duration,
+    finished,
+    play: () => animation.play(),
+    pause: () => animation.pause(),
+    cancel: () => animation.cancel(),
+    finish: () => animation.finish(),
+    reverse: () => animation.reverse(),
+    seek: (ms) => {
+      animation.currentTime = Math.max(0, delay) + Math.min(Math.max(0, ms), duration);
+    }
+  };
+}
+function prefersReducedMotion() {
+  try {
+    return typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  } catch {
+    return false;
+  }
+}
+function applyFinalKeyframe(element, keyframes2) {
+  const style = element.style;
+  if (!style) return;
+  const final = Array.isArray(keyframes2) ? { ...keyframes2[keyframes2.length - 1] ?? {} } : Object.fromEntries(
+    Object.entries(keyframes2).map(([key, value]) => [
+      key,
+      Array.isArray(value) ? value[value.length - 1] : value
+    ])
+  );
+  for (const [property, value] of Object.entries(final)) {
+    if (value === void 0 || value === null || property === "offset" || property === "easing" || property === "composite") {
+      continue;
+    }
+    if (property.startsWith("--")) {
+      style.setProperty(property, String(value));
+    } else {
+      style[property] = String(value);
+    }
+  }
+}
+function noop() {
+}
+
 // src/svg/path.ts
 function createPathAnimation(element, options = {}) {
   const {
@@ -5241,9 +6329,12 @@ function createPathAnimation(element, options = {}) {
   element.style.strokeDasharray = String(totalLength);
   element.style.strokeDashoffset = String(totalLength);
   let currentValue = 0;
+  let targetValue = 0;
   let destroyed = false;
+  let paused = false;
   let pendingRafId = null;
   let pendingTimeoutId = null;
+  const waiters = /* @__PURE__ */ new Set();
   const spring2 = createSpringValue(0, config);
   const unsubscribe = spring2.subscribe((value) => {
     if (destroyed) return;
@@ -5252,72 +6343,106 @@ function createPathAnimation(element, options = {}) {
     element.style.strokeDashoffset = String(offset);
     onUpdate?.(value);
   });
-  const waitForRest = () => {
+  const cancelWatch = () => {
+    if (pendingRafId !== null) {
+      cancelAnimationFrame(pendingRafId);
+      pendingRafId = null;
+    }
+    if (pendingTimeoutId !== null) {
+      clearTimeout(pendingTimeoutId);
+      pendingTimeoutId = null;
+    }
+  };
+  const settle = (completed) => {
+    cancelWatch();
+    if (waiters.size === 0) return;
+    const resolvers = [...waiters];
+    waiters.clear();
+    resolvers.forEach((resolve) => resolve());
+    if (completed) {
+      try {
+        onComplete?.();
+      } catch (e) {
+        console.error("[SpringKit] Path animation onComplete error:", e);
+      }
+    }
+  };
+  const watch = () => {
+    if (pendingRafId !== null || pendingTimeoutId !== null) return;
+    const check = () => {
+      pendingRafId = null;
+      if (destroyed || paused) return;
+      if (!spring2.isAnimating()) {
+        settle(true);
+      } else {
+        pendingRafId = requestAnimationFrame(check);
+      }
+    };
+    pendingTimeoutId = setTimeout(() => {
+      pendingTimeoutId = null;
+      check();
+    }, 16);
+  };
+  const animateTo = (target) => {
+    targetValue = target;
+    paused = false;
+    spring2.set(target);
     return new Promise((resolve) => {
-      const check = () => {
-        pendingRafId = null;
-        if (destroyed || !spring2.isAnimating()) {
-          resolve();
-        } else {
-          pendingRafId = requestAnimationFrame(check);
-        }
-      };
-      pendingTimeoutId = setTimeout(() => {
-        pendingTimeoutId = null;
-        check();
-      }, 16);
+      waiters.add(resolve);
+      watch();
     });
   };
   const animation = {
     play: async (target = 1) => {
       if (destroyed) return;
-      spring2.set(target);
-      await waitForRest();
-      onComplete?.();
+      await animateTo(target);
     },
     reverse: async () => {
       if (destroyed) return;
-      spring2.set(0);
-      await waitForRest();
-      onComplete?.();
+      await animateTo(0);
     },
     set: (value, animate2 = false) => {
       if (destroyed) return;
+      targetValue = value;
+      paused = false;
       if (animate2) {
         spring2.set(value);
+        if (waiters.size > 0) watch();
       } else {
         spring2.jump(value);
         currentValue = value;
         const offset = totalLength * (1 - value);
         element.style.strokeDashoffset = String(offset);
+        settle(false);
       }
     },
     get: () => currentValue,
     pause: () => {
       if (destroyed) return;
+      paused = true;
+      cancelWatch();
       spring2.stop();
     },
     resume: () => {
       if (destroyed) return;
-      spring2.set(currentValue);
+      paused = false;
+      spring2.set(targetValue);
+      if (waiters.size > 0) watch();
     },
     reset: () => {
       if (destroyed) return;
+      paused = false;
       spring2.jump(0);
       currentValue = 0;
+      targetValue = 0;
       element.style.strokeDashoffset = String(totalLength);
+      settle(false);
     },
     isAnimating: () => spring2.isAnimating(),
     destroy: () => {
+      if (destroyed) return;
       destroyed = true;
-      if (pendingRafId !== null) {
-        cancelAnimationFrame(pendingRafId);
-        pendingRafId = null;
-      }
-      if (pendingTimeoutId !== null) {
-        clearTimeout(pendingTimeoutId);
-        pendingTimeoutId = null;
-      }
+      settle(false);
       unsubscribe();
       spring2.destroy();
     }
@@ -5354,13 +6479,37 @@ function measureElement2(element) {
     height: rect.height
   };
 }
+function resolveTransformOrigin(value, width, height) {
+  const keywords = {
+    left: { axis: "x", ratio: 0 },
+    right: { axis: "x", ratio: 1 },
+    top: { axis: "y", ratio: 0 },
+    bottom: { axis: "y", ratio: 1 },
+    center: { axis: "any", ratio: 0.5 }
+  };
+  const tokens = value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const a = tokens[0] ?? "50%";
+  const b = tokens[1] ?? "center";
+  const swapped = keywords[a]?.axis === "y" || keywords[b]?.axis === "x";
+  const first = swapped ? b : a;
+  const second = swapped ? a : b;
+  const resolve = (token, size) => {
+    const keyword = keywords[token];
+    if (keyword) return keyword.ratio * size;
+    const number = parseFloat(token);
+    if (!Number.isFinite(number)) return size / 2;
+    return token.endsWith("%") ? number / 100 * size : number;
+  };
+  return { x: resolve(first, width), y: resolve(second, height) };
+}
 function createFlip(element, first, last, options = {}) {
   const {
     config = {},
     position = true,
     size = true,
     onComplete,
-    onUpdate
+    onUpdate,
+    correctBorderRadius = false
   } = options;
   const deltaX = first.x - last.x;
   const deltaY = first.y - last.y;
@@ -5375,20 +6524,55 @@ function createFlip(element, first, last, options = {}) {
   const spring2 = createSpringValue(0, config);
   const originalTransform = element.style.transform;
   const originalTransformOrigin = element.style.transformOrigin;
-  if (size) {
-    element.style.transformOrigin = "0 0";
+  const originalBorderRadius = element.style.borderRadius;
+  const isScaling = size && (deltaWidth !== 1 || deltaHeight !== 1);
+  let origin = { x: 0, y: 0 };
+  let borderRadius = 0;
+  if (isScaling) {
+    let computedOrigin = "";
+    let computedRadius = "";
+    try {
+      const styles = getComputedStyle(element);
+      computedOrigin = styles.transformOrigin;
+      computedRadius = styles.borderTopLeftRadius || styles.borderRadius;
+    } catch {
+    }
+    origin = resolveTransformOrigin(
+      computedOrigin || originalTransformOrigin || "50% 50%",
+      element.offsetWidth || last.width,
+      element.offsetHeight || last.height
+    );
+    const radiusSource = computedRadius || originalBorderRadius;
+    if (correctBorderRadius && !radiusSource.includes("%")) {
+      borderRadius = parseFloat(radiusSource) || 0;
+    }
   }
   const applyTransform2 = (t) => {
     progress = t;
     const invertedT = 1 - t;
     const transforms = [];
+    const scaleX = isScaling ? 1 + (deltaWidth - 1) * invertedT : 1;
+    const scaleY = isScaling ? 1 + (deltaHeight - 1) * invertedT : 1;
     if (position) {
       transforms.push(`translate(${deltaX * invertedT}px, ${deltaY * invertedT}px)`);
     }
-    if (size && (deltaWidth !== 1 || deltaHeight !== 1)) {
-      const scaleX = 1 + (deltaWidth - 1) * invertedT;
-      const scaleY = 1 + (deltaHeight - 1) * invertedT;
+    if (isScaling) {
+      const hasOrigin = origin.x !== 0 || origin.y !== 0;
+      if (hasOrigin) {
+        transforms.push(`translate(${-origin.x}px, ${-origin.y}px)`);
+      }
       transforms.push(`scale(${scaleX}, ${scaleY})`);
+      if (hasOrigin) {
+        transforms.push(`translate(${origin.x}px, ${origin.y}px)`);
+      }
+      if (borderRadius > 0) {
+        const radiusX = scaleX === 0 ? 0 : borderRadius / scaleX;
+        const radiusY = scaleY === 0 ? 0 : borderRadius / scaleY;
+        element.style.borderRadius = radiusX === radiusY ? `${radiusX}px` : `${radiusX}px / ${radiusY}px`;
+      }
+    }
+    if (originalTransform && originalTransform !== "none") {
+      transforms.push(originalTransform);
     }
     element.style.transform = transforms.length > 0 ? transforms.join(" ") : "";
     try {
@@ -5401,6 +6585,9 @@ function createFlip(element, first, last, options = {}) {
   const cleanup = () => {
     element.style.transform = originalTransform;
     element.style.transformOrigin = originalTransformOrigin;
+    if (borderRadius > 0) {
+      element.style.borderRadius = originalBorderRadius;
+    }
   };
   return {
     play: async () => {
@@ -5489,4 +6676,4 @@ async function flipBatch(elements, mutate, options = {}) {
   await Promise.all(animations.map((anim) => anim.play()));
 }
 
-export { AnimationState, MotionValue, adjustBounce, adjustSpeed, allTo, animate, animateAll, applyStagger, applyValuesToElement, buildTransformString, calculateDampingRatio, calculatePeriod, calculateStaggerDelays, centerStagger, clamp, clearWarnings, configFromBounce, configFromDuration, createAutoLayout, createDragSpring, createFeeling, createFlip, createGestures, createLayoutGroup, createLongPressGesture, createMorph, createMorphSequence, createMotionValue, createOrchestration, createParallax, createPathAnimation, createPinchGesture, createRotateGesture, createScrollLinkedValue, createScrollProgress, createScrollSpring, createScrollTrigger, createSharedLayoutContext, createSpringGroup, createSpringValue, createSwipeGesture, createTimeline, createTrail, createVariantPreset, customStagger, decay, degToRad, edgeStagger, flip, flipBatch, getPathLength, getPhysicsPreset, getPointAtProgress, getVariant, globalLoop, gridStagger, hexToRgb, hslToRgb, interpolate, interpolateColor, isAnimatable, isCriticallyDamped, isKeyframeArray, isOverdamped, isTransformProperty, isUnderdamped, isVariant, isVariants, keyframes, lerp, linearStagger, mapRange, measureElement2 as measureElement, mergeVariants, parallel, parseColor, parseKeyframeArray, parseValueWithUnit, physicsPresets, preparePathForAnimation, radToDeg, randomStagger, resolveVariant, reverseStagger, rgbToHex, rgbToHsl, scrollEasings, sequence, shapes, simulateSpring, spiralStagger, spring, springPresets, stagger, staggerPresets, mapRange2 as transformMapRange, transformValue, tween, validateDecayConfig, validateDragConfig, validateSpringConfig, variantPresets, waveStagger };
+export { AnimationState, MotionValue, adjustBounce, adjustSpeed, allTo, animate, animateAll, animateNative, applyStagger, applyValuesToElement, buildTransformString, calculateDampingRatio, calculatePeriod, calculateStaggerDelays, centerStagger, clamp, clearWarnings, configFromBounce, configFromDuration, createAutoLayout, createDragSpring, createFeeling, createFlip, createGestures, createLayoutGroup, createLongPressGesture, createMorph, createMorphSequence, createMotionValue, createOrchestration, createParallax, createPathAnimation, createPinchGesture, createRotateGesture, createScrollLinkedValue, createScrollProgress, createScrollSpring, createScrollTrigger, createSharedLayoutContext, createSpringGroup, createSpringValue, createSwipeGesture, createTimeline, createTrail, createVariantPreset, customStagger, decay, defineSpring, degToRad, edgeStagger, flip, flipBatch, formatRGBA, getPathLength, getPhysicsPreset, getPointAtProgress, getVariant, globalLoop, gridStagger, hexToRgb, hslToRgb, interpolate, interpolateColor, isAnimatable, isCriticallyDamped, isKeyframeArray, isOverdamped, isTransformProperty, isUnderdamped, isVariant, isVariants, keyframes, lerp, linearRgbToOklab, linearStagger, linearToSrgb, mapRange, measureElement2 as measureElement, mergeVariants, mixColorsRGBA, oklabToLinearRgb, oklabToRgb, parallel, parseColor, parseColorRGBA, parseKeyframeArray, parseValueWithUnit, physicsPresets, preparePathForAnimation, radToDeg, randomStagger, resolveVariant, reverseStagger, rgbToHex, rgbToHsl, rgbToOklab, scrollEasings, sequence, shapes, simulateSpring, solveSpring, spiralStagger, spring, springEasing, springPresets, springTransition, srgbToLinear, stagger, staggerPresets, supportsLinearEasing, mapRange2 as transformMapRange, transformValue, tween, validateDecayConfig, validateDragConfig, validateSpringConfig, variantPresets, waveStagger };

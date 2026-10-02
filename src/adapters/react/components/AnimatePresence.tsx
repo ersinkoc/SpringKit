@@ -4,6 +4,7 @@ import {
   useState,
   useLayoutEffect,
   useEffect,
+  useCallback,
   Children,
   isValidElement,
   cloneElement,
@@ -39,7 +40,11 @@ export interface AnimatePresenceProps {
    * Controls how children animate relative to each other:
    * - 'sync': Exiting and entering children animate simultaneously (default)
    * - 'wait': Wait for exiting children to finish before entering new children
-   * - 'popLayout': Like 'sync' but uses FLIP for position animations
+   * - 'popLayout': Like 'sync', but exiting children are popped out of the
+   *   layout flow (`position: absolute` at their last position and size) so
+   *   their siblings reflow immediately. Exiting children must render a DOM
+   *   element and forward their ref (e.g. `Animated.div`), and their offset
+   *   parent should be positioned (e.g. `position: relative`).
    * @default 'sync'
    */
   mode?: AnimatePresenceMode
@@ -85,6 +90,11 @@ function getChildrenMap(children: React.ReactNode): ChildMap {
  * Wrap any components that may be conditionally rendered. Each direct child
  * must have a unique `key` prop for AnimatePresence to track them.
  *
+ * A removed child stays mounted until its exit completes: `Animated` elements
+ * with an `exit` prop, or components calling `safeToRemove` from
+ * `usePresence()`. Children that do neither (e.g. plain DOM elements) are
+ * removed right away.
+ *
  * @example Basic usage
  * ```tsx
  * import { AnimatePresence, Animated } from '@oxog/springkit/react'
@@ -116,6 +126,17 @@ function getChildrenMap(children: React.ReactNode): ChildMap {
  * </AnimatePresence>
  * ```
  *
+ * @example Pop exiting children out of the layout
+ * ```tsx
+ * <ul style={{ position: 'relative' }}>
+ *   <AnimatePresence mode="popLayout">
+ *     {items.map((item) => (
+ *       <Animated.li key={item.id} exit={{ opacity: 0 }}>{item.label}</Animated.li>
+ *     ))}
+ *   </AnimatePresence>
+ * </ul>
+ * ```
+ *
  * @example Custom exit data
  * ```tsx
  * <AnimatePresence custom={direction}>
@@ -136,45 +157,86 @@ export function AnimatePresence({
   // Track whether this is the first render (for initial prop)
   const isInitialMount = useRef(true)
 
-  // Track which children are exiting (keyed by child key)
+  // Committed set of children that are exiting (keyed by child key)
   const [exitingChildren, setExitingChildren] = useState<ChildMap>({})
 
-  // Previous children for comparison
+  // Children and render order from the last commit, used to detect removals
   const prevChildrenRef = useRef<ChildMap>({})
+  const prevOrderRef = useRef<string[]>([])
 
-  // Force update trigger for 'wait' mode
-  const [, forceUpdate] = useState(0)
+  // Mirror of the committed exiting set, used to dedupe safeToRemove calls
+  const exitingRef = useRef<ChildMap>({})
 
-  // Track pending exits for onExitComplete callback
-  const pendingExitCount = useRef(0)
+  // Latest onExitComplete, so the completion handler can keep a stable identity
+  const onExitCompleteRef = useRef(onExitComplete)
+  onExitCompleteRef.current = onExitComplete
 
-  // Convert current children to map
+  // Convert current children to map, plus their keys in render order (object key
+  // order can't be used: integer-like keys such as "2" would be sorted first)
   const currentChildren = getChildrenMap(children)
+  const currentKeys: string[] = []
+  Children.forEach(children, (child) => {
+    if (isValidElement(child)) {
+      const key = getChildKey(child)
+      if (key && !currentKeys.includes(key)) currentKeys.push(key)
+    }
+  })
 
-  // Detect removed children on each render
-  useIsomorphicLayoutEffect(() => {
-    const prevChildren = prevChildrenRef.current
-    const newExiting: ChildMap = {}
+  // Keys rendered in the last commit
+  const prevOrder = prevOrderRef.current
 
-    // Find children that were removed
-    for (const key in prevChildren) {
-      if (!(key in currentChildren)) {
-        const prevChild = prevChildren[key]
-        // Child was removed, keep it for exit animation
-        if (prevChild) {
-          newExiting[key] = prevChild
-        }
+  // Derive the exiting set during render so that a removed child stays mounted in
+  // the very render it is removed in (detecting removals in an effect would unmount
+  // and remount it, losing its state). Children that were re-added stop exiting.
+  const derivedExiting: ChildMap = {}
+  for (const key in exitingChildren) {
+    const child = exitingChildren[key]
+    if (child && !(key in currentChildren)) derivedExiting[key] = child
+  }
+  for (const key in prevChildrenRef.current) {
+    const child = prevChildrenRef.current[key]
+    // Only children that were actually rendered can exit (in 'wait' mode an
+    // entering child may never have been mounted)
+    if (child && !(key in currentChildren) && prevOrder.includes(key)) {
+      derivedExiting[key] = child
+    }
+  }
+
+  // In 'wait' mode, don't render entering children until exits complete
+  const showEntering = mode !== 'wait' || Object.keys(derivedExiting).length === 0
+
+  // Render order: current children in order, with each exiting child re-inserted
+  // after the key that preceded it in the previous render (keeps list positions)
+  const renderedOrder: string[] = showEntering ? [...currentKeys] : []
+  const exitingKeys = Object.keys(derivedExiting).sort(
+    (a, b) => prevOrder.indexOf(a) - prevOrder.indexOf(b)
+  )
+  for (const key of exitingKeys) {
+    let insertAt = 0
+    for (let i = prevOrder.indexOf(key) - 1; i >= 0; i--) {
+      const index = renderedOrder.indexOf(prevOrder[i]!)
+      if (index !== -1) {
+        insertAt = index + 1
+        break
       }
     }
+    renderedOrder.splice(insertAt, 0, key)
+  }
 
-    // Update exiting children if there are any
-    if (Object.keys(newExiting).length > 0) {
-      setExitingChildren((prev) => ({ ...prev, ...newExiting }))
-      pendingExitCount.current += Object.keys(newExiting).length
-    }
-
-    // Store current as previous for next render
+  // Commit the derived state
+  useIsomorphicLayoutEffect(() => {
+    exitingRef.current = derivedExiting
     prevChildrenRef.current = currentChildren
+    prevOrderRef.current = renderedOrder
+
+    const prevKeys = Object.keys(exitingChildren)
+    const nextKeys = Object.keys(derivedExiting)
+    if (
+      prevKeys.length !== nextKeys.length ||
+      nextKeys.some((key) => exitingChildren[key] !== derivedExiting[key])
+    ) {
+      setExitingChildren(derivedExiting)
+    }
 
     // After initial mount, unset the flag
     if (isInitialMount.current) {
@@ -182,91 +244,60 @@ export function AnimatePresence({
     }
   })
 
-  // Handle exit completion
-  const handleExitComplete = (key: string) => {
-    setExitingChildren((prev) => {
-      // Only process if key still exists (prevent double calls)
-      if (!(key in prev)) return prev
+  // Handle exit completion. Stable identity so PresenceChild's fallback timer is
+  // not reset by re-renders; duplicate or stale calls are ignored.
+  const handleExitComplete = useCallback((key: string) => {
+    if (!(key in exitingRef.current)) return
 
-      const next = { ...prev }
-      delete next[key]
-      return next
+    const next = { ...exitingRef.current }
+    delete next[key]
+    exitingRef.current = next
+
+    setExitingChildren((prev) => {
+      if (!(key in prev)) return prev
+      const updated = { ...prev }
+      delete updated[key]
+      return updated
     })
 
-    // Guard against negative count from double callbacks
-    if (pendingExitCount.current > 0) {
-      pendingExitCount.current--
-    }
-
     // Fire callback when all exits are complete
-    if (pendingExitCount.current === 0 && onExitComplete) {
-      onExitComplete()
+    if (Object.keys(next).length === 0) {
+      onExitCompleteRef.current?.()
     }
+  }, [])
 
-    // Force re-render for 'wait' mode
-    if (mode === 'wait') {
-      forceUpdate((n) => n + 1)
-    }
+  if (showEntering) {
+    Children.forEach(children, (child) => {
+      if (isValidElement(child) && !getChildKey(child)) {
+        console.warn(
+          'AnimatePresence: Every child must have a unique "key" prop.'
+        )
+      }
+    })
   }
 
-  // In 'wait' mode, don't render entering children until exits complete
-  const showEntering = mode !== 'wait' || Object.keys(exitingChildren).length === 0
+  // Skip initial animation if initial={false} and this is first mount
+  const skipInitial = isInitialMount.current && initial === false
 
-  // Combine current and exiting children for rendering
   const allChildren: React.ReactElement[] = []
-
-  // First, add exiting children (they animate out)
-  for (const key in exitingChildren) {
-    const exitingChild = exitingChildren[key]
-    if (!exitingChild) continue
+  for (const key of renderedOrder) {
+    const exitingChild = derivedExiting[key]
+    const child = exitingChild ?? currentChildren[key]
+    if (!child) continue
 
     allChildren.push(
       <PresenceChild
         key={`presence-${key}`}
         id={key}
-        isPresent={false}
+        isPresent={!exitingChild}
         onExitComplete={handleExitComplete}
         custom={custom}
+        initial={skipInitial ? false : undefined}
+        popLayout={mode === 'popLayout'}
       >
-        {cloneElement(exitingChild, {
-          key,
-        })}
+        {cloneElement(child, { key })}
       </PresenceChild>
     )
-  }
-
-  // Then, add current children (if allowed by mode)
-  if (showEntering) {
-    Children.forEach(children, (child) => {
-      if (isValidElement(child)) {
-        const key = getChildKey(child)
-        if (!key) {
-          console.warn(
-            'AnimatePresence: Every child must have a unique "key" prop.'
-          )
-          return
-        }
-
-        // Skip initial animation if initial={false} and this is first mount
-        const shouldAnimate = !(isInitialMount.current && initial === false)
-
-        allChildren.push(
-          <PresenceChild
-            key={`presence-${key}`}
-            id={key}
-            isPresent={true}
-            onExitComplete={handleExitComplete}
-            custom={custom}
-          >
-            {cloneElement(child, {
-              key,
-              // Pass down animation state - child components can use this
-              ...(shouldAnimate ? {} : { 'data-initial-skip': true }),
-            })}
-          </PresenceChild>
-        )
-      }
-    })
   }
 
   return <>{allChildren}</>

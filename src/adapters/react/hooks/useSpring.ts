@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { createSpringGroup } from '@oxog/springkit'
 import type { SpringConfig, SpringGroup } from '@oxog/springkit'
+import { useDestroyOnUnmount } from './useDestroyOnUnmount.js'
 
 /**
  * Animated values type
@@ -122,12 +123,11 @@ export function useSpring<T extends Record<string, number>>(
   })
 
   // Cleanup on unmount: destroy spring to prevent memory leaks
-  useEffect(() => {
-    return () => {
-      springRef.current?.destroy()
-      springRef.current = null
-    }
-  }, [])
+  // (deferred so StrictMode's simulated remount keeps the same live instance)
+  useDestroyOnUnmount(() => {
+    springRef.current?.destroy()
+    springRef.current = null
+  })
 
   return currentValues as AnimatedValues<T>
 }

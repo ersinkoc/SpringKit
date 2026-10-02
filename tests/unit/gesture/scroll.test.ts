@@ -317,7 +317,7 @@ describe('createScrollSpring', () => {
   describe('wheel events', () => {
     it('should handle wheel event (lines 113-166)', () => {
       const onScrollStart = vi.fn()
-      const scroll = createScrollSpring(container, { onScrollStart })
+      const _scroll = createScrollSpring(container, { onScrollStart })
 
       // Dispatch wheel event
       const wheelEvent = new WheelEvent('wheel', {
@@ -492,7 +492,7 @@ describe('createScrollSpring', () => {
 
     it('should handle scroll end detection (lines 170-190)', async () => {
       const onScrollEnd = vi.fn()
-      const scroll = createScrollSpring(container, {
+      const _scroll = createScrollSpring(container, {
         onScrollEnd,
         stiffness: 1000,
         damping: 50,
@@ -540,5 +540,84 @@ describe('createScrollSpring', () => {
 
       vi.useRealTimers()
     })
+  })
+})
+
+describe('createScrollSpring regressions', () => {
+  let container: HTMLElement
+
+  const setScrollSize = (el: HTMLElement, scrollHeight: number, clientHeight: number) => {
+    Object.defineProperty(el, 'scrollHeight', { configurable: true, value: scrollHeight })
+    Object.defineProperty(el, 'clientHeight', { configurable: true, value: clientHeight })
+    Object.defineProperty(el, 'scrollWidth', { configurable: true, value: 0 })
+    Object.defineProperty(el, 'clientWidth', { configurable: true, value: 0 })
+  }
+
+  const waitFor = async (condition: () => boolean, timeout = 3000) => {
+    const start = Date.now()
+    while (!condition() && Date.now() - start < timeout) {
+      await new Promise(resolve => setTimeout(resolve, 16))
+    }
+  }
+
+  beforeEach(() => {
+    container = document.createElement('div')
+    document.body.appendChild(container)
+    setScrollSize(container, 1000, 200)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+    container.remove()
+  })
+
+  it('keeps a single end-check RAF loop across many wheel events', () => {
+    const realRaf = globalThis.requestAnimationFrame.bind(globalThis)
+    const realCancel = globalThis.cancelAnimationFrame.bind(globalThis)
+    const pending = new Set<number>()
+    vi.spyOn(globalThis, 'requestAnimationFrame').mockImplementation((cb: FrameRequestCallback) => {
+      const id = realRaf((t) => {
+        pending.delete(id)
+        cb(t)
+      })
+      pending.add(id)
+      return id
+    })
+    vi.spyOn(globalThis, 'cancelAnimationFrame').mockImplementation((id: number) => {
+      pending.delete(id)
+      realCancel(id)
+    })
+
+    const scroll = createScrollSpring(container)
+    for (let i = 0; i < 10; i++) {
+      container.dispatchEvent(new WheelEvent('wheel', { deltaY: 10, cancelable: true }))
+    }
+
+    // At most one frame for the global animation loop and one for the end check
+    expect(pending.size).toBeLessThanOrEqual(2)
+    scroll.destroy()
+  })
+
+  it('converts line-based wheel deltas (deltaMode = 1) to pixels', async () => {
+    const scroll = createScrollSpring(container, { stiffness: 2000, damping: 90 })
+
+    container.dispatchEvent(new WheelEvent('wheel', { deltaY: 3, deltaMode: 1, cancelable: true }))
+    await waitFor(() => scroll.getScroll().y > 40, 1000)
+
+    // 3 lines must scroll ~48px, not 3px
+    expect(scroll.getScroll().y).toBeGreaterThan(40)
+    scroll.destroy()
+  })
+
+  it('bounces back to the edge after overscrolling with bounce enabled', async () => {
+    const onScrollEnd = vi.fn()
+    const scroll = createScrollSpring(container, { bounce: true, stiffness: 2000, damping: 90, onScrollEnd })
+
+    container.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, cancelable: true }))
+    await waitFor(() => onScrollEnd.mock.calls.length > 0)
+
+    expect(onScrollEnd).toHaveBeenCalledTimes(1)
+    expect(Math.abs(scroll.getScroll().y)).toBeLessThan(1)
+    scroll.destroy()
   })
 })

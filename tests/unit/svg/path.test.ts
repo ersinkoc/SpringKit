@@ -5,6 +5,7 @@ import {
   preparePathForAnimation,
   getPointAtProgress,
 } from '@oxog/springkit'
+import { installTestClock, type TestClock } from '../../../src/testing'
 
 describe('SVG Path Animations', () => {
   let svgElement: SVGSVGElement
@@ -259,5 +260,122 @@ describe('SVG Path Animations', () => {
         getPointAtProgress(pathElement, 1)
       }).not.toThrow()
     })
+  })
+})
+
+describe('SVG Path Animation regressions', () => {
+  it('resume() continues towards the target interrupted by pause()', async () => {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    svg.appendChild(path)
+    document.body.appendChild(svg)
+
+    const anim = createPathAnimation(path, { config: { stiffness: 100, damping: 20 } })
+    void anim.play(1)
+    await new Promise(resolve => setTimeout(resolve, 50))
+    anim.pause()
+    const pausedAt = anim.get()
+    expect(pausedAt).toBeLessThan(0.99)
+
+    anim.resume()
+    await new Promise(resolve => setTimeout(resolve, 1500))
+
+    expect(anim.get()).toBeCloseTo(1, 1)
+    anim.destroy()
+    svg.remove()
+  })
+})
+
+describe('SVG Path Animation promise semantics', () => {
+  let clock: TestClock
+  let svg: SVGSVGElement
+  let path: SVGPathElement
+
+  beforeEach(() => {
+    clock = installTestClock({ timers: true })
+    svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+    path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    svg.appendChild(path)
+    document.body.appendChild(svg)
+  })
+
+  afterEach(() => {
+    clock.uninstall()
+    svg.remove()
+  })
+
+  const flush = () => new Promise<void>((resolve) => queueMicrotask(resolve))
+
+  it('pause() does not resolve play() or fire onComplete', async () => {
+    const onComplete = vi.fn()
+    const anim = createPathAnimation(path, { onComplete })
+    const resolved = vi.fn()
+    void anim.play().then(resolved)
+
+    clock.advance(50)
+    anim.pause()
+    clock.advance(1000)
+    await flush()
+
+    expect(resolved).not.toHaveBeenCalled()
+    expect(onComplete).not.toHaveBeenCalled()
+
+    // Resolves once the resumed animation actually completes
+    anim.resume()
+    clock.runAll()
+    await flush()
+    expect(resolved).toHaveBeenCalledTimes(1)
+    expect(onComplete).toHaveBeenCalledTimes(1)
+    expect(anim.get()).toBeCloseTo(1, 2)
+    anim.destroy()
+  })
+
+  it('reset() resolves a pending play() without onComplete', async () => {
+    const onComplete = vi.fn()
+    const anim = createPathAnimation(path, { onComplete })
+    const resolved = vi.fn()
+    void anim.play().then(resolved)
+
+    clock.advance(50)
+    anim.pause()
+    anim.reset()
+    await flush()
+
+    expect(resolved).toHaveBeenCalledTimes(1)
+    expect(onComplete).not.toHaveBeenCalled()
+    anim.destroy()
+  })
+
+  it('destroy() resolves a pending play() instead of leaving it hanging', async () => {
+    const onComplete = vi.fn()
+    const anim = createPathAnimation(path, { onComplete })
+    const resolved = vi.fn()
+    void anim.play().then(resolved)
+
+    clock.advance(50)
+    anim.destroy()
+    await flush()
+
+    expect(resolved).toHaveBeenCalledTimes(1)
+    expect(onComplete).not.toHaveBeenCalled()
+  })
+
+  it('fires onComplete once when play() is retargeted mid-flight', async () => {
+    const onComplete = vi.fn()
+    const anim = createPathAnimation(path, { onComplete })
+    const first = vi.fn()
+    const second = vi.fn()
+    void anim.play(1).then(first)
+    clock.advance(50)
+    void anim.reverse().then(second)
+
+    clock.runAll()
+    await flush()
+
+    expect(first).toHaveBeenCalledTimes(1)
+    expect(second).toHaveBeenCalledTimes(1)
+    expect(onComplete).toHaveBeenCalledTimes(1)
+    expect(anim.get()).toBeCloseTo(0, 2)
+    anim.destroy()
   })
 })

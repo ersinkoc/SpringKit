@@ -42,7 +42,8 @@ export function useReducedMotion(): boolean {
   const [prefersReducedMotion, setPrefersReducedMotion] = useState(false)
 
   useEffect(() => {
-    if (!isBrowser) return
+    // matchMedia is missing in some environments (jsdom, old WebViews)
+    if (!isBrowser || typeof window.matchMedia !== 'function') return
 
     const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
 
@@ -74,7 +75,7 @@ export function useReducedMotion(): boolean {
  * @returns false on server, actual value on client
  */
 export function getReducedMotionPreference(): boolean {
-  if (!isBrowser) return false
+  if (!isBrowser || typeof window.matchMedia !== 'function') return false
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 

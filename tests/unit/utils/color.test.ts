@@ -6,6 +6,7 @@ import {
   hslToRgb,
   rgbToHsl,
 } from '@oxog/springkit'
+import { parseColorRGBA } from '../../../src/utils/color'
 
 describe('color utils', () => {
   describe('parseColor', () => {
@@ -180,5 +181,35 @@ describe('color utils', () => {
       expect(result.h).toBeCloseTo(240, -10) // Around 240 for blue
       expect(result).toMatchObject({ h: expect.any(Number), s: expect.any(Number), l: expect.any(Number) })
     })
+  })
+})
+
+describe('color parsing regressions', () => {
+  it('parses 4 and 8 digit hex colors instead of returning black', () => {
+    expect(parseColor('#f008')).toEqual({ r: 255, g: 0, b: 0 })
+    expect(parseColor('#00ff0080')).toEqual({ r: 0, g: 255, b: 0 })
+    expect(hexToRgb('#00ff0080')).toEqual({ r: 0, g: 255, b: 0 })
+    expect(parseColorRGBA('#00ff0080').a).toBeCloseTo(128 / 255)
+    expect(parseColorRGBA('#f008').a).toBeCloseTo(0x88 / 255)
+  })
+
+  it('parses hsla() and decimal hsl values', () => {
+    expect(parseColor('hsla(120, 100%, 50%, 0.5)')).toEqual({ r: 0, g: 255, b: 0 })
+    expect(parseColor('hsl(240.5, 100%, 50%)')).toEqual(hslToRgb(240.5, 100, 50))
+    expect(parseColorRGBA('hsla(0, 100%, 50%, 0.25)')).toEqual({ r: 255, g: 0, b: 0, a: 0.25 })
+  })
+
+  it('parses space-separated, decimal and percentage rgb() syntax', () => {
+    expect(parseColor('rgb(255 0 0)')).toEqual({ r: 255, g: 0, b: 0 })
+    expect(parseColor('rgb(100%, 0%, 50%)')).toEqual({ r: 255, g: 0, b: 128 })
+    expect(parseColor('rgba(10.4, 20.6, 30, .5)')).toEqual({ r: 10, g: 21, b: 30 })
+    expect(parseColorRGBA('rgb(0 0 255 / 50%)')).toEqual({ r: 0, g: 0, b: 255, a: 0.5 })
+  })
+
+  it('keeps alpha from rgba() and supports transparent', () => {
+    expect(parseColorRGBA('rgba(0, 255, 0, 0.5)')).toEqual({ r: 0, g: 255, b: 0, a: 0.5 })
+    expect(parseColorRGBA('rgb(1, 2, 3)')).toEqual({ r: 1, g: 2, b: 3, a: 1 })
+    expect(parseColorRGBA('transparent')).toEqual({ r: 0, g: 0, b: 0, a: 0 })
+    expect(parseColorRGBA('notacolor')).toEqual({ r: 0, g: 0, b: 0, a: 1 })
   })
 })

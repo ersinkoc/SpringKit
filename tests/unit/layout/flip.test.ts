@@ -103,8 +103,8 @@ describe('FLIP Layout Animations', () => {
       expect(onUpdate).toHaveBeenCalled()
       // Progress should go from 0 to 1
       const calls = onUpdate.mock.calls
-      expect(calls[0][0]).toBe(0) // First call with 0
-      expect(calls[calls.length - 1][0]).toBeCloseTo(1, 1) // Last call close to 1
+      expect(calls[0]![0]).toBe(0) // First call with 0
+      expect(calls[calls.length - 1]![0]).toBeCloseTo(1, 1) // Last call close to 1
     }, 5000)
 
     it('should handle size changes', async () => {
@@ -116,8 +116,8 @@ describe('FLIP Layout Animations', () => {
         size: true,
       })
 
-      // Should have transform origin set
-      expect(element.style.transformOrigin).toBe('0 0')
+      // The element's own transform-origin is left untouched
+      expect(element.style.transformOrigin).toBe('')
 
       await anim.play()
     }, 5000)
@@ -356,5 +356,166 @@ describe('FLIP Layout Animations', () => {
 
       container.removeChild(element2)
     }, 5000)
+  })
+})
+
+describe('FLIP regressions', () => {
+  it('keeps the element\'s existing transform during the animation', () => {
+    const el = document.createElement('div')
+    document.body.appendChild(el)
+    el.style.transform = 'rotate(45deg)'
+
+    const animation = createFlip(
+      el,
+      { x: 0, y: 0, width: 100, height: 100 },
+      { x: 100, y: 0, width: 100, height: 100 }
+    )
+
+    expect(el.style.transform).toContain('translate(-100px, 0px)')
+    expect(el.style.transform).toContain('rotate(45deg)')
+
+    animation.cancel()
+    expect(el.style.transform).toBe('rotate(45deg)')
+    el.remove()
+  })
+})
+
+describe('FLIP transform-origin and border radius', () => {
+  let el: HTMLDivElement
+
+  beforeEach(() => {
+    el = document.createElement('div')
+    document.body.appendChild(el)
+  })
+
+  afterEach(() => {
+    el.remove()
+  })
+
+  /**
+   * Map a point (relative to the element's layout box) through the
+   * translate/scale functions of a CSS transform applied around `origin`,
+   * returning page coordinates for a layout box at `box`.
+   */
+  const mapPoint = (
+    transform: string,
+    origin: { x: number; y: number },
+    box: { x: number; y: number },
+    px: number,
+    py: number
+  ) => {
+    const fns = [...transform.matchAll(/(translate|scale)\(([-\d.e]+)(?:px)?, ([-\d.e]+)(?:px)?\)/g)]
+    let x = px - origin.x
+    let y = py - origin.y
+    // CSS applies the rightmost function first
+    for (const fn of fns.reverse()) {
+      const a = parseFloat(fn[2]!)
+      const b = parseFloat(fn[3]!)
+      if (fn[1] === 'translate') {
+        x += a
+        y += b
+      } else {
+        x *= a
+        y *= b
+      }
+    }
+    return { x: box.x + origin.x + x, y: box.y + origin.y + y }
+  }
+
+  const expectInvertedToFirst = (
+    first: { x: number; y: number; width: number; height: number },
+    last: { x: number; y: number; width: number; height: number },
+    origin: { x: number; y: number }
+  ) => {
+    const topLeft = mapPoint(el.style.transform, origin, last, 0, 0)
+    const bottomRight = mapPoint(el.style.transform, origin, last, last.width, last.height)
+    expect(topLeft.x).toBeCloseTo(first.x)
+    expect(topLeft.y).toBeCloseTo(first.y)
+    expect(bottomRight.x).toBeCloseTo(first.x + first.width)
+    expect(bottomRight.y).toBeCloseTo(first.y + first.height)
+  }
+
+  it('does not change transform-origin, so existing rotate/scale render unchanged', () => {
+    el.style.transform = 'rotate(30deg)'
+    const animation = createFlip(
+      el,
+      { x: 0, y: 0, width: 200, height: 100 },
+      { x: 0, y: 0, width: 100, height: 100 }
+    )
+
+    expect(el.style.transformOrigin).toBe('')
+    expect(el.style.transform).toContain('rotate(30deg)')
+    animation.cancel()
+    expect(el.style.transform).toBe('rotate(30deg)')
+    expect(el.style.transformOrigin).toBe('')
+  })
+
+  it('places the element exactly on the first box with the default center origin', () => {
+    const first = { x: 10, y: 20, width: 200, height: 50 }
+    const last = { x: 110, y: 120, width: 100, height: 100 }
+    const animation = createFlip(el, first, last)
+
+    // The position translate stays the plain layout delta
+    expect(el.style.transform.startsWith('translate(-100px, -100px)')).toBe(true)
+    expectInvertedToFirst(first, last, { x: 50, y: 50 })
+    animation.cancel()
+  })
+
+  it('places the element exactly on the first box with an explicit transform-origin', () => {
+    el.style.transformOrigin = 'right bottom'
+    const first = { x: 0, y: 0, width: 200, height: 300 }
+    const last = { x: 40, y: 10, width: 100, height: 100 }
+    const animation = createFlip(el, first, last)
+
+    expectInvertedToFirst(first, last, { x: 100, y: 100 })
+    expect(el.style.transformOrigin).toBe('right bottom')
+    animation.cancel()
+    expect(el.style.transformOrigin).toBe('right bottom')
+  })
+
+  it('places the element on the first box when only the size is animated', () => {
+    el.style.transformOrigin = '25% 10px'
+    const first = { x: 0, y: 0, width: 50, height: 400 }
+    const last = { x: 0, y: 0, width: 100, height: 100 }
+    const animation = createFlip(el, first, last, { position: false })
+
+    expectInvertedToFirst(first, last, { x: 25, y: 10 })
+    animation.cancel()
+  })
+
+  it('keeps the previous output when the origin is the top-left corner', () => {
+    el.style.transformOrigin = '0 0'
+    const animation = createFlip(
+      el,
+      { x: 0, y: 0, width: 200, height: 100 },
+      { x: 50, y: 0, width: 100, height: 100 }
+    )
+    expect(el.style.transform).toBe('translate(-50px, 0px) scale(2, 1)')
+    animation.cancel()
+  })
+
+  it('does not touch border radius unless correctBorderRadius is set', () => {
+    el.style.borderRadius = '10px'
+    const animation = createFlip(
+      el,
+      { x: 0, y: 0, width: 200, height: 100 },
+      { x: 0, y: 0, width: 100, height: 100 }
+    )
+    expect(el.style.borderRadius).toBe('10px')
+    animation.cancel()
+  })
+
+  it('counter-scales border radius per axis with correctBorderRadius and restores it', () => {
+    el.style.borderRadius = '10px'
+    const animation = createFlip(
+      el,
+      { x: 0, y: 0, width: 200, height: 100 },
+      { x: 0, y: 0, width: 100, height: 100 },
+      { correctBorderRadius: true }
+    )
+    // scale(2, 1): horizontal radius halves so corners stay circular on screen
+    expect(el.style.borderRadius).toBe('5px / 10px')
+    animation.cancel()
+    expect(el.style.borderRadius).toBe('10px')
   })
 })

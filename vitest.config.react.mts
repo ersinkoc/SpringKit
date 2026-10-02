@@ -22,6 +22,7 @@ export default defineConfig({
   resolve: {
     alias: [
       { find: '@oxog/springkit/react', replacement: resolve(__dirname, 'src/adapters/react/index.ts') },
+      { find: '@oxog/springkit/testing', replacement: resolve(__dirname, 'src/testing/index.ts') },
       { find: '@oxog/springkit', replacement: resolve(__dirname, 'src/index.ts') },
     ],
     extensions: ['.ts', '.tsx', '.js', '.jsx', '.json'],

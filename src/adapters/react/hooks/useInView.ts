@@ -1,5 +1,6 @@
-import { useState, useRef, useEffect, type RefObject } from 'react'
+import { useState, useRef, useEffect, useCallback, type RefObject } from 'react'
 import { isBrowser } from '../utils/ssr.js'
+import { useElementEffect } from './useElementEffect.js'
 
 export interface UseInViewOptions {
   /**
@@ -94,7 +95,9 @@ export function useInView(options: UseInViewOptions = {}): UseInViewReturn {
   const [entry, setEntry] = useState<IntersectionObserverEntry | undefined>()
   const hasTriggered = useRef(false)
 
-  useEffect(() => {
+  // Re-attaches when the observed element (or root) changes - including an
+  // element that mounts after the hook first ran (conditional rendering)
+  useElementEffect(() => {
     // SSR safety
     if (!isBrowser) return
 
@@ -142,7 +145,7 @@ export function useInView(options: UseInViewOptions = {}): UseInViewReturn {
     return () => {
       observer.disconnect()
     }
-  }, [once, amount, margin, root])
+  }, () => [ref.current, root?.current ?? null, once, amount, margin])
 
   return { ref, inView, entry }
 }
@@ -177,7 +180,9 @@ export function useInViewCallback(
 
   const { once = false, amount = 'some', margin = '0px', root } = options
 
-  useEffect(() => {
+  // Re-attaches when the observed element (or root) changes - including an
+  // element that mounts after the hook first ran (conditional rendering)
+  useElementEffect(() => {
     if (!isBrowser) return
 
     const element = ref.current
@@ -217,7 +222,7 @@ export function useInViewCallback(
     observer.observe(element)
 
     return () => observer.disconnect()
-  }, [once, amount, margin, root])
+  }, () => [ref.current, root?.current ?? null, once, amount, margin])
 
   return ref
 }
@@ -250,8 +255,15 @@ export function useInViewMultiple(options: UseInViewOptions = {}) {
   const elementsRef = useRef<Map<string, HTMLElement>>(new Map())
   const [inViewMap, setInViewMap] = useState<Map<string, boolean>>(new Map())
   const observerRef = useRef<IntersectionObserver | null>(null)
+  // Elements whose ref was detached; removed for real in a microtask unless the
+  // same id is re-attached first (inline ref callbacks detach/attach every render)
+  const detachedRef = useRef<Map<string, HTMLElement>>(new Map())
+  // Ids that already entered the viewport while `once` is enabled
+  const triggeredRef = useRef<Set<string>>(new Set())
 
   const { once = false, amount = 'some', margin = '0px', root } = options
+  const onceRef = useRef(once)
+  onceRef.current = once
 
   useEffect(() => {
     if (!isBrowser) return
@@ -265,22 +277,28 @@ export function useInViewMultiple(options: UseInViewOptions = {}) {
       threshold = amount
     }
 
-    observerRef.current = new IntersectionObserver(
+    const observer = new IntersectionObserver(
       (entries) => {
+        const updates: Array<[string, boolean]> = []
+
+        entries.forEach((entry) => {
+          const id = (entry.target as HTMLElement).dataset.inviewId
+          if (!id) return
+          updates.push([id, entry.isIntersecting])
+
+          if (entry.isIntersecting && once) {
+            triggeredRef.current.add(id)
+            observer.unobserve(entry.target)
+          }
+        })
+
+        if (updates.length === 0) return
+
         setInViewMap((prev) => {
+          // Keep the same Map when nothing changed to avoid needless re-renders
+          if (updates.every(([id, value]) => prev.get(id) === value)) return prev
           const next = new Map(prev)
-
-          entries.forEach((entry) => {
-            const id = (entry.target as HTMLElement).dataset.inviewId
-            if (id) {
-              next.set(id, entry.isIntersecting)
-
-              if (entry.isIntersecting && once) {
-                observerRef.current?.unobserve(entry.target)
-              }
-            }
-          })
-
+          updates.forEach(([id, value]) => next.set(id, value))
           return next
         })
       },
@@ -290,36 +308,69 @@ export function useInViewMultiple(options: UseInViewOptions = {}) {
         threshold,
       }
     )
+    observerRef.current = observer
 
     // Observe all registered elements
-    elementsRef.current.forEach((element) => {
-      observerRef.current?.observe(element)
+    elementsRef.current.forEach((element, id) => {
+      if (once && triggeredRef.current.has(id)) return
+      observer.observe(element)
     })
 
     return () => {
-      observerRef.current?.disconnect()
+      observer.disconnect()
+      if (observerRef.current === observer) {
+        observerRef.current = null
+      }
     }
   }, [once, amount, margin, root])
 
-  const setRef = (id: string, element: HTMLElement | null) => {
+  const setRef = useCallback((id: string, element: HTMLElement | null) => {
+    const elements = elementsRef.current
+    const detached = detachedRef.current
+
     if (element) {
-      element.dataset.inviewId = id
-      elementsRef.current.set(id, element)
-      observerRef.current?.observe(element)
-    } else {
-      const existing = elementsRef.current.get(id)
-      if (existing) {
-        observerRef.current?.unobserve(existing)
-        elementsRef.current.delete(id)
-        // Also remove from inViewMap to prevent memory leak
-        setInViewMap((prev) => {
-          const next = new Map(prev)
-          next.delete(id)
-          return next
-        })
+      // Re-attached within the same commit: keep the existing observation
+      const pending = detached.get(id)
+      if (pending !== undefined) {
+        detached.delete(id)
+        if (pending === element) {
+          elements.set(id, element)
+          return
+        }
+        observerRef.current?.unobserve(pending)
       }
+
+      const existing = elements.get(id)
+      if (existing === element) return
+      if (existing) observerRef.current?.unobserve(existing)
+
+      element.dataset.inviewId = id
+      elements.set(id, element)
+      if (!(onceRef.current && triggeredRef.current.has(id))) {
+        observerRef.current?.observe(element)
+      }
+      return
     }
-  }
+
+    const existing = elements.get(id)
+    if (!existing) return
+    elements.delete(id)
+    detached.set(id, existing)
+
+    queueMicrotask(() => {
+      // Re-attached (or replaced) in the meantime
+      if (detached.get(id) !== existing) return
+      detached.delete(id)
+      observerRef.current?.unobserve(existing)
+      // Also remove from inViewMap to prevent memory leak
+      setInViewMap((prev) => {
+        if (!prev.has(id)) return prev
+        const next = new Map(prev)
+        next.delete(id)
+        return next
+      })
+    })
+  }, [])
 
   const getInView = (id: string): boolean => {
     return inViewMap.get(id) ?? false

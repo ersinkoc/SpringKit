@@ -9,6 +9,7 @@ import {
   type MorphController,
 } from '@oxog/springkit'
 import { useIsomorphicLayoutEffect } from '../utils/ssr.js'
+import { useDestroyOnUnmount } from './useDestroyOnUnmount.js'
 
 // ============ useMorph ============
 
@@ -24,7 +25,10 @@ export interface UseMorphReturn {
   morphTo: (path: string) => void
   /** Set progress directly */
   setProgress: (progress: number) => void
-  /** The morph controller instance */
+  /**
+   * The morph controller instance. Available from the first render; replaced
+   * when `initialPath` changes.
+   */
   controller: MorphController | null
 }
 
@@ -55,24 +59,43 @@ export function useMorph(
 ): UseMorphReturn {
   const [path, setPath] = useState(initialPath)
   const [progress, setProgressState] = useState(0)
-  const morphRef = useRef<MorphController | null>(null)
+  // Controller + the initialPath it was created for
+  const morphRef = useRef<{ controller: MorphController; path: string } | null>(null)
+  // Controller the effect last subscribed to (destroyed once it is replaced)
+  const activeRef = useRef<MorphController | null>(null)
   const isMountedRef = useRef(false)
 
   // Use ref to capture latest options without causing effect re-runs
   const optionsRef = useRef(options)
   optionsRef.current = options
 
+  // Created lazily during render so `controller` is usable right away. It only
+  // allocates a (idle) spring; subscriptions are made in the effect below.
+  if (morphRef.current === null || morphRef.current.path !== initialPath) {
+    morphRef.current = {
+      path: initialPath,
+      controller: createMorph(initialPath, {
+        ...optionsRef.current,
+        onProgress: (p) => {
+          if (!isMountedRef.current) return
+          setProgressState(p)
+          // Read the latest callback (options captured at creation may be stale)
+          optionsRef.current.onProgress?.(p)
+        },
+      }),
+    }
+  }
+  const controller = morphRef.current.controller
+
   useIsomorphicLayoutEffect(() => {
+    const morph = morphRef.current?.controller
+    if (!morph) return
+    // initialPath changed: the previous controller is no longer used
+    if (activeRef.current !== null && activeRef.current !== morph) {
+      activeRef.current.destroy()
+    }
+    activeRef.current = morph
     isMountedRef.current = true
-    const currentOptions = optionsRef.current
-    const morph = createMorph(initialPath, {
-      ...currentOptions,
-      onProgress: (p) => {
-        if (!isMountedRef.current) return
-        setProgressState(p)
-        currentOptions.onProgress?.(p)
-      },
-    })
 
     // Store unsubscribe function to prevent memory leak
     const unsubscribe = morph.subscribe((newPath) => {
@@ -80,21 +103,28 @@ export function useMorph(
       setPath(newPath)
     })
 
-    morphRef.current = morph
-
     return () => {
       isMountedRef.current = false
       unsubscribe()
-      morph.destroy()
     }
   }, [initialPath])
 
+  // Destroy on real unmount only (deferred so StrictMode's simulated remount
+  // keeps the controller that was already handed out during render)
+  useDestroyOnUnmount(() => {
+    const current = morphRef.current?.controller ?? null
+    current?.destroy()
+    if (activeRef.current !== current) activeRef.current?.destroy()
+    morphRef.current = null
+    activeRef.current = null
+  })
+
   const morphTo = useCallback((targetPath: string) => {
-    morphRef.current?.morphTo(targetPath)
+    morphRef.current?.controller.morphTo(targetPath)
   }, [])
 
   const setProgress = useCallback((p: number) => {
-    morphRef.current?.setProgress(p)
+    morphRef.current?.controller.setProgress(p)
   }, [])
 
   return {
@@ -102,7 +132,7 @@ export function useMorph(
     progress,
     morphTo,
     setProgress,
-    controller: morphRef.current,
+    controller,
   }
 }
 
@@ -237,6 +267,9 @@ export function useMorphRef(
   const morphRef = useRef<MorphController | null>(null)
   const elementRef = useRef<SVGPathElement | null>(null)
   const unsubscribeRef = useRef<(() => void) | null>(null)
+  // Latest options, so callbacks are not stuck with the first render's closure
+  const optionsRef = useRef(options)
+  optionsRef.current = options
 
   const pathRef = useCallback(
     (element: SVGPathElement | null) => {
@@ -254,10 +287,10 @@ export function useMorphRef(
       elementRef.current = element
 
       const morph = createMorph(initialPath, {
-        ...options,
+        ...optionsRef.current,
         onProgress: (p) => {
           setProgressState(p)
-          options.onProgress?.(p)
+          optionsRef.current.onProgress?.(p)
         },
       })
 
@@ -268,8 +301,6 @@ export function useMorphRef(
 
       morphRef.current = morph
     },
-    // options used only on initialization
-    // eslint-disable-next-line react-hooks/exhaustive-deps
     [initialPath]
   )
 

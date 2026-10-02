@@ -131,7 +131,16 @@ function Box() {
             <CodeBlock code={`import { useSpringValue } from '@oxog/springkit/react'
 
 function ProgressBar({ value }) {
-  const progress = useSpringValue(value)
+  const progress = useSpringValue(value, { stiffness: 100, damping: 20 })
+  const barRef = useRef(null)
+
+  // The spring value does not re-render the component:
+  // subscribe and write to the DOM directly
+  useEffect(() => {
+    return progress.subscribe((v) => {
+      if (barRef.current) barRef.current.style.width = \`\${v}%\`
+    })
+  }, [progress])
 
   useEffect(() => {
     progress.set(value)
@@ -139,10 +148,7 @@ function ProgressBar({ value }) {
 
   return (
     <div className="w-full bg-gray-200 rounded-full">
-      <div
-        className="bg-primary h-2 rounded-full"
-        style={{ width: \`\${progress.get()}%\` }}
-      />
+      <div ref={barRef} className="bg-primary h-2 rounded-full" />
     </div>
   )
 }`} />
@@ -238,7 +244,7 @@ function DraggableCard() {
 
   return (
     <div
-      {...api.bind()}
+      ref={api.ref}
       style={{
         transform: \`translate(\${x}px, \${y}px)\`,
         width: 100,
@@ -298,7 +304,7 @@ function MotionBox() {
             <CodeBlock code={`import { useInView } from '@oxog/springkit/react'
 
 function RevealOnScroll() {
-  const { ref, isInView, progress } = useInView({
+  const { ref, inView } = useInView({
     amount: 0.5,  // 50% visible
     once: true,   // Only trigger once
   })
@@ -307,13 +313,12 @@ function RevealOnScroll() {
     <div
       ref={ref}
       style={{
-        opacity: isInView ? 1 : 0,
-        transform: \`translateY(\${isInView ? 0 : 50}px)\`,
+        opacity: inView ? 1 : 0,
+        transform: \`translateY(\${inView ? 0 : 50}px)\`,
         transition: 'all 0.6s ease-out',
       }}
     >
       Revealed when scrolled into view!
-      Progress: {(progress * 100).toFixed(0)}%
     </div>
   )
 }`} />
@@ -425,31 +430,29 @@ function InteractiveButton() {
 
       <DocSection title="useAnimate">
         <p className="text-muted-foreground mb-4">
-          Imperative animation API with scoped selectors:
+          Imperative, promise-based animations of the element attached to <code>scope</code>:
         </p>
         <Card>
           <CardContent className="pt-6">
             <CodeBlock code={`import { useAnimate } from '@oxog/springkit/react'
 
-function AnimatedList() {
-  const [scope, animate] = useAnimate()
+function Notification() {
+  const [scope, animate, controls] = useAnimate()
 
   const handleClick = async () => {
-    // Animate all li elements with stagger
-    await animate('li', { opacity: 1, x: 0 }, { stagger: 0.1 })
+    // Animates the scope element (x, y, scale, rotate, opacity, ...)
+    // A property starts from 0 the first time it is animated
+    await animate({ opacity: 1, x: 100 }, { config: { stiffness: 300, damping: 20 } })
 
-    // Chain another animation
-    await animate('.highlight', { scale: 1.1 })
+    // Arrays are keyframes, visited in order
+    await animate({ x: [120, 0] }, { delay: 200 })
   }
 
   return (
-    <div ref={scope}>
-      <ul>
-        <li style={{ opacity: 0, transform: 'translateX(-20px)' }}>Item 1</li>
-        <li style={{ opacity: 0, transform: 'translateX(-20px)' }}>Item 2</li>
-        <li style={{ opacity: 0, transform: 'translateX(-20px)' }}>Item 3</li>
-      </ul>
+    <div>
+      <div ref={scope} style={{ opacity: 0 }}>Hello!</div>
       <button onClick={handleClick}>Animate</button>
+      <button onClick={() => controls.stop()}>Stop</button>
     </div>
   )
 }`} />
@@ -496,18 +499,17 @@ function ReactComponents() {
 
       <DocSection title="Animated">
         <p className="text-muted-foreground mb-4">
-          Auto-animate any style changes:
+          Animate elements declaratively with <code>initial</code> / <code>animate</code> (numeric <code>style</code> values are animated too; string values like <code>transform</code> are applied as-is):
         </p>
         <Card>
           <CardContent className="pt-6">
             <CodeBlock code={`import { Animated } from '@oxog/springkit/react'
 
-// Style changes are automatically animated
+// Changes to animate are spring-animated
 <Animated.div
-  style={{
-    opacity: isVisible ? 1 : 0,
-    transform: \`translateX(\${isOpen ? 100 : 0}px)\`,
-  }}
+  initial={{ opacity: 0, x: -20 }}
+  animate={{ opacity: isVisible ? 1 : 0, x: isOpen ? 100 : 0 }}
+  config={{ stiffness: 120, damping: 14 }}
 >
   Content automatically animates
 </Animated.div>
@@ -616,13 +618,13 @@ function AnimatedList({ items, onRemove }) {
             <CodeBlock code={`import { AnimatePresence, usePresence } from '@oxog/springkit/react'
 
 function FadeOut() {
-  const { isPresent, onExitComplete } = usePresence()
+  const [isPresent, safeToRemove] = usePresence()
 
   useEffect(() => {
     if (!isPresent) {
-      // Element is exiting, play animation then call onExitComplete
+      // Element is exiting, play animation then call safeToRemove
       const timeout = setTimeout(() => {
-        onExitComplete()
+        safeToRemove()
       }, 500)
       return () => clearTimeout(timeout)
     }
@@ -649,7 +651,7 @@ function FadeOut() {
 function App() {
   return (
     <MotionConfig
-      transition={{ stiffness: 300, damping: 25 }}
+      config={{ stiffness: 300, damping: 25 }}
       reducedMotion="user"  // 'user' | 'always' | 'never'
     >
       {/* All Animated components inherit these settings */}
@@ -675,7 +677,7 @@ import { useMotionConfig } from '@oxog/springkit/react'
 
 function CustomComponent() {
   const config = useMotionConfig()
-  // config.transition, config.reducedMotion
+  // config.config, config.reducedMotion, config.isReducedMotion
 }`} />
           </CardContent>
         </Card>

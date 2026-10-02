@@ -66,85 +66,60 @@ describe('config', () => {
     })
   })
 
+  // Perceptual model: stiffness = (2π/T)², damping = 4π·ζ/T (mass 1).
+  // (Previously these were 3-bucket step functions.)
+  const ratioOf = (c: { stiffness?: number; damping?: number; mass?: number }) =>
+    c.damping! / (2 * Math.sqrt(c.stiffness! * (c.mass ?? 1)))
+
   describe('configFromDuration', () => {
-    it('should return fast config for duration < 300ms', () => {
+    it('should return a critically damped spring for the perceived duration', () => {
       const config = configFromDuration(200)
-      expect(config.stiffness).toBe(170)
-      expect(config.damping).toBe(26)
+      expect(config.stiffness).toBeCloseTo(Math.pow((2 * Math.PI) / 0.2, 2), 6)
+      expect(config.damping).toBeCloseTo((4 * Math.PI) / 0.2, 6)
+      expect(config.mass).toBe(1)
+      expect(ratioOf(config)).toBeCloseTo(1, 6)
     })
 
-    it('should return medium config for duration < 500ms', () => {
-      const config = configFromDuration(400)
-      expect(config.stiffness).toBe(100)
-      expect(config.damping).toBe(20)
+    it('should get softer as the duration grows', () => {
+      const durations = [50, 300, 400, 500, 600, 5000]
+      const stiffness = durations.map((ms) => configFromDuration(ms).stiffness!)
+      for (let i = 1; i < stiffness.length; i++) {
+        expect(stiffness[i]!).toBeLessThan(stiffness[i - 1]!)
+      }
     })
 
-    it('should return slow config for duration >= 500ms', () => {
-      const config = configFromDuration(600)
-      expect(config.stiffness).toBe(80)
-      expect(config.damping).toBe(15)
-    })
-
-    it('should return fast config for duration exactly 300ms', () => {
-      const config = configFromDuration(300)
-      expect(config.stiffness).toBe(100)
-      expect(config.damping).toBe(20)
-    })
-
-    it('should return medium config for duration exactly 500ms', () => {
-      const config = configFromDuration(500)
-      expect(config.stiffness).toBe(80)
-      expect(config.damping).toBe(15)
-    })
-
-    it('should handle very small durations', () => {
-      const config = configFromDuration(50)
-      expect(config.stiffness).toBe(170)
-      expect(config.damping).toBe(26)
-    })
-
-    it('should handle very large durations', () => {
-      const config = configFromDuration(5000)
-      expect(config.stiffness).toBe(80)
-      expect(config.damping).toBe(15)
+    it('should fall back to 500ms for invalid durations', () => {
+      expect(configFromDuration(0)).toEqual(configFromDuration(500))
+      expect(configFromDuration(-10)).toEqual(configFromDuration(500))
+      expect(configFromDuration(NaN)).toEqual(configFromDuration(500))
     })
   })
 
   describe('configFromBounce', () => {
-    it('should return no bounce config for bounce <= 0', () => {
+    it('should return a critically damped 500ms spring for bounce 0', () => {
       const config = configFromBounce(0)
-      expect(config.stiffness).toBe(170)
-      expect(config.damping).toBe(26)
+      expect(config.stiffness).toBeCloseTo(Math.pow(4 * Math.PI, 2), 6)
+      expect(config.damping).toBeCloseTo(8 * Math.PI, 6)
+      expect(ratioOf(config)).toBeCloseTo(1, 6)
     })
 
-    it('should return no bounce config for negative bounce', () => {
-      const config = configFromBounce(-0.5)
-      expect(config.stiffness).toBe(170)
-      expect(config.damping).toBe(26)
+    it('should be overdamped for negative bounce', () => {
+      expect(ratioOf(configFromBounce(-0.5))).toBeCloseTo(2, 6)
     })
 
-    it('should return low bounce config for bounce <= 0.25', () => {
-      const config = configFromBounce(0.1)
-      expect(config.stiffness).toBe(200)
-      expect(config.damping).toBe(12)
+    it('should map positive bounce to damping ratio 1 - bounce', () => {
+      expect(ratioOf(configFromBounce(0.1))).toBeCloseTo(0.9, 6)
+      expect(ratioOf(configFromBounce(0.25))).toBeCloseTo(0.75, 6)
+      expect(ratioOf(configFromBounce(0.5))).toBeCloseTo(0.5, 6)
     })
 
-    it('should return low bounce config for bounce exactly 0.25', () => {
-      const config = configFromBounce(0.25)
-      expect(config.stiffness).toBe(200)
-      expect(config.damping).toBe(12)
+    it('should keep the 500ms stiffness regardless of bounce', () => {
+      expect(configFromBounce(0.5).stiffness).toBe(configFromBounce(0).stiffness)
     })
 
-    it('should return high bounce config for bounce > 0.25', () => {
-      const config = configFromBounce(0.5)
-      expect(config.stiffness).toBe(200)
-      expect(config.damping).toBe(8)
-    })
-
-    it('should return high bounce config for very high bounce', () => {
-      const config = configFromBounce(1)
-      expect(config.stiffness).toBe(200)
-      expect(config.damping).toBe(8)
+    it('should clamp bounce to 1 (undamped)', () => {
+      expect(configFromBounce(1).damping).toBe(0)
+      expect(configFromBounce(3)).toEqual(configFromBounce(1))
     })
   })
 

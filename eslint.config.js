@@ -46,6 +46,17 @@ export default tseslint.config(
     },
   },
   {
+    // Tests poke at internals and mock browser APIs
+    files: ['tests/**/*.{ts,tsx}'],
+    rules: {
+      '@typescript-eslint/no-explicit-any': 'off',
+      '@typescript-eslint/no-unused-vars': [
+        'error',
+        { argsIgnorePattern: '^_', varsIgnorePattern: '^_' },
+      ],
+    },
+  },
+  {
     ignores: ['dist/**', 'node_modules/**', 'coverage/**', 'website/**'],
   }
 )

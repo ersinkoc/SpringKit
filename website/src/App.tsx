@@ -24,6 +24,7 @@ const SVGMorphDemo = lazy(() => import('./pages/examples/SVGMorphDemo'))
 const GesturesDemo = lazy(() => import('./pages/examples/GesturesDemo'))
 const VariantsDemo = lazy(() => import('./pages/examples/VariantsDemo'))
 const TextAnimationsDemo = lazy(() => import('./pages/examples/TextAnimationsDemo'))
+const NativeSpringsDemo = lazy(() => import('./pages/examples/NativeSpringsDemo'))
 
 // Loading component
 function PageLoader() {
@@ -61,6 +62,11 @@ function App() {
             <Route path="/examples" element={
               <Suspense fallback={<PageLoader />}>
                 <ExamplesIndex />
+              </Suspense>
+            } />
+            <Route path="/examples/native-springs" element={
+              <Suspense fallback={<PageLoader />}>
+                <NativeSpringsDemo />
               </Suspense>
             } />
             <Route path="/examples/physics-presets" element={

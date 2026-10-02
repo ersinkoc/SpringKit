@@ -43,8 +43,9 @@ describe('createTrail', () => {
       const callback = vi.fn()
       const unsubscribe = trail.subscribe(callback)
 
-      // Each spring's subscribe triggers a notification (3) + initial call = 4
-      expect(callback).toHaveBeenCalledTimes(4)
+      // Exactly one initial call (previously each item's subscription also
+      // fired a notification to every subscriber, giving count + 1 calls)
+      expect(callback).toHaveBeenCalledTimes(1)
       expect(callback).toHaveBeenLastCalledWith([0, 0, 0])
 
       unsubscribe()

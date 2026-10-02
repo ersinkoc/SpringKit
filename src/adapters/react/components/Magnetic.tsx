@@ -15,6 +15,12 @@ import {
 } from 'react'
 import { createSpringValue } from '@oxog/springkit'
 import type { SpringConfig } from '@oxog/springkit'
+import { useStableSpringConfig } from '../utils/config.js'
+import { useShouldReduceMotion } from '../utils/reducedMotion.js'
+import { onPointerLeaveWindow } from '../utils/dom.js'
+
+const DEFAULT_MAGNETIC_CONFIG: SpringConfig = { stiffness: 200, damping: 20 }
+const DEFAULT_CURSOR_CONFIG: SpringConfig = { stiffness: 150, damping: 15 }
 
 // ============ Magnetic ============
 
@@ -84,7 +90,7 @@ export const Magnetic = memo(forwardRef<HTMLDivElement, MagneticProps>(
       children,
       strength = 0.3,
       range = 100,
-      config = { stiffness: 200, damping: 20 },
+      config: configProp,
       enabled = true,
       scaleOnHover = 1,
       maxOffset = 50,
@@ -95,6 +101,10 @@ export const Magnetic = memo(forwardRef<HTMLDivElement, MagneticProps>(
     },
     ref
   ) {
+    const config = useStableSpringConfig(configProp, DEFAULT_MAGNETIC_CONFIG)
+    // Reduced motion (MotionConfig or OS setting) disables the effect
+    const reduceMotion = useShouldReduceMotion()
+    const isActive = enabled && !reduceMotion
     const innerRef = useRef<HTMLDivElement>(null)
     const combinedRef = (node: HTMLDivElement | null) => {
       innerRef.current = node
@@ -142,7 +152,7 @@ export const Magnetic = memo(forwardRef<HTMLDivElement, MagneticProps>(
 
     const handleMouseMove = useCallback(
       (e: MouseEvent) => {
-        if (!enabled || !innerRef.current) return
+        if (!isActive || !innerRef.current) return
 
         const rect = innerRef.current.getBoundingClientRect()
         const centerX = rect.left + rect.width / 2
@@ -186,7 +196,7 @@ export const Magnetic = memo(forwardRef<HTMLDivElement, MagneticProps>(
           }
         }
       },
-      [enabled, range, strength, maxOffset, scaleOnHover]
+      [isActive, range, strength, maxOffset, scaleOnHover]
     )
 
     const handleMouseLeave = useCallback(() => {
@@ -201,16 +211,25 @@ export const Magnetic = memo(forwardRef<HTMLDivElement, MagneticProps>(
     }, [])
 
     useEffect(() => {
-      if (!enabled) return
+      if (!isActive) {
+        // Disabled while attracted: return to center instead of staying displaced
+        handleMouseLeave()
+        if (reduceMotion) {
+          springXRef.current?.jump(0)
+          springYRef.current?.jump(0)
+          springScaleRef.current?.jump(1)
+        }
+        return
+      }
 
       window.addEventListener('mousemove', handleMouseMove, { passive: true })
-      window.addEventListener('mouseleave', handleMouseLeave, { passive: true })
+      const removeLeaveListener = onPointerLeaveWindow(handleMouseLeave)
 
       return () => {
         window.removeEventListener('mousemove', handleMouseMove)
-        window.removeEventListener('mouseleave', handleMouseLeave)
+        removeLeaveListener()
       }
-    }, [enabled, handleMouseMove, handleMouseLeave])
+    }, [isActive, reduceMotion, handleMouseMove, handleMouseLeave])
 
     return (
       <div
@@ -315,13 +334,16 @@ export interface MagneticCursorProps {
 export const MagneticCursor = memo(function MagneticCursor({
   children,
   size = 30,
-  config = { stiffness: 150, damping: 15 },
-  offset = { x: 0, y: 0 },
+  config: configProp,
+  offset,
   visible = true,
   zIndex = 9999,
   className,
   style,
 }: MagneticCursorProps) {
+  const config = useStableSpringConfig(configProp, DEFAULT_CURSOR_CONFIG)
+  const offsetX = offset?.x ?? 0
+  const offsetY = offset?.y ?? 0
   const [position, setPosition] = useState({ x: 0, y: 0 })
   const springXRef = useRef<ReturnType<typeof createSpringValue> | null>(null)
   const springYRef = useRef<ReturnType<typeof createSpringValue> | null>(null)
@@ -344,13 +366,13 @@ export const MagneticCursor = memo(function MagneticCursor({
 
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
-      springXRef.current?.set(e.clientX + offset.x)
-      springYRef.current?.set(e.clientY + offset.y)
+      springXRef.current?.set(e.clientX + offsetX)
+      springYRef.current?.set(e.clientY + offsetY)
     }
 
     window.addEventListener('mousemove', handleMouseMove, { passive: true })
     return () => window.removeEventListener('mousemove', handleMouseMove)
-  }, [offset])
+  }, [offsetX, offsetY])
 
   if (!visible) return null
 
@@ -440,10 +462,14 @@ export function useMagnetic(options: UseMagneticOptions = {}): UseMagneticReturn
   const {
     strength = 0.3,
     range = 100,
-    config = { stiffness: 200, damping: 20 },
+    config: configOption,
     enabled = true,
     maxOffset = 50,
   } = options
+  const config = useStableSpringConfig(configOption, DEFAULT_MAGNETIC_CONFIG)
+  // Reduced motion (MotionConfig or OS setting) disables the effect
+  const reduceMotion = useShouldReduceMotion()
+  const isActive = enabled && !reduceMotion
 
   const ref = useRef<HTMLElement>(null)
   const springXRef = useRef<ReturnType<typeof createSpringValue> | null>(null)
@@ -470,7 +496,21 @@ export function useMagnetic(options: UseMagneticOptions = {}): UseMagneticReturn
   }, [config])
 
   useEffect(() => {
-    if (!enabled) return
+    if (!isActive) {
+      // Disabled while attracted: return to center instead of staying displaced
+      if (reduceMotion) {
+        springXRef.current?.jump(0)
+        springYRef.current?.jump(0)
+      } else {
+        springXRef.current?.set(0)
+        springYRef.current?.set(0)
+      }
+      if (isAttractedRef.current) {
+        isAttractedRef.current = false
+        setIsAttracted(false)
+      }
+      return
+    }
 
     const handleMouseMove = (e: MouseEvent) => {
       if (!ref.current) return
@@ -520,13 +560,13 @@ export function useMagnetic(options: UseMagneticOptions = {}): UseMagneticReturn
     }
 
     window.addEventListener('mousemove', handleMouseMove, { passive: true })
-    window.addEventListener('mouseleave', handleMouseLeave, { passive: true })
+    const removeLeaveListener = onPointerLeaveWindow(handleMouseLeave)
 
     return () => {
       window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('mouseleave', handleMouseLeave)
+      removeLeaveListener()
     }
-  }, [enabled, range, strength, maxOffset])
+  }, [isActive, reduceMotion, range, strength, maxOffset])
 
   const reset = useCallback(() => {
     springXRef.current?.set(0)

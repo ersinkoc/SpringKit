@@ -40,6 +40,9 @@ export type {
   VariantTransition,
   Variant,
   Variants,
+  VariantResolver,
+  VariantPreset,
+  VariantPresetName,
   OrchestrationOptions,
   ResolvedVariant,
   OrchestrationSequence,
@@ -107,6 +110,7 @@ export type {
   Parallax,
   ScrollTrigger,
   ScrollLinkedValue,
+  ScrollSmoothing,
 } from './scroll/scroll-linked.js'
 
 // ============ Timeline API ============
@@ -182,11 +186,22 @@ export type {
 export { clamp, lerp, mapRange, degToRad, radToDeg } from './utils/math.js'
 export {
   parseColor,
+  parseColorRGBA,
   rgbToHex,
   hexToRgb,
   hslToRgb,
   rgbToHsl,
+  srgbToLinear,
+  linearToSrgb,
+  linearRgbToOklab,
+  oklabToLinearRgb,
+  rgbToOklab,
+  oklabToRgb,
+  mixColorsRGBA,
+  formatRGBA,
 } from './utils/color.js'
+export type { OKLab, ColorSpace } from './utils/color.js'
+export type { ColorInterpolateOptions } from './interpolation/color.js'
 export {
   validateSpringConfig,
   validateDragConfig,
@@ -207,6 +222,27 @@ export type {
   MotionValueEvent,
   MotionValueOptions,
 } from './core/MotionValue.js'
+
+// ============ Native (compositor) springs ============
+
+export {
+  solveSpring,
+  defineSpring,
+  springEasing,
+  springTransition,
+  supportsLinearEasing,
+  animateNative,
+} from './native/index.js'
+export type {
+  SpringPhysics,
+  SpringState,
+  SpringSolver,
+  PerceptualSpringOptions,
+  SpringEasing,
+  SpringEasingOptions,
+  NativeAnimationOptions,
+  NativeAnimationControls,
+} from './native/index.js'
 
 // ============ Physics Utilities ============
 

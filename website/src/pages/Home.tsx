@@ -1737,10 +1737,10 @@ function AnimatedNumber({ value, suffix = '' }: { value: number; suffix?: string
 
 function Stats() {
   const stats = [
-    { value: 7, suffix: 'KB', label: 'Gzipped', icon: Box },
+    { value: 3, suffix: 'KB', label: 'Gzipped, spring() only', icon: Box },
     { value: 0, suffix: '', label: 'Dependencies', icon: Feather },
     { value: 100, suffix: '%', label: 'TypeScript', icon: Code2 },
-    { value: 380, suffix: '+', label: 'Tests', icon: Timer },
+    { value: 2500, suffix: '+', label: 'Tests', icon: Timer },
   ]
 
   return (
@@ -1773,10 +1773,10 @@ function Stats() {
 
 function ComparisonTable() {
   const libraries = [
-    { name: 'SpringKit', bundle: '~7KB', deps: '0', ts: true, gestures: true, presets: true },
-    { name: 'Framer Motion', bundle: '~45KB', deps: '3', ts: true, gestures: true, presets: true },
-    { name: 'React Spring', bundle: '~25KB', deps: '2', ts: true, gestures: false, presets: false },
-    { name: 'GSAP', bundle: '~60KB', deps: '0', ts: false, gestures: false, presets: false },
+    { name: 'SpringKit', bundle: '45KB · <Animated> 16KB', deps: '0', ts: true, gestures: true, presets: true },
+    { name: 'Framer Motion', bundle: '66KB · motion 41KB', deps: '3', ts: true, gestures: true, presets: true },
+    { name: 'React Spring', bundle: '20KB', deps: '5', ts: true, gestures: false, presets: true },
+    { name: 'GSAP', bundle: '27KB', deps: '0', ts: true, gestures: false, presets: false },
   ]
 
   return (
@@ -1818,6 +1818,11 @@ function ComparisonTable() {
           ))}
         </tbody>
       </table>
+      <p className="text-xs text-white/30 px-4 py-3">
+        Bundle: whole package entry minified + gzipped with esbuild, React external (framer-motion
+        13.5, @react-spring/web 10.1, gsap 3.15; measured October 2026). SpringKit&apos;s figure includes
+        the core. Per-component numbers import only that component.
+      </p>
     </div>
   )
 }
@@ -1833,7 +1838,7 @@ export function Home() {
 
 // Create a bouncy spring animation
 const anim = spring(0, 100, {
-  ...springPresets.bouncy,
+  ...springPresets.bounce,
   onUpdate: (value) => {
     element.style.transform = \`translateX(\${value}px)\`
   },
@@ -1870,11 +1875,11 @@ const drag = createDragSpring(element, {
   rubberBand: true,
   momentum: true,
   bounds: { left: 0, right: 300 },
-  onDrag: ({ x, y, velocity }) => {
-    // Real-time drag updates
+  onUpdate: (x, y) => {
+    element.style.transform = \`translate(\${x}px, \${y}px)\`
   },
-  onRelease: ({ x, y }) => {
-    // Spring back or snap to position
+  onDragEnd: (x, y, velocity) => {
+    // Released: momentum and rubber band take over
   }
 })`
 
@@ -2038,6 +2043,13 @@ const drag = createDragSpring(element, {
 
             <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
               <FeatureCard
+                icon={Cpu}
+                title="Compositor Springs"
+                description="springEasing() compiles spring physics to CSS linear(). The browser plays it off the main thread: smooth under load, zero JavaScript per frame."
+                gradient="bg-gradient-to-br from-emerald-500/20 to-teal-500/20"
+                delay={0}
+              />
+              <FeatureCard
                 icon={Zap}
                 title="Real Spring Physics"
                 description="Based on actual spring equations with configurable stiffness, damping, and mass for natural, believable motion."
@@ -2110,7 +2122,7 @@ const drag = createDragSpring(element, {
               <FeatureCard
                 icon={PenTool}
                 title="SVG Path Animation"
-                description="Line drawing effects with createPathAnimation(). Animate pathLength, pathOffset with spring physics."
+                description="Line drawing effects with createPathAnimation(). Spring-animated stroke drawing with play(), reverse() and set(progress)."
                 gradient="bg-gradient-to-br from-lime-500/20 to-green-500/20"
                 delay={1.0}
               />
@@ -2298,7 +2310,7 @@ const drag = createDragSpring(element, {
                 How It Compares
               </h2>
               <p className="text-white/50 text-lg max-w-2xl mx-auto">
-                SpringKit delivers premium features at a fraction of the bundle size.
+                Physics-first features with honest, measured numbers.
               </p>
             </AnimatedDiv>
 

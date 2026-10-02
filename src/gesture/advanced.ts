@@ -232,17 +232,36 @@ function getCenter(p1: Point, p2: Point): Point {
 }
 
 /**
- * Apply rubber band effect
+ * Apply rubber band effect - overshoot past a limit is scaled down by `factor`
+ * (0 = hard stop, 1 = no resistance). The overshoot is always reduced, never
+ * amplified, so the result stays between the limit and the raw value.
  */
 function rubberBand(value: number, min: number, max: number, factor: number): number {
+  const f = clamp(factor, 0, 1)
   if (value < min) {
-    return min - Math.pow(min - value, factor)
+    return min - (min - value) * f
   }
   if (value > max) {
-    return max + Math.pow(value - max, factor)
+    return max + (value - max) * f
   }
   return value
 }
+
+/**
+ * Normalize an angle difference to the range [-180, 180]
+ */
+function normalizeAngleDelta(delta: number): number {
+  let d = delta % 360
+  if (d > 180) d -= 360
+  if (d < -180) d += 360
+  return d
+}
+
+/**
+ * If the pointer hasn't moved for this long before release, the last
+ * measured velocity is considered stale
+ */
+const VELOCITY_STALE_MS = 100
 
 // ============ Pinch Gesture ============
 
@@ -350,6 +369,15 @@ export function createPinchGesture(
       const currentDistance = getDistance(p1, p2)
       const now = performance.now()
       const dt = now - lastTime
+
+      // Fingers started at the same point - use this as the reference distance
+      // instead of dividing by zero
+      if (initialDistance === 0) {
+        initialDistance = currentDistance
+        initialScale = currentScale
+        lastTime = now
+        return
+      }
 
       // Calculate new scale
       let newScale = initialScale * (currentDistance / initialDistance)
@@ -462,6 +490,9 @@ export function createRotateGesture(
   let startTime = 0
   let lastTime = 0
   let angleOffset = 0
+  // Last raw (wrapped) finger angle and the unwrapped rotation accumulated since start
+  let lastRawAngle = 0
+  let accumulatedDelta = 0
 
   const touches = new Map<number, Point>()
 
@@ -499,6 +530,8 @@ export function createRotateGesture(
       const p1 = touchArray[0]!
       const p2 = touchArray[1]!
       initialAngle = getAngle(p1, p2)
+      lastRawAngle = initialAngle
+      accumulatedDelta = 0
       startTime = performance.now()
       lastTime = startTime
       lastAngle = currentAngle
@@ -525,10 +558,11 @@ export function createRotateGesture(
       const now = performance.now()
       const dt = now - lastTime
 
-      // Calculate angle delta (handle wrap-around)
-      let angleDelta = newAngle - initialAngle
-      if (angleDelta > 180) angleDelta -= 360
-      if (angleDelta < -180) angleDelta += 360
+      // Accumulate the per-move change so wrap-around at ±180° is handled
+      // and rotations beyond half a turn keep counting instead of flipping sign
+      accumulatedDelta += normalizeAngleDelta(newAngle - lastRawAngle)
+      lastRawAngle = newAngle
+      const angleDelta = accumulatedDelta
 
       // Apply threshold
       if (Math.abs(angleDelta) >= threshold) {
@@ -615,25 +649,30 @@ export function createSwipeGesture(
   let startTime = 0
   let lastTime = 0
   let pointerId: number | null = null
+  // Velocity measured between the last two pointer samples (pixels/ms)
+  let moveVelocity: Point = { x: 0, y: 0 }
 
   const createState = (
     event: PointerEvent,
     first = false,
     last = false,
-    direction: SwipeState['direction'] = null
+    direction: SwipeState['direction'] = null,
+    point: Point = { x: event.clientX, y: event.clientY },
+    velocityOverride?: Point,
+    cancelled = false
   ): SwipeState => {
     const now = performance.now()
     const duration = now - startTime
     const dt = now - lastTime
 
     const movement = {
-      x: event.clientX - startPoint.x,
-      y: event.clientY - startPoint.y,
+      x: point.x - startPoint.x,
+      y: point.y - startPoint.y,
     }
 
-    const velocity = {
-      x: dt > 0 ? (event.clientX - lastPoint.x) / dt : 0,
-      y: dt > 0 ? (event.clientY - lastPoint.y) / dt : 0,
+    const velocity = velocityOverride ?? {
+      x: dt > 0 ? (point.x - lastPoint.x) / dt : 0,
+      y: dt > 0 ? (point.y - lastPoint.y) / dt : 0,
     }
 
     return {
@@ -642,7 +681,7 @@ export function createSwipeGesture(
       last,
       event,
       elapsedTime: duration,
-      cancelled: false,
+      cancelled,
       direction,
       velocity,
       distance: movement,
@@ -687,9 +726,11 @@ export function createSwipeGesture(
     lastPoint = { ...startPoint }
     startTime = performance.now()
     lastTime = startTime
+    moveVelocity = { x: 0, y: 0 }
     active = true
 
     element.setPointerCapture(e.pointerId)
+    addSwipeEndGuards()
     onSwipeStart?.(createState(e, true, false))
   }
 
@@ -697,6 +738,13 @@ export function createSwipeGesture(
     if (!enabled || !active || e.pointerId !== pointerId) return
 
     const now = performance.now()
+    const dt = now - lastTime
+    if (dt > 0) {
+      moveVelocity = {
+        x: (e.clientX - lastPoint.x) / dt,
+        y: (e.clientY - lastPoint.y) / dt,
+      }
+    }
     lastPoint = { x: e.clientX, y: e.clientY }
     lastTime = now
   }
@@ -706,8 +754,10 @@ export function createSwipeGesture(
 
     active = false
     pointerId = null
+    removeSwipeEndGuards()
 
-    const duration = performance.now() - startTime
+    const now = performance.now()
+    const duration = now - startTime
 
     // Only detect swipe if within max duration
     if (duration <= maxDuration) {
@@ -715,14 +765,16 @@ export function createSwipeGesture(
         x: e.clientX - startPoint.x,
         y: e.clientY - startPoint.y,
       }
-      const dt = performance.now() - lastTime
-      const velocity = {
-        x: dt > 0 ? (e.clientX - lastPoint.x) / dt : 0,
-        y: dt > 0 ? (e.clientY - lastPoint.y) / dt : 0,
-      }
+      // pointerup usually fires at the same position as the last pointermove,
+      // so fall back to the velocity measured between the last move samples
+      const dt = now - lastTime
+      const movedSinceLastSample = e.clientX !== lastPoint.x || e.clientY !== lastPoint.y
+      const velocity = movedSinceLastSample && dt > 0
+        ? { x: (e.clientX - lastPoint.x) / dt, y: (e.clientY - lastPoint.y) / dt }
+        : dt <= VELOCITY_STALE_MS ? moveVelocity : { x: 0, y: 0 }
 
       const direction = detectDirection(movement, velocity)
-      const state = createState(e, false, true, direction)
+      const state = createState(e, false, true, direction, undefined, velocity)
 
       if (direction) {
         onSwipe?.(state)
@@ -740,10 +792,48 @@ export function createSwipeGesture(
     }
   }
 
+  // A cancelled pointer (e.g. the browser took over for scrolling) must never
+  // be reported as a swipe; its coordinates are not reliable either
+  const handlePointerCancel = (e: PointerEvent) => {
+    if (!active || e.pointerId !== pointerId) return
+
+    active = false
+    pointerId = null
+    removeSwipeEndGuards()
+
+    onSwipeEnd?.(createState(e, false, true, null, lastPoint, { x: 0, y: 0 }, true))
+
+    try {
+      element.releasePointerCapture(e.pointerId)
+    } catch {
+      // Ignore errors if pointer capture was already released
+    }
+  }
+
+  // If the element never receives the pointerup (capture lost because the
+  // element was removed, released outside the window, ...) the gesture would
+  // stay locked. Listen on window during the gesture and treat a lost capture
+  // as a cancel so the state always resets.
+  const handleLostCapture = (e: PointerEvent) => handlePointerCancel(e)
+  const addSwipeEndGuards = () => {
+    element.addEventListener('lostpointercapture', handleLostCapture)
+    if (typeof window !== 'undefined') {
+      window.addEventListener('pointerup', handlePointerUp)
+      window.addEventListener('pointercancel', handlePointerCancel)
+    }
+  }
+  function removeSwipeEndGuards(): void {
+    element.removeEventListener('lostpointercapture', handleLostCapture)
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('pointerup', handlePointerUp)
+      window.removeEventListener('pointercancel', handlePointerCancel)
+    }
+  }
+
   element.addEventListener('pointerdown', handlePointerDown)
   element.addEventListener('pointermove', handlePointerMove)
   element.addEventListener('pointerup', handlePointerUp)
-  element.addEventListener('pointercancel', handlePointerUp)
+  element.addEventListener('pointercancel', handlePointerCancel)
 
   return {
     enable: () => { enabled = true },
@@ -753,7 +843,10 @@ export function createSwipeGesture(
       element.removeEventListener('pointerdown', handlePointerDown)
       element.removeEventListener('pointermove', handlePointerMove)
       element.removeEventListener('pointerup', handlePointerUp)
-      element.removeEventListener('pointercancel', handlePointerUp)
+      element.removeEventListener('pointercancel', handlePointerCancel)
+      removeSwipeEndGuards()
+      active = false
+      pointerId = null
     },
   }
 }
@@ -793,13 +886,13 @@ export function createLongPressGesture(
   let timerId: ReturnType<typeof setTimeout> | null = null
   let pointerId: number | null = null
 
-  const createState = (event: PointerEvent, first = false, last = false): LongPressState => ({
+  const createState = (event: PointerEvent, first = false, last = false, cancelled = false): LongPressState => ({
     active,
     first,
     last,
     event,
     elapsedTime: performance.now() - startTime,
-    cancelled: false,
+    cancelled,
     position: startPoint,
     duration: performance.now() - startTime,
     triggered,
@@ -815,6 +908,7 @@ export function createLongPressGesture(
     triggered = false
 
     element.setPointerCapture(e.pointerId)
+    addPressEndGuards()
     onPressStart?.(createState(e, true, false))
 
     // Start timer for long press
@@ -848,19 +942,37 @@ export function createLongPressGesture(
 
     active = false
     pointerId = null
+    removePressEndGuards()
 
     if (timerId) {
       clearTimeout(timerId)
       timerId = null
     }
 
-    onPressEnd?.(createState(e, false, true))
+    onPressEnd?.(createState(e, false, true, e.type !== 'pointerup'))
 
     // Safety check: element might be removed from DOM
     try {
       element.releasePointerCapture(e.pointerId)
     } catch {
       // Ignore errors if pointer capture was already released
+    }
+  }
+
+  // Reset even when the element never sees the pointerup (see swipe above):
+  // window-level up/cancel during the press, and a lost capture cancels it
+  const addPressEndGuards = () => {
+    element.addEventListener('lostpointercapture', handlePointerUp)
+    if (typeof window !== 'undefined') {
+      window.addEventListener('pointerup', handlePointerUp)
+      window.addEventListener('pointercancel', handlePointerUp)
+    }
+  }
+  function removePressEndGuards(): void {
+    element.removeEventListener('lostpointercapture', handlePointerUp)
+    if (typeof window !== 'undefined') {
+      window.removeEventListener('pointerup', handlePointerUp)
+      window.removeEventListener('pointercancel', handlePointerUp)
     }
   }
 
@@ -882,10 +994,14 @@ export function createLongPressGesture(
     isEnabled: () => enabled,
     destroy: () => {
       if (timerId) clearTimeout(timerId)
+      timerId = null
       element.removeEventListener('pointerdown', handlePointerDown)
       element.removeEventListener('pointermove', handlePointerMove)
       element.removeEventListener('pointerup', handlePointerUp)
       element.removeEventListener('pointercancel', handlePointerUp)
+      removePressEndGuards()
+      active = false
+      pointerId = null
     },
   }
 }

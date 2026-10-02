@@ -15,8 +15,11 @@ export interface Animatable {
   /**
    * Update the animation
    * @param now - Current timestamp from performance.now()
+   * @param deltaTime - Clamped duration of the current loop frame (ms). Useful
+   *   on an animation's first update, when it has no previous timestamp of its
+   *   own (e.g. it was started or retargeted while the loop was running).
    */
-  update(now: number): void
+  update(now: number, deltaTime?: number): void
 
   /**
    * Check if the animation is complete
@@ -47,21 +50,43 @@ const MAX_DELTA_TIME = 64 // ~15.6fps minimum, prevents huge jumps
  * Global animation loop manager
  * Uses requestAnimationFrame to drive all animations
  * Features:
- * - WeakRef-based animation tracking for memory safety
+ * - Strong references to RUNNING animations so fire-and-forget animations
+ *   (whose controller is discarded) are not garbage collected mid-flight
+ * - Animations are released as soon as they complete or are removed, so
+ *   finished animations never leak through the loop
  * - FinalizationRegistry for cleanup callbacks
  * - Frame-drop resilience with delta time clamping
  * - Single-pass update + cleanup for O(n) performance
  * - Frame event listeners for external monitoring
  */
 class AnimationLoop {
-  private animations = new Set<WeakRef<Animatable>>()
-  private animationMap = new WeakMap<Animatable, WeakRef<Animatable>>()
+  // Strong set: an animation must stay alive while it is running, otherwise
+  // `spring(...).start()` without keeping the return value could be GC'd.
+  private animations = new Set<Animatable>()
   private rafId: number | null = null
+  // The scheduler the pending frame was requested with. If the global
+  // requestAnimationFrame is swapped (e.g. a test clock is installed or
+  // removed) the pending frame is moved to the new scheduler, otherwise the
+  // loop would wait on a clock that is no longer driven.
+  private scheduledWith: {
+    request: typeof requestAnimationFrame
+    cancel: typeof cancelAnimationFrame
+  } | null = null
   private isRunning = false
+  private isTicking = false
   private lastTime: number = 0
   private nextId = 1
   private idMap = new WeakMap<Animatable, number>()
   private frameListeners = new Set<(deltaTime: number) => void>()
+  private timeScale = 1
+  private timeScaleListeners = new Set<(scale: number) => void>()
+  /**
+   * Clock that animations see. It advances by the real frame delta times
+   * `timeScale`, so slow motion / pausing needs no support from animations.
+   * Starts at a real timestamp so animations never see time 0.
+   */
+  private animationTime: number =
+    typeof performance !== 'undefined' ? performance.now() : 0
 
   // FinalizationRegistry for automatic cleanup notifications
   // Feature detection for older browsers (Safari < 14.1, IE11)
@@ -72,59 +97,40 @@ class AnimationLoop {
         })
       : null
   private cleanupCallbacks = new Set<CleanupCallback>()
+  private registered = new WeakSet<Animatable>()
 
   /**
    * Add an animation to the loop
-   * Uses WeakRef to prevent memory leaks if animation is garbage collected
+   * The loop holds a strong reference while the animation is active and
+   * releases it on completion or removal.
    * @returns Unique ID for this animation
    */
   add(animation: Animatable): number {
     // Check if already added
     const existingId = this.idMap.get(animation)
-    if (existingId !== undefined) return existingId
+    if (existingId !== undefined && this.animations.has(animation)) return existingId
 
-    // Periodic cleanup of dead WeakRefs to prevent memory bloat
-    // Every 100 additions, clean up dead refs
-    if (this.animations.size > 0 && this.animations.size % 100 === 0) {
-      this.cleanupDeadRefs()
-    }
-
-    const id = this.nextId++
-    const ref = new WeakRef(animation)
-    this.animations.add(ref)
-    this.animationMap.set(animation, ref)
+    const id = existingId ?? this.nextId++
+    this.animations.add(animation)
     this.idMap.set(animation, id)
 
-    // Register for finalization callback
-    // Register for finalization callback only if supported
-    this.registry?.register(animation, id)
+    // Register for finalization callback only if supported (once per object)
+    if (this.registry && !this.registered.has(animation)) {
+      this.registered.add(animation)
+      this.registry.register(animation, id)
+    }
 
     this.start()
+    this.rescheduleIfClockChanged()
     return id
-  }
-
-  /**
-   * Clean up dead WeakRefs from the animations set
-   * Prevents memory bloat from accumulated dead references
-   */
-  private cleanupDeadRefs(): void {
-    for (const ref of this.animations) {
-      if (ref.deref() === undefined) {
-        this.animations.delete(ref)
-      }
-    }
   }
 
   /**
    * Remove an animation from the loop
    */
   remove(animation: Animatable): void {
-    const ref = this.animationMap.get(animation)
-    if (ref) {
-      this.animations.delete(ref)
-      this.animationMap.delete(animation)
+    if (this.animations.delete(animation)) {
       this.idMap.delete(animation)
-      // Note: unregister not strictly needed as registry uses weak refs
     }
     if (this.animations.size === 0) {
       this.stop()
@@ -156,16 +162,49 @@ class AnimationLoop {
     if (this.isRunning) return
     this.isRunning = true
     this.lastTime = performance.now()
+    // If we're inside a tick (e.g. an onComplete callback started a new
+    // animation after the last one was removed), don't tick re-entrantly:
+    // the current tick schedules the next frame itself. Re-entering here
+    // would process animations twice and spawn a second RAF chain.
+    if (this.isTicking) return
     this.tick()
   }
 
   /**
    * Stop the animation loop
    */
+  private scheduleFrame(): void {
+    this.scheduledWith = {
+      request: requestAnimationFrame,
+      cancel: cancelAnimationFrame,
+    }
+    this.rafId = requestAnimationFrame(this.tick)
+  }
+
+  private rescheduleIfClockChanged(): void {
+    if (
+      this.rafId === null ||
+      this.isTicking ||
+      this.scheduledWith === null ||
+      this.scheduledWith.request === requestAnimationFrame
+    ) {
+      return
+    }
+    try {
+      this.scheduledWith.cancel(this.rafId)
+    } catch {
+      // the previous clock may be gone; the stale callback is harmless
+    }
+    this.rafId = null
+    // Timestamps from the old clock are meaningless on the new one
+    this.lastTime = performance.now()
+    this.scheduleFrame()
+  }
+
   private stop(): void {
     this.isRunning = false
     if (this.rafId !== null) {
-      cancelAnimationFrame(this.rafId)
+      ;(this.scheduledWith?.cancel ?? cancelAnimationFrame)(this.rafId)
       this.rafId = null
     }
   }
@@ -173,82 +212,120 @@ class AnimationLoop {
   /**
    * Single animation frame - optimized single-pass update + cleanup
    * Features:
-   * - WeakRef dereferencing with automatic cleanup of dead refs
    * - Delta time clamping for frame-drop resilience
    * - O(n) single-pass performance
    * - Frame listener notifications
    */
   private tick = (): void => {
     const now = performance.now()
+    this.rafId = null
+    this.isTicking = true
 
-    // Calculate and clamp delta time to prevent physics explosions
-    // This handles tab suspension, debugger pauses, etc.
-    const rawDelta = now - this.lastTime
-    const clampedDelta = Math.min(rawDelta, MAX_DELTA_TIME)
-    this.lastTime = now
+    try {
+      // Calculate and clamp delta time to prevent physics explosions
+      // This handles tab suspension, debugger pauses, etc.
+      const rawDelta = now - this.lastTime
+      // (never negative: timestamps can go backwards, e.g. when a test clock
+      // hands over to the real one)
+      const clampedDelta = Math.min(Math.max(rawDelta, 0), MAX_DELTA_TIME)
+      this.lastTime = now
+      const scaledDelta = clampedDelta * this.timeScale
+      this.animationTime += scaledDelta
 
-    // Store frame duration for FPS calculation
-    this.lastFrameDuration = clampedDelta
-
-    // Notify frame listeners (with error isolation)
-    for (const listener of this.frameListeners) {
-      try {
-        listener(clampedDelta)
-      } catch (e) {
-        console.error('[SpringKit] Frame listener error:', e)
-      }
-    }
-
-    // Single pass: update all animations and collect refs to remove
-    const toRemove: WeakRef<Animatable>[] = []
-
-    for (const ref of this.animations) {
-      const animation = ref.deref()
-
-      // If WeakRef is dead (animation was garbage collected), mark for removal
-      if (!animation) {
-        toRemove.push(ref)
-        continue
+      // Store frame duration for FPS calculation (skip the zero-length
+      // synchronous tick on loop start, which would make getFPS() Infinity)
+      if (clampedDelta > 0) {
+        this.lastFrameDuration = clampedDelta
       }
 
-      animation.update(now)
-
-      if (animation.isComplete()) {
-        toRemove.push(ref)
-        this.animationMap.delete(animation)
-        this.idMap.delete(animation)
+      // Notify frame listeners (with error isolation)
+      for (const listener of this.frameListeners) {
+        try {
+          listener(clampedDelta)
+        } catch (e) {
+          console.error('[SpringKit] Frame listener error:', e)
+        }
       }
-    }
 
-    // Remove dead/completed refs
-    for (let i = 0; i < toRemove.length; i++) {
-      this.animations.delete(toRemove[i]!)
+      // Snapshot so animations added during this frame start next frame
+      const current = Array.from(this.animations)
+
+      for (let i = 0; i < current.length; i++) {
+        const animation = current[i]!
+        // Skip animations removed earlier in this frame
+        if (!this.animations.has(animation)) continue
+
+        // Error isolation: one faulty animation must not kill the whole loop
+        // (an uncaught throw here would leave isRunning=true with no RAF
+        // scheduled, freezing every current and future animation)
+        try {
+          animation.update(this.animationTime, scaledDelta)
+        } catch (e) {
+          console.error('[SpringKit] Animation update error:', e)
+        }
+
+        if (animation.isComplete()) {
+          this.animations.delete(animation)
+          this.idMap.delete(animation)
+        }
+      }
+    } finally {
+      this.isTicking = false
     }
 
     // Continue or stop loop
     if (this.animations.size > 0) {
-      this.rafId = requestAnimationFrame(this.tick)
+      this.isRunning = true
+      this.scheduleFrame()
     } else {
       this.stop()
     }
   }
 
   /**
-   * Get the number of active animations (including potentially dead refs)
+   * Slow down, speed up or freeze every loop-driven animation (springs,
+   * spring values, decay, MotionValues...) and every animation started with
+   * `animateNative()`. 1 = normal speed, 0.1 = 10x slow motion, 0 = frozen.
+   * Handy for inspecting motion while developing.
+   *
+   * Animations that run their own clock (e.g. timelines) are not affected.
+   */
+  setTimeScale(scale: number): void {
+    const next = Number.isFinite(scale) && scale > 0 ? scale : 0
+    if (next === this.timeScale) return
+    this.timeScale = next
+    for (const listener of this.timeScaleListeners) {
+      try {
+        listener(next)
+      } catch (e) {
+        console.error('[SpringKit] Time scale listener error:', e)
+      }
+    }
+  }
+
+  /** Current time scale (see {@link setTimeScale}) */
+  getTimeScale(): number {
+    return this.timeScale
+  }
+
+  /** Subscribe to time scale changes; returns an unsubscribe function */
+  onTimeScaleChange(callback: (scale: number) => void): () => void {
+    this.timeScaleListeners.add(callback)
+    return () => this.timeScaleListeners.delete(callback)
+  }
+
+  /**
+   * Get the number of active animations
    */
   get size(): number {
     return this.animations.size
   }
 
   /**
-   * Get count of actually alive animations (for debugging/testing)
+   * Get count of alive (active) animations (for debugging/testing)
    */
   getAliveCount(): number {
-    let count = 0
-    for (const ref of this.animations) {
-      if (ref.deref()) count++
-    }
-    return count
+    return this.animations.size
   }
 
   private lastFrameDuration: number = 16.67 // Default to ~60fps
