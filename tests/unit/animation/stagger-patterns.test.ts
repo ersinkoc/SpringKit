@@ -324,6 +324,11 @@ describe('Stagger Patterns', () => {
   })
 
   describe('staggerPresets', () => {
+    it('uses milliseconds, like every other SpringKit delay option', () => {
+      expect(staggerPresets.cascade(3)).toEqual([0, 50, 100])
+      expect(staggerPresets.reveal(2)).toEqual([0, 150])
+    })
+
     it('should have cascade preset', () => {
       const delays = staggerPresets.cascade(5)
       expect(delays).toHaveLength(5)

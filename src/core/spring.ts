@@ -1,6 +1,11 @@
 import type { SpringConfig } from './config.js'
 import { defaultConfig } from './config.js'
-import { stepSpring } from './physics.js'
+import {
+  springCoefficients,
+  stepSpringInto,
+  type SimulationResult,
+  type SpringCoefficients,
+} from './physics.js'
 import { globalLoop, type Animatable, AnimationState } from '../animation/loop.js'
 import { clamp } from '../utils/math.js'
 import { validateSpringConfig, validateAnimationValue } from '../utils/warnings.js'
@@ -17,6 +22,12 @@ function safeCall<A extends unknown[]>(fn: ((...args: A) => void) | undefined, .
     console.error('[SpringKit] Spring callback error:', e)
   }
 }
+
+/**
+ * Step result shared by every spring so update() allocates nothing. Safe to
+ * share: update() copies the result out before running any user callback.
+ */
+const stepScratch: SimulationResult = { position: 0, velocity: 0, isRest: false }
 
 /**
  * Spring animation control interface
@@ -71,6 +82,11 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
   private clampedTo: number
   private lastUpdateTime: number = 0
   private destroyed = false
+  // Per-frame constants derived once from the physics config (which never
+  // changes after construction)
+  private readonly coefficients: SpringCoefficients
+  private readonly restSpeed: number
+  private readonly restDelta: number
 
   finished!: Promise<void>
 
@@ -100,6 +116,9 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
       restSpeed: config.restSpeed ?? defaultConfig.restSpeed!,
       restDelta: config.restDelta ?? defaultConfig.restDelta!,
     }
+    this.coefficients = springCoefficients(this.config)
+    this.restSpeed = this.config.restSpeed
+    this.restDelta = this.config.restDelta
 
     this.resetFinished()
   }
@@ -228,19 +247,20 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
 
     // Advance with the exact closed-form solution of the spring equation:
     // frame-rate independent, no integration error, one evaluation per frame
-    const result = stepSpring(
+    const result = stepSpringInto(
+      stepScratch,
       this.position,
       this.velocity,
       this.target,
-      this.config,
+      this.coefficients,
+      this.restSpeed,
+      this.restDelta,
       safeElapsed
     )
-    const currentPosition = result.position
-    const currentVelocity = result.velocity
     const isRest = result.isRest
 
-    this.position = currentPosition
-    this.velocity = currentVelocity
+    this.position = result.position
+    this.velocity = result.velocity
 
     // Handle clamping
     if (this.config.clamp) {
@@ -249,8 +269,15 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
       this.position = clamp(this.position, min, max)
     }
 
-    // Emit update
-    safeCall(this.config.onUpdate, this.position)
+    // Emit update (safeCall inlined: no rest-args array per frame)
+    const onUpdate = this.config.onUpdate
+    if (onUpdate) {
+      try {
+        onUpdate(this.position)
+      } catch (e) {
+        console.error('[SpringKit] Spring callback error:', e)
+      }
+    }
 
     // Check rest state
     if (isRest) {

@@ -527,8 +527,10 @@ describe('Animated drag', () => {
     expect(el.style.touchAction).toBe('pan-y')
 
     fireEvent.pointerDown(el, { clientX: 10, clientY: 10 })
-    expect(el.style.cursor).toBe('grabbing')
+    // whileDrag applies once the pointer moved past dragThreshold (3px)
+    expect(el.style.cursor).toBe('')
     pointer('pointermove', { clientX: 60, clientY: 40 })
+    expect(el.style.cursor).toBe('grabbing')
     expect(el.style.transform).toBe('translate3d(50px, 0px, 0px)')
 
     pointer('pointerup', { clientX: 60, clientY: 40 })

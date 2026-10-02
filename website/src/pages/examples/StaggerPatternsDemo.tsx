@@ -28,20 +28,20 @@ import {
 
 // Available stagger patterns (delays in seconds, like the delay passed in)
 const patterns = {
-  linear: (count: number) => linearStagger({ count, delay: 0.05 }),
-  reverse: (count: number) => reverseStagger({ count, delay: 0.05 }),
-  center: (count: number) => centerStagger({ count, delay: 0.08 }),
-  edge: (count: number) => edgeStagger({ count, delay: 0.08 }),
-  wave: (count: number) => waveStagger({ count, delay: 0.1, frequency: 1.5 }),
-  random: (count: number) => randomStagger({ count, delay: 0.05 }),
+  linear: (count: number) => linearStagger({ count, delay: 50 }),
+  reverse: (count: number) => reverseStagger({ count, delay: 50 }),
+  center: (count: number) => centerStagger({ count, delay: 80 }),
+  edge: (count: number) => edgeStagger({ count, delay: 80 }),
+  wave: (count: number) => waveStagger({ count, delay: 100, frequency: 1.5 }),
+  random: (count: number) => randomStagger({ count, delay: 50 }),
 }
 
 // For grid layouts, pass the column count
 const gridPattern = (count: number, cols: number) =>
-  gridStagger({ count, columns: cols, origin: 'top-left', delay: 0.06 })
+  gridStagger({ count, columns: cols, origin: 'top-left', delay: 60 })
 
 const spiralPattern = (count: number, cols: number) =>
-  spiralStagger({ count, columns: cols, direction: 'clockwise', delay: 0.04 })
+  spiralStagger({ count, columns: cols, direction: 'clockwise', delay: 40 })
 
 function StaggerDemo() {
   const [pattern, setPattern] = useState('linear')
@@ -67,7 +67,7 @@ function StaggerDemo() {
           stiffness: 300,
           damping: 15,
         })
-      }, delays[i] * 1000)
+      }, delays[i])
     })
   }
 
@@ -149,23 +149,23 @@ function StaggerDemo() {
   const getDelays = (count: number): number[] => {
     switch (pattern) {
       case 'linear':
-        return linearStagger({ count, delay: 0.05 })
+        return linearStagger({ count, delay: 50 })
       case 'reverse':
-        return reverseStagger({ count, delay: 0.05 })
+        return reverseStagger({ count, delay: 50 })
       case 'center':
-        return centerStagger({ count, delay: 0.08 })
+        return centerStagger({ count, delay: 80 })
       case 'edge':
-        return edgeStagger({ count, delay: 0.08 })
+        return edgeStagger({ count, delay: 80 })
       case 'wave':
-        return waveStagger({ count, delay: 0.1, frequency: 1.5 })
+        return waveStagger({ count, delay: 100, frequency: 1.5 })
       case 'random':
-        return randomStagger({ count, delay: 0.06, seed: Date.now() })
+        return randomStagger({ count, delay: 60, seed: Date.now() })
       case 'grid':
-        return gridStagger({ count, columns: cols, origin: 'top-left', delay: 0.06 })
+        return gridStagger({ count, columns: cols, origin: 'top-left', delay: 60 })
       case 'spiral':
-        return spiralStagger({ count, columns: cols, direction: 'clockwise', delay: 0.04 })
+        return spiralStagger({ count, columns: cols, direction: 'clockwise', delay: 40 })
       default:
-        return linearStagger({ count, delay: 0.05 })
+        return linearStagger({ count, delay: 50 })
     }
   }
 
@@ -195,7 +195,7 @@ function StaggerDemo() {
     // Animate with stagger
     let maxDelay = 0
     items.forEach((item, i) => {
-      const delay = (delays[i] ?? 0) * 1000
+      const delay = delays[i] ?? 0
       if (delay > maxDelay) maxDelay = delay
 
       schedule(() => {

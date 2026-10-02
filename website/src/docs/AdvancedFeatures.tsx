@@ -1092,8 +1092,8 @@ function StaggerPatternsDoc() {
           elements. Go beyond simple linear delays with patterns like center-out, wave,
           spiral, and random. Every pattern takes a config object with the item{' '}
           <code>count</code> and a base <code>delay</code> per step, and returns one delay per item
-          in the same unit as <code>delay</code> (the defaults and presets use seconds, e.g.{' '}
-          <code>0.1</code>; the examples below pass milliseconds).
+          in the same unit as <code>delay</code>. Use milliseconds, like every other SpringKit delay
+          option; the default step and the presets are in milliseconds (e.g. <code>100</code>).
         </p>
       </DocSection>
 
@@ -1239,9 +1239,9 @@ const delays = customStagger({ count: items.length, delay: 30 }, (index, total) 
           <CardContent className="pt-6">
             <CodeBlock code={`import { staggerPresets } from '@oxog/springkit'
 
-// Presets return delays in seconds
-staggerPresets.cascade(items.length)    // quick linear cascade (0.05s steps)
-staggerPresets.reveal(items.length)     // slow linear reveal (0.15s steps)
+// Presets return delays in milliseconds
+staggerPresets.cascade(items.length)    // quick linear cascade (50ms steps)
+staggerPresets.reveal(items.length)     // slow linear reveal (150ms steps)
 staggerPresets.pop(items.length)        // from the center outward
 staggerPresets.ripple(items.length)     // from the edges inward
 staggerPresets.scatter(items.length)    // seeded random

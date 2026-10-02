@@ -5571,7 +5571,7 @@ function gridDistance(index, columns, rows, origin) {
   return Math.sqrt(dx * dx + dy * dy);
 }
 function linearStagger(config) {
-  const { count, delay = 0.1, easing = (t) => t } = config;
+  const { count, delay = 100, easing = (t) => t } = config;
   const delays = [];
   for (let i = 0; i < count; i++) {
     const t = count > 1 ? i / (count - 1) : 0;
@@ -5583,7 +5583,7 @@ function reverseStagger(config) {
   return linearStagger(config).reverse();
 }
 function centerStagger(config) {
-  const { count, delay = 0.1, easing = (t) => t } = config;
+  const { count, delay = 100, easing = (t) => t } = config;
   const delays = [];
   const center = (count - 1) / 2;
   for (let i = 0; i < count; i++) {
@@ -5595,7 +5595,7 @@ function centerStagger(config) {
   return delays;
 }
 function edgeStagger(config) {
-  const { count, delay = 0.1, easing = (t) => t } = config;
+  const { count, delay = 100, easing = (t) => t } = config;
   const delays = [];
   const center = (count - 1) / 2;
   const maxDelay = delay * center;
@@ -5613,7 +5613,7 @@ function gridStagger(config) {
     columns,
     origin = "top-left",
     direction = "diagonal",
-    delay = 0.1,
+    delay = 100,
     easing = (t) => t
   } = config;
   const rows = Math.ceil(count / columns);
@@ -5657,7 +5657,7 @@ function waveStagger(config) {
     direction = "horizontal",
     frequency = 1,
     amplitude = 0.5,
-    delay = 0.1,
+    delay = 100,
     easing = (t) => t
   } = config;
   const delays = [];
@@ -5686,7 +5686,7 @@ function spiralStagger(config) {
     columns,
     direction = "clockwise",
     startFrom = "edge",
-    delay = 0.1,
+    delay = 100,
     easing = (t) => t
   } = config;
   const rows = Math.ceil(count / columns);
@@ -5751,7 +5751,7 @@ function randomStagger(config) {
   const {
     count,
     seed = Date.now(),
-    delay = 0.1,
+    delay = 100,
     minMultiplier = 0,
     maxMultiplier = 1,
     easing = (t) => t
@@ -5767,7 +5767,7 @@ function randomStagger(config) {
   return delays;
 }
 function customStagger(config, fn) {
-  const { count, delay = 0.1 } = config;
+  const { count, delay = 100 } = config;
   const delays = [];
   const maxDelay = delay * (count - 1);
   for (let i = 0; i < count; i++) {
@@ -5784,23 +5784,23 @@ function applyStagger(options, delays) {
 }
 var staggerPresets = {
   /** Quick cascade from first to last */
-  cascade: (count) => linearStagger({ count, delay: 0.05 }),
+  cascade: (count) => linearStagger({ count, delay: 50 }),
   /** Slow reveal from first to last */
-  reveal: (count) => linearStagger({ count, delay: 0.15 }),
+  reveal: (count) => linearStagger({ count, delay: 150 }),
   /** Pop from center outward */
-  pop: (count) => centerStagger({ count, delay: 0.08 }),
+  pop: (count) => centerStagger({ count, delay: 80 }),
   /** Ripple from edges to center */
-  ripple: (count) => edgeStagger({ count, delay: 0.08 }),
+  ripple: (count) => edgeStagger({ count, delay: 80 }),
   /** Random scatter effect */
-  scatter: (count) => randomStagger({ count, delay: 0.1, seed: 42 }),
+  scatter: (count) => randomStagger({ count, delay: 100, seed: 42 }),
   /** Grid diagonal wave */
-  gridWave: (count, columns) => gridStagger({ count, columns, direction: "diagonal", delay: 0.05 }),
+  gridWave: (count, columns) => gridStagger({ count, columns, direction: "diagonal", delay: 50 }),
   /** Grid radial from center */
-  gridRadial: (count, columns) => gridStagger({ count, columns, origin: "center", direction: "radial", delay: 0.05 }),
+  gridRadial: (count, columns) => gridStagger({ count, columns, origin: "center", direction: "radial", delay: 50 }),
   /** Spiral inward */
-  spiralIn: (count, columns) => spiralStagger({ count, columns, startFrom: "edge", delay: 0.05 }),
+  spiralIn: (count, columns) => spiralStagger({ count, columns, startFrom: "edge", delay: 50 }),
   /** Spiral outward */
-  spiralOut: (count, columns) => spiralStagger({ count, columns, startFrom: "center", delay: 0.05 })
+  spiralOut: (count, columns) => spiralStagger({ count, columns, startFrom: "center", delay: 50 })
 };
 
 // src/core/MotionValue.ts

@@ -69,6 +69,27 @@ class SpringValueImpl implements SpringValue {
     // Validate target value
     const validTo = validateAnimationValue(to, 'SpringValue.set')
 
+    // Retarget a running animation in place (same physics): it keeps its
+    // velocity AND its slot in the animation loop. Replacing it with a new
+    // spring would make a value that is retargeted on every frame (e.g. from
+    // another animation's subscriber, as trails do) never advance, because a
+    // spring created during a frame only starts on the next one.
+    const running = this.currentAnimation
+    if (
+      running &&
+      running.isAnimating() &&
+      !running.isPaused() &&
+      Object.keys(config).length === 0
+    ) {
+      // Each set() still gets its own `finished`; the superseded one settles
+      this.resolveComplete?.()
+      this.finishedPromise = new Promise((resolve) => {
+        this.resolveComplete = resolve
+      })
+      running.setWithVelocity(validTo)
+      return
+    }
+
     // Carry over the current velocity when interrupting a running animation
     // so retargeting mid-flight is smooth instead of stopping dead
     const carriedVelocity = this.currentAnimation?.isAnimating()
@@ -83,13 +104,8 @@ class SpringValueImpl implements SpringValue {
       this.resolveComplete?.()
     }
 
-    // Capture resolver in local scope to prevent race condition
-    // Each animation gets its own resolver that won't be overwritten
-    let animationResolver: (() => void) | null = null
-
     // Create new promise for this animation
     this.finishedPromise = new Promise((resolve) => {
-      animationResolver = resolve
       this.resolveComplete = resolve
     })
 
@@ -101,21 +117,23 @@ class SpringValueImpl implements SpringValue {
     const originalOnUpdate = mergedConfig.onUpdate
     const originalOnComplete = mergedConfig.onComplete
 
-    this.currentAnimation = spring(this.value, validTo, {
-      ...mergedConfig,
-      onUpdate: (value) => {
-        if (this.destroyed) return
-        this.value = value
-        this.notify()
-        // Also call original onUpdate if provided
-        originalOnUpdate?.(value)
-      },
-      onComplete: () => {
-        originalOnComplete?.()
-        // Use captured resolver to prevent race condition
-        animationResolver?.()
-      },
-    })
+    // mergedConfig is a private copy: wire the callbacks into it directly
+    // (spring() copies its config, so no further spread is needed here)
+    mergedConfig.onUpdate = (value) => {
+      if (this.destroyed) return
+      this.value = value
+      this.notify()
+      // Also call original onUpdate if provided
+      originalOnUpdate?.(value)
+    }
+    mergedConfig.onComplete = () => {
+      originalOnComplete?.()
+      // Resolve the promise of the latest set(): a running spring may have
+      // been retargeted (see above) since it was created. Replaced springs
+      // are destroyed and never complete, so this can't resolve early.
+      this.resolveComplete?.()
+    }
+    this.currentAnimation = spring(this.value, validTo, mergedConfig)
 
     this.currentAnimation.start()
   }

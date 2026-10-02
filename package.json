@@ -86,6 +86,7 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.test.json",
     "lint": "eslint src tests",
     "lint:package": "publint --strict && attw --pack .",
+    "bench": "node scripts/bench.mjs",
     "prepublishOnly": "npm run typecheck && npm run lint && npm run build && npm run test:all"
   },
   "devDependencies": {

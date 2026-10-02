@@ -27,6 +27,8 @@
 - **Animations you can test.** `@oxog/springkit/testing` installs a virtual clock, so tests run frame-perfect and instantly with no flaky timeouts.
 - **Design in milliseconds, not stiffness.** `defineSpring({ duration: 400, bounce: 0.2 })` uses the same perceptual model as SwiftUI and Jetpack Compose.
 - **Small where it counts.** The `<Animated>` component (gestures, drag, presence, variants) is ~16 KB min+gzip including the physics core, compared with ~41 KB for Framer Motion's `motion` component (esbuild, React external, framer-motion 13.5, measured October 2026).
+- **Fast.** The per-frame path allocates nothing and shares spring constants between springs; `npm run bench` measures 100 / 1,000 / 10,000 concurrent springs.
+- **SSR-safe.** Every React export is tested with `renderToString` in Node and with hydration in the browser.
 - **Framework-agnostic core, first-class React.** Zero dependencies and tree-shakeable. The React entry shares the core's single animation loop and works with Server Components.
 
 ## Features

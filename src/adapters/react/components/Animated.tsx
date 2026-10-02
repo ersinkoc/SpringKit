@@ -94,14 +94,17 @@ export interface AnimatedElementProps
   /** Callback when tap/press starts */
   onTapStart?: (event: React.PointerEvent) => void
 
-  /** Callback when tap/press ends */
+  /**
+   * Callback when tap/press ends on the element. On a draggable element, a
+   * press that turned into a drag (moved past `dragThreshold`) is not a tap.
+   */
   onTap?: (event: React.PointerEvent) => void
 
   /**
-   * Callback when a press ends without a tap: the pointer is cancelled, or it is
+   * Callback when a press ends without a tap: the pointer is cancelled, it is
    * released outside the element (including after leaving the element while
-   * pressed). For a release outside the element there is no React event, so the
-   * native `PointerEvent` is passed.
+   * pressed), or the press turned into a drag. For a release outside the
+   * element there is no React event, so the native `PointerEvent` is passed.
    */
   // Method syntax keeps handlers typed `(e: React.PointerEvent) => void` assignable
   onTapCancel?(event: React.PointerEvent | PointerEvent): void
@@ -264,10 +267,12 @@ function createAnimatedComponent<T extends React.ElementType>(
         dragTransition,
         dragSnapToOrigin,
         dragDirectionLock,
+        dragThreshold,
         onDirectionLock,
         onDragStart,
         onDrag,
         onDragEnd,
+        onDragTransitionEnd,
         onMouseEnter: propsOnMouseEnter,
         onMouseLeave: propsOnMouseLeave,
         onPointerEnter: propsOnPointerEnter,
@@ -309,7 +314,7 @@ function createAnimatedComponent<T extends React.ElementType>(
       onTapCancelRef.current = onTapCancel
 
       // Drag gesture: offset applied on top of the animated transform
-      const { dragOffset, isDragging, startDrag } = useAnimatedDrag(
+      const { dragOffset, isDragging, startDrag, getDragCount } = useAnimatedDrag(
         {
           drag,
           dragControls,
@@ -320,13 +325,18 @@ function createAnimatedComponent<T extends React.ElementType>(
           dragTransition,
           dragSnapToOrigin,
           dragDirectionLock,
+          dragThreshold,
           onDirectionLock,
           onDragStart,
           onDrag,
           onDragEnd,
+          onDragTransitionEnd,
         },
         elementRef
       )
+      // Drag count at the last pointerdown: a press that turned into a drag is
+      // not a tap
+      const pressDragCountRef = useRef(0)
 
       // Get presence context for exit animations
       const presenceContext = useContext(PresenceContext)
@@ -359,6 +369,14 @@ function createAnimatedComponent<T extends React.ElementType>(
         // Capture element at effect creation time
         const element = elementRef.current
         if (!element) return
+
+        // No IntersectionObserver (old browsers, some WebViews): treat the
+        // element as visible rather than crashing
+        if (typeof IntersectionObserver === 'undefined') {
+          hasTriggeredInView.current = true
+          setIsInViewport(true)
+          return
+        }
 
         const threshold = viewport?.amount === 'all' ? 1 :
                          viewport?.amount === 'some' ? 0 :
@@ -526,7 +544,12 @@ function createAnimatedComponent<T extends React.ElementType>(
             // Use requestAnimationFrame to ensure spring is ready
             rafId = safeRequestAnimationFrame(() => {
               rafId = null
-              if (!isDestroyedRef.current) {
+              if (isDestroyedRef.current) return
+              // The reduced-motion preference may have arrived since mount
+              // (e.g. right after hydration): don't play the entrance then
+              if (reducedMotionRef.current) {
+                spring.jump(target)
+              } else {
                 spring.set(target)
               }
             })
@@ -552,6 +575,10 @@ function createAnimatedComponent<T extends React.ElementType>(
         if (!spring) return
 
         const target = getNumericTarget()
+        // Reduced motion switched on mid-animation: finish it immediately
+        if (reducedMotion && spring.isAnimating() && lastTargetRef.current) {
+          spring.jump(lastTargetRef.current)
+        }
         if (shallowEqualValues(lastTargetRef.current, target)) return
         lastTargetRef.current = target
 
@@ -657,6 +684,7 @@ function createAnimatedComponent<T extends React.ElementType>(
       const handlePointerDown = useCallback((e: React.PointerEvent) => {
         if (e.pointerType) lastPointerTypeRef.current = e.pointerType
         isPressedRef.current = true
+        pressDragCountRef.current = getDragCount()
         if (whileTap) setIsPressed(true)
 
         // Releasing outside the element cancels the tap. A release on the element
@@ -677,17 +705,22 @@ function createAnimatedComponent<T extends React.ElementType>(
 
         onTapStart?.(e)
         propsOnPointerDown?.(e as React.PointerEvent<HTMLElement>)
-      }, [whileTap, onTapStart, propsOnPointerDown, endPress])
+      }, [whileTap, onTapStart, propsOnPointerDown, endPress, getDragCount])
 
       const handlePointerUp = useCallback((e: React.PointerEvent) => {
         // A press cancelled by leaving the element is left to the global
         // listener, which reports it through onTapCancel
         if (isPressedRef.current) {
           endPress()
-          onTap?.(e)
+          // A press that turned into a drag (past dragThreshold) is not a tap
+          if (getDragCount() !== pressDragCountRef.current) {
+            onTapCancel?.(e)
+          } else {
+            onTap?.(e)
+          }
         }
         propsOnPointerUp?.(e as React.PointerEvent<HTMLElement>)
-      }, [onTap, propsOnPointerUp, endPress])
+      }, [onTap, onTapCancel, propsOnPointerUp, endPress, getDragCount])
 
       const handlePointerCancel = useCallback((e: React.PointerEvent) => {
         if (isPressedRef.current || removeGlobalPressListenersRef.current) {

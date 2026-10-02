@@ -2,6 +2,10 @@ import { useState, useRef, useEffect, useCallback, type RefObject } from 'react'
 import { isBrowser } from '../utils/ssr.js'
 import { useElementEffect } from './useElementEffect.js'
 
+function hasIntersectionObserver(): boolean {
+  return typeof IntersectionObserver !== 'undefined'
+}
+
 export interface UseInViewOptions {
   /**
    * Only trigger once when element enters viewport
@@ -107,6 +111,14 @@ export function useInView(options: UseInViewOptions = {}): UseInViewReturn {
     // Skip if already triggered with once option
     if (once && hasTriggered.current) return
 
+    // No IntersectionObserver (old browsers / some WebViews): treat the element
+    // as visible rather than throwing, so in-view gated content still appears
+    if (!hasIntersectionObserver()) {
+      hasTriggered.current = true
+      setInView(true)
+      return
+    }
+
     // Calculate threshold
     let threshold: number | number[]
     if (amount === 'some') {
@@ -189,6 +201,7 @@ export function useInViewCallback(
     if (!element) return
 
     if (once && hasTriggered.current) return
+    if (!hasIntersectionObserver()) return
 
     let threshold: number
     if (amount === 'some') {
@@ -266,7 +279,7 @@ export function useInViewMultiple(options: UseInViewOptions = {}) {
   onceRef.current = once
 
   useEffect(() => {
-    if (!isBrowser) return
+    if (!isBrowser || !hasIntersectionObserver()) return
 
     let threshold: number
     if (amount === 'some') {

@@ -98,19 +98,21 @@ describe('Animated drag callbacks', () => {
     )
     const el = screen.getByTestId('el')
 
+    // The drag starts once the pointer moved dragThreshold (3px), not on pointerdown
     down(el, 10, 20)
-    expect(onDragStart).toHaveBeenCalledTimes(1)
-    const [startEvent, startInfo] = onDragStart.mock.calls[0] as [PointerEvent, PanInfo]
-    expect(startEvent.type).toBe('pointerdown')
-    expect(startInfo).toEqual({
-      point: { x: 10, y: 20 },
-      delta: { x: 0, y: 0 },
-      offset: { x: 0, y: 0 },
-      velocity: { x: 0, y: 0 },
-    })
+    expect(onDragStart).not.toHaveBeenCalled()
 
     advance(16)
     move(26, 20)
+    expect(onDragStart).toHaveBeenCalledTimes(1)
+    const [startEvent, startInfo] = onDragStart.mock.calls[0] as [PointerEvent, PanInfo]
+    expect(startEvent.type).toBe('pointermove')
+    expect(startInfo.point).toEqual({ x: 26, y: 20 })
+    expect(startInfo.offset).toEqual({ x: 16, y: 0 })
+    expect(startInfo.delta).toEqual({ x: 16, y: 0 })
+    // onDrag reports the same move
+    expect(onDrag).toHaveBeenCalledTimes(1)
+    expect((onDrag.mock.calls[0] as [PointerEvent, PanInfo])[1]).toBe(startInfo)
     advance(16)
     move(42, 28)
     expect(onDrag).toHaveBeenCalledTimes(2)

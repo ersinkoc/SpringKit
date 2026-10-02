@@ -35,6 +35,9 @@ npm run lint
 # Validate published package shape (publint + arethetypeswrong; needs a build)
 npm run lint:package
 
+# Per-frame benchmark (100 / 1k / 10k springs; needs a build)
+npm run bench
+
 # Typecheck + lint + build + all tests (runs automatically on publish)
 npm run prepublishOnly
 ```
@@ -119,6 +122,10 @@ Destroy such instances via `hooks/useDestroyOnUnmount.ts` (defers destroy by a m
 **Components** (`src/adapters/react/components/`):
 - `Animated.tsx`: Base animated element with gesture props (`whileHover`, `whileTap`, etc.)
 - `AnimatePresence.tsx` + `PresenceChild.tsx`: Exit animation coordination
+
+### SSR
+
+`tests/unit/react/ssr-render.test.tsx` (`// @vitest-environment node`) renders every React export with `renderToString` and fails if a new export has no SSR case — add one when adding an export. `ssr-hydration.test.tsx` hydrates in jsdom. Browser APIs (window, matchMedia, IntersectionObserver, ResizeObserver, rAF) only inside effects/handlers, and guard for their absence; server and first client render must match.
 
 ### Test Configuration
 

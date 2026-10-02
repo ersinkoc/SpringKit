@@ -77,14 +77,10 @@ export function solveSpring(
   // Near-critical damping is solved as critical (see springMotion)
   const isCritical = Math.abs(zeta - 1) < 1e-6
   const motion = springMotion({ stiffness, damping, mass }, x0, v0)
-  const displacement = (t: number): SpringState => {
-    const s = motion(t)
-    return { value: s.position, velocity: s.velocity }
-  }
 
   const isSettled = (t: number) => {
-    const s = displacement(t / 1000)
-    return Math.abs(s.value) <= restDelta && Math.abs(s.velocity) <= restSpeed
+    const s = motion(t / 1000)
+    return Math.abs(s.position) <= restDelta && Math.abs(s.velocity) <= restSpeed
   }
 
   // Find the first moment the spring is at rest and stays there. The envelope
@@ -118,8 +114,8 @@ export function solveSpring(
     at(t: number): SpringState {
       if (!(t > 0)) return { value: from, velocity: v0 }
       if (t >= duration) return { value: to, velocity: 0 }
-      const s = displacement(t / 1000)
-      return { value: to + s.value, velocity: s.velocity }
+      const s = motion(t / 1000)
+      return { value: to + s.position, velocity: s.velocity }
     },
   }
 }

@@ -198,11 +198,10 @@ export function LazyMotion({
     isLoaded,
   }), [loadedFeatures, strict, isLoaded])
 
-  // Show nothing or a fallback while loading
-  if (!isLoaded) {
-    return React.createElement(React.Fragment, null, null)
-  }
-
+  // Children always render, also while async features load: the content must be
+  // part of the server-rendered HTML (SSR) and of the first client render.
+  // Until loading completes `isLoaded` is false, so `useMotionFeature` reports
+  // every feature as unavailable and `MotionFeatureGuard` shows its fallback.
   return React.createElement(
     LazyMotionContext.Provider,
     { value: contextValue },

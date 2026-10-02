@@ -2,8 +2,12 @@ import { beforeEach } from 'vitest'
 import { cleanup } from '@testing-library/react'
 import '@testing-library/jest-dom'
 
+// The DOM polyfills below only apply to DOM environments (jsdom). SSR tests run
+// with `// @vitest-environment node` and must see a server-like global scope.
+const hasDOM = typeof window !== 'undefined'
+
 // Mock IntersectionObserver
-if (typeof global.IntersectionObserver === 'undefined') {
+if (hasDOM && typeof global.IntersectionObserver === 'undefined') {
   global.IntersectionObserver = class IntersectionObserver {
     readonly root: Element | null = null
     readonly rootMargin: string = '0px'
@@ -34,7 +38,7 @@ if (typeof global.IntersectionObserver === 'undefined') {
 }
 
 // Mock ResizeObserver
-if (typeof global.ResizeObserver === 'undefined') {
+if (hasDOM && typeof global.ResizeObserver === 'undefined') {
   global.ResizeObserver = class ResizeObserver {
     private callback: ResizeObserverCallback
 
@@ -49,7 +53,7 @@ if (typeof global.ResizeObserver === 'undefined') {
 }
 
 // Polyfill for PointerEvent in JSDOM environment
-if (typeof global.PointerEvent === 'undefined') {
+if (hasDOM && typeof global.PointerEvent === 'undefined') {
   // @ts-expect-error - Polyfilling missing API
   global.PointerEvent = class PointerEvent extends MouseEvent {
     public pointerId: number

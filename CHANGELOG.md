@@ -26,6 +26,7 @@ Recommended release: **2.0.0** (see "Behavior changes").
 - **`stagger()` with a numeric `delay` actually staggers**: item k steps away
   from `from` starts after `k * delay` (before, every item got the same delay).
   `from: 'center'` fans out symmetrically.
+- **Stagger pattern presets and defaults are in milliseconds** (`staggerPresets.cascade(3)` → `[0, 50, 100]`, default step 100). They used seconds, so combining them with SpringKit's ms-based `delay` options produced sub-millisecond, invisible staggers. Divide by 1000 if you fed them to a seconds-based API.
 - **`animate()` arrays are `[from, ...to]`**: the first entry is the start
   value (Framer Motion convention).
 - **`configFromDuration()` / `configFromBounce()`** return physically derived
@@ -38,6 +39,13 @@ Recommended release: **2.0.0** (see "Behavior changes").
 - `Animated` props: `onDrag`, `onDragStart`, `onDragEnd` are now the drag
   gesture callbacks `(event, info)` (Framer Motion style), replacing the native
   HTML5 drag handlers of the same name.
+- **Drag starts after a 3px threshold** (like Framer Motion): a click on a
+  draggable `Animated` element fires no drag callbacks, and `onDragStart` /
+  `whileDrag` begin on the move that crosses the threshold. Use
+  `dragThreshold={0}` for the previous behavior. A press that turns into a drag
+  fires `onTapCancel` instead of `onTap`.
+- `LazyMotion` always renders its children (also on the server); while async
+  features load, `isLoaded` is false.
 - Trail `reverse` reverses the stagger order; `children` receive the real
   index.
 - Plain DOM children of `AnimatePresence` (no exit animation) are removed
@@ -72,6 +80,10 @@ Recommended release: **2.0.0** (see "Behavior changes").
   `dragTransition`, `dragSnapToOrigin`, `dragDirectionLock`,
   `onDragStart`/`onDrag`/`onDragEnd` with `{ point, delta, offset, velocity }`.
 - **`AnimatePresence mode="popLayout"`.**
+- Drag: `onDragTransitionEnd`, `dragControls.cancel()`, `dragThreshold`,
+  pointer capture, ref constraints re-measured on resize, one `useDragControls`
+  driving several elements.
+- `npm run bench`: per-frame benchmark for 100 / 1,000 / 10,000 springs.
 - **`createMotionComponent(tag, { variants, spring })`** (previously threw
   "not implemented"); `VariantProvider` passes `staggerIndex`/`staggerCount`
   to its direct children so `staggerChildren` works.
@@ -82,7 +94,22 @@ Recommended release: **2.0.0** (see "Behavior changes").
   config; FLIP `correctBorderRadius`; drag `lockToDiagonal` and
   `elasticBounce`; `createSharedLayoutContext().createGroup(id, config)`.
 
+### Performance
+- The per-frame path is allocation-free and shares spring constants between
+  springs with the same config: 2-3x less time per frame at 1,000+ running
+  springs, with bit-identical output.
+
 ### Fixed (audit: about 125 bugs, each with a regression test)
+- **Third pass:** a `SpringValue` retargeted on every frame from another
+  animation (trails, values linked through subscribers) never advanced,
+  because each `set()` replaced the running spring; it is now retargeted in
+  place, keeping its velocity. `createTrail({ followDelay: 0 })` never moved.
+  SSR/hydration: `MotionConfig` caused a hydration mismatch for users who
+  prefer reduced motion; `Animated` still played its entrance when the
+  preference arrived after hydration; `useInView`, `Parallax` and
+  `whileInView` crashed without `IntersectionObserver`. Drag: a child calling
+  `stopPropagation()` on pointerup left the drag stuck; a handle inside the
+  draggable element started two gestures.
 - **Second pass:** `useInView`, `useInViewCallback`, `useScroll` and `usePointer`
   now work with elements that mount later; `useScroll({ axis: 'x' })`;
   `useScrollVelocity` decays to 0; physics hooks read the latest options;

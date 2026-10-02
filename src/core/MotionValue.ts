@@ -293,14 +293,15 @@ export class MotionValue<T = number> {
   }
 
   private _notify(): void {
-    this._subscribers.forEach((callback) => {
+    // for...of instead of forEach: no closure allocated per notification
+    for (const callback of this._subscribers) {
       try {
         callback(this._value)
       } catch (e) {
         console.error('MotionValue subscriber error:', e)
       }
-    })
-    this._emit('change')
+    }
+    if (this._eventListeners.size !== 0) this._emit('change')
   }
 
   /**
@@ -313,13 +314,15 @@ export class MotionValue<T = number> {
   }
 
   private _emit(event: MotionValueEvent): void {
-    this._eventListeners.get(event)?.forEach((callback) => {
+    const listeners = this._eventListeners.get(event)
+    if (!listeners) return
+    for (const callback of listeners) {
       try {
         callback()
       } catch (e) {
         console.error(`MotionValue ${event} listener error:`, e)
       }
-    })
+    }
   }
 }
 

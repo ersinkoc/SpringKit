@@ -78,6 +78,15 @@ class AnimationLoop {
   private nextId = 1
   private idMap = new WeakMap<Animatable, number>()
   private frameListeners = new Set<(deltaTime: number) => void>()
+  /** Reusable per-frame snapshot of `animations` (see tick) */
+  private snapshot: (Animatable | undefined)[] = []
+  private snapshotInUse = false
+  /**
+   * Animations removed from `animations` during the current tick and not
+   * re-added since, so a snapshot entry is live iff it is not in here. While
+   * it is empty (the common case) the tick skips a hash lookup per animation.
+   */
+  private removedDuringTick = new Set<Animatable>()
   private timeScale = 1
   private timeScaleListeners = new Set<(scale: number) => void>()
   /**
@@ -113,6 +122,7 @@ class AnimationLoop {
     const id = existingId ?? this.nextId++
     this.animations.add(animation)
     this.idMap.set(animation, id)
+    if (this.snapshotInUse) this.removedDuringTick.delete(animation)
 
     // Register for finalization callback only if supported (once per object)
     if (this.registry && !this.registered.has(animation)) {
@@ -131,6 +141,7 @@ class AnimationLoop {
   remove(animation: Animatable): void {
     if (this.animations.delete(animation)) {
       this.idMap.delete(animation)
+      if (this.snapshotInUse) this.removedDuringTick.add(animation)
     }
     if (this.animations.size === 0) {
       this.stop()
@@ -247,26 +258,45 @@ class AnimationLoop {
         }
       }
 
-      // Snapshot so animations added during this frame start next frame
-      const current = Array.from(this.animations)
+      // Snapshot so animations added during this frame start next frame.
+      // The snapshot buffer is reused across frames instead of allocating a
+      // new array per frame (a nested tick, which only a test clock driven
+      // from inside a callback can produce, gets its own array).
+      const reuse = !this.snapshotInUse
+      const current = reuse ? this.snapshot : []
+      let count = 0
+      for (const animation of this.animations) current[count++] = animation
+      this.snapshotInUse = true
+      const removed = this.removedDuringTick
 
-      for (let i = 0; i < current.length; i++) {
-        const animation = current[i]!
-        // Skip animations removed earlier in this frame
-        if (!this.animations.has(animation)) continue
+      try {
+        for (let i = 0; i < count; i++) {
+          const animation = current[i]!
+          // Skip animations removed earlier in this frame (equivalent to
+          // `!this.animations.has(animation)`, see removedDuringTick)
+          if (removed.size !== 0 && removed.has(animation)) continue
 
-        // Error isolation: one faulty animation must not kill the whole loop
-        // (an uncaught throw here would leave isRunning=true with no RAF
-        // scheduled, freezing every current and future animation)
-        try {
-          animation.update(this.animationTime, scaledDelta)
-        } catch (e) {
-          console.error('[SpringKit] Animation update error:', e)
+          // Error isolation: one faulty animation must not kill the whole loop
+          // (an uncaught throw here would leave isRunning=true with no RAF
+          // scheduled, freezing every current and future animation)
+          try {
+            animation.update(this.animationTime, scaledDelta)
+          } catch (e) {
+            console.error('[SpringKit] Animation update error:', e)
+          }
+
+          if (animation.isComplete() && this.animations.delete(animation)) {
+            this.idMap.delete(animation)
+            // Matters for a nested tick whose outer snapshot holds it too
+            removed.add(animation)
+          }
         }
-
-        if (animation.isComplete()) {
-          this.animations.delete(animation)
-          this.idMap.delete(animation)
+      } finally {
+        if (reuse) {
+          // Drop the references so finished animations can be collected
+          current.fill(undefined, 0, count)
+          removed.clear()
+          this.snapshotInUse = false
         }
       }
     } finally {

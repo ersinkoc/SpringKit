@@ -21,12 +21,16 @@ function ShowConfig() {
   )
 }
 
+// Tests below install their own matchMedia; restore whatever was there
+// before (deleting it would leak into later test files)
+const originalMatchMedia = Object.getOwnPropertyDescriptor(window, 'matchMedia')
+
 describe('MotionConfig (regressions)', () => {
   afterEach(() => {
     cleanup()
     vi.restoreAllMocks()
-    // @ts-expect-error - cleanup of test mock
-    delete window.matchMedia
+    if (originalMatchMedia) Object.defineProperty(window, 'matchMedia', originalMatchMedia)
+    else delete (window as { matchMedia?: unknown }).matchMedia
   })
 
   it('nested MotionConfig inherits reducedMotion and initial from its parent', () => {

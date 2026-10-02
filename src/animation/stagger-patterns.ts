@@ -15,7 +15,10 @@ import { clamp } from '../utils/math.js'
 export interface StaggerPatternConfig {
   /** Total number of items */
   count: number
-  /** Base delay between items (seconds) */
+  /**
+   * Base delay between items. The result uses the same unit; SpringKit's
+   * delay options (stagger, keyframes, variants) are in milliseconds
+   */
   delay?: number
   /** Easing function for delay distribution */
   easing?: (t: number) => number
@@ -138,12 +141,12 @@ function gridDistance(
  *
  * @example
  * ```ts
- * const delays = linearStagger({ count: 10, delay: 0.1 })
- * // [0, 0.1, 0.2, 0.3, ...]
+ * const delays = linearStagger({ count: 10, delay: 100 })
+ * // [0, 100, 200, 300, ...]
  * ```
  */
 export function linearStagger(config: StaggerPatternConfig): number[] {
-  const { count, delay = 0.1, easing = (t) => t } = config
+  const { count, delay = 100, easing = (t) => t } = config
   const delays: number[] = []
 
   for (let i = 0; i < count; i++) {
@@ -166,12 +169,12 @@ export function reverseStagger(config: StaggerPatternConfig): number[] {
  *
  * @example
  * ```ts
- * const delays = centerStagger({ count: 5, delay: 0.1 })
+ * const delays = centerStagger({ count: 5, delay: 100 })
  * // Center items animate first, edges last
  * ```
  */
 export function centerStagger(config: StaggerPatternConfig): number[] {
-  const { count, delay = 0.1, easing = (t) => t } = config
+  const { count, delay = 100, easing = (t) => t } = config
   const delays: number[] = []
   const center = (count - 1) / 2
 
@@ -189,7 +192,7 @@ export function centerStagger(config: StaggerPatternConfig): number[] {
  * Create edge-in stagger delays (edges first, center last)
  */
 export function edgeStagger(config: StaggerPatternConfig): number[] {
-  const { count, delay = 0.1, easing = (t) => t } = config
+  const { count, delay = 100, easing = (t) => t } = config
   const delays: number[] = []
   const center = (count - 1) / 2
   const maxDelay = delay * center
@@ -214,7 +217,7 @@ export function edgeStagger(config: StaggerPatternConfig): number[] {
  *   columns: 4,
  *   origin: 'center',
  *   direction: 'radial',
- *   delay: 0.05,
+ *   delay: 50,
  * })
  * ```
  */
@@ -224,7 +227,7 @@ export function gridStagger(config: GridStaggerConfig): number[] {
     columns,
     origin = 'top-left',
     direction = 'diagonal',
-    delay = 0.1,
+    delay = 100,
     easing = (t) => t,
   } = config
 
@@ -290,7 +293,7 @@ export function gridStagger(config: GridStaggerConfig): number[] {
  *   direction: 'horizontal',
  *   frequency: 2,
  *   amplitude: 0.5,
- *   delay: 0.1,
+ *   delay: 100,
  * })
  * ```
  */
@@ -300,7 +303,7 @@ export function waveStagger(config: WaveStaggerConfig): number[] {
     direction = 'horizontal',
     frequency = 1,
     amplitude = 0.5,
-    delay = 0.1,
+    delay = 100,
     easing = (t) => t,
   } = config
 
@@ -344,7 +347,7 @@ export function waveStagger(config: WaveStaggerConfig): number[] {
  *   columns: 4,
  *   direction: 'clockwise',
  *   startFrom: 'edge',
- *   delay: 0.1,
+ *   delay: 100,
  * })
  * ```
  */
@@ -354,7 +357,7 @@ export function spiralStagger(config: SpiralStaggerConfig): number[] {
     columns,
     direction = 'clockwise',
     startFrom = 'edge',
-    delay = 0.1,
+    delay = 100,
     easing = (t) => t,
   } = config
 
@@ -445,7 +448,7 @@ export function spiralStagger(config: SpiralStaggerConfig): number[] {
  * const delays = randomStagger({
  *   count: 10,
  *   seed: 12345, // Reproducible
- *   delay: 0.1,
+ *   delay: 100,
  *   minMultiplier: 0,
  *   maxMultiplier: 1,
  * })
@@ -455,7 +458,7 @@ export function randomStagger(config: RandomStaggerConfig): number[] {
   const {
     count,
     seed = Date.now(),
-    delay = 0.1,
+    delay = 100,
     minMultiplier = 0,
     maxMultiplier = 1,
     easing = (t) => t,
@@ -481,7 +484,7 @@ export function randomStagger(config: RandomStaggerConfig): number[] {
  * ```ts
  * const delays = customStagger({
  *   count: 10,
- *   delay: 0.1,
+ *   delay: 100,
  * }, (index, total) => {
  *   // Custom pattern: faster in middle
  *   const center = (total - 1) / 2
@@ -493,7 +496,7 @@ export function customStagger(
   config: StaggerPatternConfig,
   fn: CustomStaggerFn
 ): number[] {
-  const { count, delay = 0.1 } = config
+  const { count, delay = 100 } = config
   const delays: number[] = []
   const maxDelay = delay * (count - 1)
 
@@ -535,33 +538,33 @@ export function applyStagger<T extends { delay?: number }>(
  */
 export const staggerPresets = {
   /** Quick cascade from first to last */
-  cascade: (count: number) => linearStagger({ count, delay: 0.05 }),
+  cascade: (count: number) => linearStagger({ count, delay: 50 }),
 
   /** Slow reveal from first to last */
-  reveal: (count: number) => linearStagger({ count, delay: 0.15 }),
+  reveal: (count: number) => linearStagger({ count, delay: 150 }),
 
   /** Pop from center outward */
-  pop: (count: number) => centerStagger({ count, delay: 0.08 }),
+  pop: (count: number) => centerStagger({ count, delay: 80 }),
 
   /** Ripple from edges to center */
-  ripple: (count: number) => edgeStagger({ count, delay: 0.08 }),
+  ripple: (count: number) => edgeStagger({ count, delay: 80 }),
 
   /** Random scatter effect */
-  scatter: (count: number) => randomStagger({ count, delay: 0.1, seed: 42 }),
+  scatter: (count: number) => randomStagger({ count, delay: 100, seed: 42 }),
 
   /** Grid diagonal wave */
   gridWave: (count: number, columns: number) =>
-    gridStagger({ count, columns, direction: 'diagonal', delay: 0.05 }),
+    gridStagger({ count, columns, direction: 'diagonal', delay: 50 }),
 
   /** Grid radial from center */
   gridRadial: (count: number, columns: number) =>
-    gridStagger({ count, columns, origin: 'center', direction: 'radial', delay: 0.05 }),
+    gridStagger({ count, columns, origin: 'center', direction: 'radial', delay: 50 }),
 
   /** Spiral inward */
   spiralIn: (count: number, columns: number) =>
-    spiralStagger({ count, columns, startFrom: 'edge', delay: 0.05 }),
+    spiralStagger({ count, columns, startFrom: 'edge', delay: 50 }),
 
   /** Spiral outward */
   spiralOut: (count: number, columns: number) =>
-    spiralStagger({ count, columns, startFrom: 'center', delay: 0.05 }),
+    spiralStagger({ count, columns, startFrom: 'center', delay: 50 }),
 }

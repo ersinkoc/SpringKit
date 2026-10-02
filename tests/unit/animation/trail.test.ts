@@ -1,36 +1,46 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createTrail } from '@oxog/springkit'
 
+// Destroy every trail after each test: leftover timers would otherwise fire
+// after the test environment has been torn down
+const trails: Array<ReturnType<typeof createTrail>> = []
+const makeTrail = (...args: Parameters<typeof createTrail>) => {
+  const trail = createTrail(...args)
+  trails.push(trail)
+  return trail
+}
+
 describe('createTrail', () => {
   beforeEach(() => {
     vi.useRealTimers()
   })
 
   afterEach(() => {
+    trails.splice(0).forEach((t) => t.destroy())
     vi.restoreAllMocks()
   })
 
   describe('basic usage', () => {
     it('should create a trail', () => {
-      const trail = createTrail(3)
+      const trail = makeTrail(3)
       expect(trail.getValues()).toEqual([0, 0, 0])
     })
 
     it('should get values', () => {
-      const trail = createTrail(3)
+      const trail = makeTrail(3)
       const values = trail.getValues()
       expect(values).toHaveLength(3)
       expect(values).toEqual([0, 0, 0])
     })
 
     it('should jump all values', () => {
-      const trail = createTrail(3)
+      const trail = makeTrail(3)
       trail.jump(100)
       expect(trail.getValues()).toEqual([100, 100, 100])
     })
 
     it('should set leader value', () => {
-      const trail = createTrail(3)
+      const trail = makeTrail(3)
       trail.set(50)
       // Leader changes immediately
       expect(trail).toBeDefined()
@@ -39,7 +49,7 @@ describe('createTrail', () => {
 
   describe('subscribe', () => {
     it('should subscribe to value changes', () => {
-      const trail = createTrail(3)
+      const trail = makeTrail(3)
       const callback = vi.fn()
       const unsubscribe = trail.subscribe(callback)
 
@@ -52,7 +62,7 @@ describe('createTrail', () => {
     })
 
     it('should call callback on jump', () => {
-      const trail = createTrail(3)
+      const trail = makeTrail(3)
       const callback = vi.fn()
       trail.subscribe(callback)
 
@@ -66,7 +76,7 @@ describe('createTrail', () => {
     })
 
     it('should unsubscribe correctly', () => {
-      const trail = createTrail(3)
+      const trail = makeTrail(3)
       const callback = vi.fn()
       const unsubscribe = trail.subscribe(callback)
 
@@ -83,25 +93,25 @@ describe('createTrail', () => {
 
   describe('followDelay', () => {
     it('should use default followDelay', () => {
-      const trail = createTrail(3)
+      const trail = makeTrail(3)
       expect(trail).toBeDefined()
     })
 
     it('should use custom followDelay', () => {
-      const trail = createTrail(3, { followDelay: 5 })
+      const trail = makeTrail(3, { followDelay: 5 })
       expect(trail).toBeDefined()
     })
   })
 
   describe('destroy', () => {
     it('should clean up resources', () => {
-      const trail = createTrail(3)
+      const trail = makeTrail(3)
       trail.destroy()
       expect(trail).toBeDefined()
     })
 
     it('should prevent further updates after destroy', () => {
-      const trail = createTrail(3)
+      const trail = makeTrail(3)
       trail.destroy()
       trail.jump(100)
       expect(trail.getValues()).toBeDefined()
@@ -110,7 +120,7 @@ describe('createTrail', () => {
 
   describe('config', () => {
     it('should use provided config', () => {
-      const trail = createTrail(3, {
+      const trail = makeTrail(3, {
         stiffness: 200,
         damping: 25,
         followDelay: 3,
@@ -119,18 +129,18 @@ describe('createTrail', () => {
     })
 
     it('should handle zero count', () => {
-      const trail = createTrail(0)
+      const trail = makeTrail(0)
       expect(trail.getValues()).toEqual([])
     })
 
     it('should handle single item', () => {
-      const trail = createTrail(1)
+      const trail = makeTrail(1)
       expect(trail.getValues()).toEqual([0])
     })
 
     it('should trigger immediate update when followDelay is 0', async () => {
       // This tests line 89: immediate update when framesToWait <= 0
-      const trail = createTrail(2, { followDelay: 0 })
+      const trail = makeTrail(2, { followDelay: 0 })
       const callback = vi.fn()
       trail.subscribe(callback)
 
@@ -148,7 +158,7 @@ describe('createTrail', () => {
 
     it('should handle delayed updates via setTimeout', async () => {
       // This tests lines 96-99: the setTimeout callback
-      const trail = createTrail(2, { followDelay: 1 })
+      const trail = makeTrail(2, { followDelay: 1 })
       const callback = vi.fn()
       trail.subscribe(callback)
 
@@ -168,7 +178,7 @@ describe('createTrail', () => {
 
     it('should handle multiple rapid updates', async () => {
       // Tests that pending updates are properly tracked and cancelled
-      const trail = createTrail(2, { followDelay: 1 })
+      const trail = makeTrail(2, { followDelay: 1 })
       const callback = vi.fn()
       trail.subscribe(callback)
 

@@ -140,6 +140,12 @@ export const Parallax = memo(forwardRef<HTMLDivElement, ParallaxProps>(
     useEffect(() => {
       if (!innerRef.current) return
 
+      // Without IntersectionObserver, always track the scroll position
+      if (typeof IntersectionObserver === 'undefined') {
+        setIsInView(true)
+        return
+      }
+
       const observer = new IntersectionObserver(
         ([entry]) => {
           setIsInView(entry?.isIntersecting ?? false)
