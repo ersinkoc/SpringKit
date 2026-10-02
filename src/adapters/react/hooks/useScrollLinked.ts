@@ -12,7 +12,7 @@ import {
   type ParallaxConfig,
   type ScrollTriggerConfig,
   type ScrollLinkedConfig,
-} from '../../../index.js'
+} from '@oxog/springkit'
 import { useIsomorphicLayoutEffect } from '../utils/ssr.js'
 
 // ============ useScrollProgress ============

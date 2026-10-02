@@ -4,16 +4,16 @@ const path = require('path');
 const p = 'public/springkit';
 fs.mkdirSync(p, { recursive: true });
 
-// Copy main springkit bundle (ESM output is dist/index.js; republish as springkit.mjs)
-let mainContent = fs.readFileSync('../dist/index.js', 'utf8');
-mainContent = mainContent.replace(/\/\/# sourceMappingURL=index\.js\.map/g, '//# sourceMappingURL=springkit.mjs.map');
-fs.writeFileSync(path.join(p, 'springkit.mjs'), mainContent);
-fs.copyFileSync('../dist/index.js.map', path.join(p, 'springkit.mjs.map'));
+// Republish the ESM builds under the names vite.config.ts aliases to.
+// The React bundle imports the core via the bare '@oxog/springkit' specifier,
+// which the same alias resolves to springkit.mjs (one shared core instance).
+function copyBundle(src, dest) {
+  fs.copyFileSync(src, path.join(p, dest));
+  // Older builds shipped source maps; drop any stale copies.
+  fs.rmSync(path.join(p, `${dest}.map`), { force: true });
+}
 
-// Copy react adapter
-let reactContent = fs.readFileSync('../dist/react/index.js', 'utf8');
-reactContent = reactContent.replace(/\/\/# sourceMappingURL=index\.js\.map/g, '//# sourceMappingURL=react.mjs.map');
-fs.writeFileSync(path.join(p, 'react.mjs'), reactContent);
-fs.copyFileSync('../dist/react/index.js.map', path.join(p, 'react.mjs.map'));
+copyBundle('../dist/index.js', 'springkit.mjs');
+copyBundle('../dist/react/index.js', 'react.mjs');
 
 console.log('SpringKit dist copied!');

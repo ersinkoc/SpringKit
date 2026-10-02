@@ -4,7 +4,8 @@
  * Unique SpringKit components for magnetic cursor effects.
  */
 
-import React, {
+import * as React from 'react'
+import {
   useRef,
   useEffect,
   useState,
@@ -12,8 +13,8 @@ import React, {
   memo,
   forwardRef,
 } from 'react'
-import { createSpringValue } from '../../../core/spring-value.js'
-import type { SpringConfig } from '../../../types.js'
+import { createSpringValue } from '@oxog/springkit'
+import type { SpringConfig } from '@oxog/springkit'
 
 // ============ Magnetic ============
 

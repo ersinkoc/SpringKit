@@ -81,13 +81,15 @@
 - **Accessibility** - `useReducedMotion` for motion-sensitive users
 - **Components** - `<Spring>`, `<Animated>`, `<Trail>`, `<AnimatePresence>`, `<MotionConfig>`
 - **Exit Animations** - `<AnimatePresence>` for unmounting component animations
+- **Server Components ready** - The React entry ships with `"use client"`, so it works in the Next.js App Router
 
 ### Technical
 - **Memory Safe** - WeakRef-based tracking, automatic garbage collection
 - **Frame-drop Resilient** - Delta time clamping prevents animation jumps
 - **Zero Dependencies** - No runtime dependencies
 - **TypeScript** - Full type definitions included
-- **~7KB gzipped** - Tiny bundle size
+- **Tree-shakeable** - ~2 KB min+gzip for `spring()` alone, ~24 KB for the entire core
+- **ESM + CJS** - Dual package with correct types for every module resolution mode
 - **95%+ Test Coverage** - Comprehensive test suite
 
 ## Installation
@@ -95,6 +97,8 @@
 ```bash
 npm install @oxog/springkit
 ```
+
+React bindings live in the `@oxog/springkit/react` entry point and require React 18 or newer. The core entry has no React dependency, and both entries share one animation loop.
 
 ## Quick Start
 

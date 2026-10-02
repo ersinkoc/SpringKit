@@ -6,9 +6,9 @@
  */
 
 import { useRef, useEffect, useCallback, useState } from 'react'
-import { createMotionValue, MotionValue } from '../../../core/MotionValue.js'
-import { createSpringValue } from '../../../core/spring-value.js'
-import type { SpringConfig } from '../../../types.js'
+import { createMotionValue, MotionValue } from '@oxog/springkit'
+import { createSpringValue } from '@oxog/springkit'
+import type { SpringConfig } from '@oxog/springkit'
 
 // ============ useSpringState ============
 

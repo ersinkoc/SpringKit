@@ -4,7 +4,8 @@
  * Unique SpringKit components for parallax effects with spring physics.
  */
 
-import React, {
+import * as React from 'react'
+import {
   useRef,
   useEffect,
   useState,
@@ -15,8 +16,8 @@ import React, {
   createContext,
   useContext,
 } from 'react'
-import { createSpringValue } from '../../../core/spring-value.js'
-import type { SpringConfig } from '../../../types.js'
+import { createSpringValue } from '@oxog/springkit'
+import type { SpringConfig } from '@oxog/springkit'
 
 // ============ Parallax (Scroll-based) ============
 

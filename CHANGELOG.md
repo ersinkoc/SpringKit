@@ -8,11 +8,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
-- **Build**: The tsup build silently crashed during the DTS step. tsup posts the
-  resolved config to a worker thread, and function options (`outExtension`,
-  `esbuildOptions`) cannot be structured-cloned (`DataCloneError`), so no JS
-  bundles were emitted. The config is now function-free and the build produces
-  `index.js` (ESM) + `index.cjs` (CJS) + type declarations for both entrypoints
+- **React adapter bundled a second copy of the core**: `@oxog/springkit/react`
+  inlined the whole core library instead of importing it, so apps using both
+  entry points loaded the core twice and ran two independent `globalLoop`s
+  (pausing or configuring the core loop did not affect React animations), and
+  `instanceof MotionValue` failed across entries. The React entry now imports
+  `@oxog/springkit` as an external dependency, in both the JS and the type
+  declarations, so `MotionValue` and friends are the same class and type everywhere
+- **CommonJS type resolution**: `require` resolved the ESM `.d.ts`
+  ("masquerading as ESM"). `exports` now has separate `import`/`require`
+  conditions pointing at `.d.ts`/`.d.cts`; `publint --strict` and
+  `@arethetypeswrong/cli` pass for node10, node16 (CJS + ESM) and bundler
+- **Next.js App Router**: the React entry now starts with `"use client"`
+- **Types without `esModuleInterop`**: React declarations used
+  `import React from 'react'`, which failed to typecheck for consumers without
+  `esModuleInterop`; sources now use `import * as React from 'react'`
+- **Flaky build**: building the core and React targets in parallel started two
+  DTS worker threads at once and intermittently crashed Node on Windows with
+  `STATUS_HEAP_CORRUPTION` (0xC0000374), exiting before writing `dist/` and
+  without an error message. `npm run build` now builds the targets one after
+  another (`scripts/build.mjs`). The config is also kept function-free, since
+  function options cannot be structured-cloned into the DTS worker
+
+### Changed
+- Published output is no longer minified and ships without source maps
+  (consumers' bundlers minify; readable output gives better stack traces).
+  Tarball size dropped from 758 kB to 224 kB (unpacked: 3.3 MB to 1.1 MB)
+- `prepare` (which ran build + tests on every `npm install`) is replaced by
+  `prepublishOnly`, which runs typecheck, lint, build and all tests
+- Added `lint:package` (publint + arethetypeswrong) and a CI workflow that runs
+  typecheck, lint, build, tests and package checks on Node 22/24 and on Windows
+- Added `bugs`, a `./package.json` export and `typesVersions` (for
+  `moduleResolution: node` consumers of `@oxog/springkit/react`)
+- README: the "~7KB gzipped" claim was replaced with measured sizes
+  (~2 KB min+gzip for `spring()` alone, ~24 KB for the whole core)
+
+### Previously unreleased
+- **Build**: tsup config made function-free (function options cannot be
+  structured-cloned into the DTS worker thread)
 - **Timeline**: `onUpdate` progress emitted `NaN` for empty timelines
   (`0 / 0` division) — now returns a guarded 0-1 value
 - **React hooks**: `useHover`/`useTap`/`useGestureState` event handlers are now

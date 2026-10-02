@@ -1,5 +1,5 @@
 import { useRef, useEffect, type RefObject } from 'react'
-import { MotionValue, createMotionValue } from '../../../core/MotionValue.js'
+import { MotionValue, createMotionValue } from '@oxog/springkit'
 import { isBrowser } from '../utils/ssr.js'
 
 export interface UseScrollOptions {

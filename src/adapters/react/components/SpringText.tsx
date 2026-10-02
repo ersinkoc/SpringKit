@@ -4,9 +4,10 @@
  * Unique SpringKit components for text animations.
  */
 
-import React, { useRef, useEffect, useState, useMemo, memo } from 'react'
-import { createSpringValue } from '../../../core/spring-value.js'
-import type { SpringConfig } from '../../../types.js'
+import * as React from 'react'
+import { useRef, useEffect, useState, useMemo, memo } from 'react'
+import { createSpringValue } from '@oxog/springkit'
+import type { SpringConfig } from '@oxog/springkit'
 
 // ============ SpringText ============
 

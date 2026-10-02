@@ -2,14 +2,14 @@
  * React hooks for Variants System
  */
 import { useRef, useCallback, useMemo, createContext, useContext, type ReactNode } from 'react'
-import React from 'react'
+import * as React from 'react'
 import {
   getVariant,
   calculateStaggerDelays,
   type Variants,
   type AnimationValues,
   type VariantTransition,
-} from '../../../index.js'
+} from '@oxog/springkit'
 import { useSpring } from './useSpring.js'
 import { useIsomorphicLayoutEffect } from '../utils/ssr.js'
 

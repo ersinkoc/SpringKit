@@ -1,22 +1,5492 @@
-var z={stiffness:100,damping:10,mass:1,velocity:0,restSpeed:.01,restDelta:.01,clamp:false},st={default:{stiffness:100,damping:10},gentle:{stiffness:120,damping:14},wobbly:{stiffness:180,damping:12},stiff:{stiffness:210,damping:20},slow:{stiffness:280,damping:60},molasses:{stiffness:280,damping:120},bounce:{stiffness:200,damping:8},noWobble:{stiffness:170,damping:26}},$e={button:{stiffness:400,damping:30,mass:1},toggle:{stiffness:500,damping:35,mass:.8},checkbox:{stiffness:600,damping:40,mass:.5},hover:{stiffness:300,damping:25,mass:.8},focus:{stiffness:200,damping:20,mass:1},pageTransition:{stiffness:100,damping:20,mass:1.5},modalEnter:{stiffness:300,damping:25,mass:1},modalExit:{stiffness:400,damping:35,mass:.8},sidebar:{stiffness:200,damping:28,mass:1.2},dropdown:{stiffness:400,damping:30,mass:.8},toast:{stiffness:350,damping:25,mass:.9},tooltip:{stiffness:500,damping:40,mass:.6},dragRelease:{stiffness:150,damping:20,mass:1},swipe:{stiffness:250,damping:22,mass:.9},pullToRefresh:{stiffness:180,damping:18,mass:1.2},snap:{stiffness:400,damping:35,mass:.8},rubberBand:{stiffness:300,damping:15,mass:.8},cardFlip:{stiffness:150,damping:18,mass:1.5},cardHover:{stiffness:400,damping:30,mass:.7},listItem:{stiffness:300,damping:28,mass:.9},accordion:{stiffness:200,damping:25,mass:1.1},skeleton:{stiffness:80,damping:15,mass:2},progress:{stiffness:150,damping:25,mass:1},spinner:{stiffness:100,damping:12,mass:1.5},pulse:{stiffness:120,damping:10,mass:1.2},shake:{stiffness:500,damping:15,mass:.6},bounceAttention:{stiffness:400,damping:10,mass:.7},pop:{stiffness:500,damping:20,mass:.6},wiggle:{stiffness:300,damping:8,mass:.8},ios:{stiffness:300,damping:20,mass:1},android:{stiffness:350,damping:25,mass:.9},haptic:{stiffness:600,damping:45,mass:.4},pendulum:{stiffness:50,damping:5,mass:2},jelly:{stiffness:150,damping:8,mass:1.5},elastic:{stiffness:200,damping:10,mass:1.2},heavy:{stiffness:150,damping:30,mass:3},light:{stiffness:400,damping:25,mass:.5},liquid:{stiffness:100,damping:20,mass:2}};function at(t){return {...$e[t]}}function lt(t){switch(t){case "snappy":return {stiffness:400,damping:30,mass:.8};case "smooth":return {stiffness:150,damping:25,mass:1.2};case "bouncy":return {stiffness:300,damping:12,mass:1};case "heavy":return {stiffness:100,damping:30,mass:2.5};case "light":return {stiffness:400,damping:25,mass:.5};case "elastic":return {stiffness:200,damping:10,mass:1.2};default:return {stiffness:100,damping:10,mass:1}}}function ut(t,e){let n=(t.stiffness??100)*e,i=(t.damping??10)*Math.sqrt(e);return {...t,stiffness:n,damping:i}}function ct(t,e){let r=40-e*35;return {...t,damping:Math.max(5,Math.min(40,r))}}function mt(t){return t<300?{stiffness:170,damping:26}:t<500?{stiffness:100,damping:20}:{stiffness:80,damping:15}}function pt(t){return t<=0?{stiffness:170,damping:26}:t<=.25?{stiffness:200,damping:12}:{stiffness:200,damping:8}}var ft=.016666666666666666;function me(t,e,n,i){let{stiffness:r=100,damping:s=10,mass:o=1,restSpeed:a=.01,restDelta:l=.01}=i,u=n-t,m=Math.abs(u),p=Math.abs(e);if(m<=l&&p<=a)return {position:n,velocity:0,isRest:true};let c=ft,g=r*u,f=p>1e-4?s*e:0,h=o===0?.001:o,d=(g-f)/h,b=e+d*c,S=t+b*c,v=Math.abs(n-S)<=l&&Math.abs(b)<=a;return {position:S,velocity:b,isRest:v}}function dt(t,e){let n=t<=0?.001:t;return 2*Math.PI*Math.sqrt(e/n)}function se(t,e,n){let i=e<=0?.001:e,r=n<=0?.001:n;return t/(2*Math.sqrt(i*r))}function gt(t){let{stiffness:e=100,damping:n=10,mass:i=1}=t;return se(n,e,i)<1}function ht(t){let{stiffness:e=100,damping:n=10,mass:i=1}=t,r=se(n,e,i);return Math.abs(r-1)<.001}function bt(t){let{stiffness:e=100,damping:n=10,mass:i=1}=t;return se(n,e,i)>1}var ae=(r=>(r.Idle="idle",r.Running="running",r.Paused="paused",r.Complete="complete",r))(ae||{});var pe=class{constructor(){this.animations=new Set;this.animationMap=new WeakMap;this.rafId=null;this.isRunning=false;this.lastTime=0;this.nextId=1;this.idMap=new WeakMap;this.frameListeners=new Set;this.registry=typeof FinalizationRegistry<"u"?new FinalizationRegistry(e=>{this.cleanupCallbacks.forEach(n=>n(e));}):null;this.cleanupCallbacks=new Set;this.tick=()=>{let e=performance.now(),n=e-this.lastTime,i=Math.min(n,64);this.lastTime=e,this.lastFrameDuration=i;for(let s of this.frameListeners)try{s(i);}catch(o){console.error("[SpringKit] Frame listener error:",o);}let r=[];for(let s of this.animations){let o=s.deref();if(!o){r.push(s);continue}o.update(e),o.isComplete()&&(r.push(s),this.animationMap.delete(o),this.idMap.delete(o));}for(let s=0;s<r.length;s++)this.animations.delete(r[s]);this.animations.size>0?this.rafId=requestAnimationFrame(this.tick):this.stop();};this.lastFrameDuration=16.67;}add(e){let n=this.idMap.get(e);if(n!==void 0)return n;this.animations.size>0&&this.animations.size%100===0&&this.cleanupDeadRefs();let i=this.nextId++,r=new WeakRef(e);return this.animations.add(r),this.animationMap.set(e,r),this.idMap.set(e,i),this.registry?.register(e,i),this.start(),i}cleanupDeadRefs(){for(let e of this.animations)e.deref()===void 0&&this.animations.delete(e);}remove(e){let n=this.animationMap.get(e);n&&(this.animations.delete(n),this.animationMap.delete(e),this.idMap.delete(e)),this.animations.size===0&&this.stop();}onCleanup(e){return this.cleanupCallbacks.add(e),()=>this.cleanupCallbacks.delete(e)}onFrame(e){return this.frameListeners.add(e),()=>this.frameListeners.delete(e)}start(){this.isRunning||(this.isRunning=true,this.lastTime=performance.now(),this.tick());}stop(){this.isRunning=false,this.rafId!==null&&(cancelAnimationFrame(this.rafId),this.rafId=null);}get size(){return this.animations.size}getAliveCount(){let e=0;for(let n of this.animations)n.deref()&&e++;return e}getFPS(){return Math.round(1e3/this.lastFrameDuration)}},q=new pe;function $(t,e,n){let i=Math.min(e,n),r=Math.max(e,n);return Math.max(i,Math.min(r,t))}function N(t,e,n){return t+(e-t)*n}function yt(t,e,n,i,r){let s=n-e;return s===0?i:(t-e)*(r-i)/s+i}function vt(t){return t*Math.PI/180}function St(t){return t*180/Math.PI}var te=typeof process<"u"&&process.env?.NODE_ENV!=="production",fe=new Set;function W(t){!te||fe.has(t)||(fe.add(t),console.warn(`[SpringKit] ${t}`));}function de(t){if(!te)return;let{stiffness:e=100,damping:n=10,mass:i=1}=t;e>400&&n<10&&W(`High stiffness (${e}) with low damping (${n}) may cause excessive oscillation. Consider increasing damping to at least ${Math.round(e/20)} for smoother animation.`),e<20&&W(`Very low stiffness (${e}) will result in sluggish animation. Consider using stiffness >= 50 for more responsive feel.`),n>e&&W(`Damping (${n}) is higher than stiffness (${e}), which removes the "springy" feel. Consider reducing damping for bouncier animation.`),i<=0&&W(`Mass must be positive. Got ${i}. Using default mass of 1.`),i>10&&W(`High mass (${i}) will make the animation very slow. Consider mass between 0.5 and 5 for typical use cases.`);}function xt(t){if(!te)return;let{rubberBandFactor:e,bounds:n}=t;e!==void 0&&(e<0||e>1)&&W(`rubberBandFactor should be between 0 and 1. Got ${e}. Values outside this range may cause unexpected behavior.`),n&&(n.left!==void 0&&n.right!==void 0&&n.left>n.right&&W(`Drag bounds are inverted: left (${n.left}) > right (${n.right}). This may cause unexpected behavior.`),n.top!==void 0&&n.bottom!==void 0&&n.top>n.bottom&&W(`Drag bounds are inverted: top (${n.top}) > bottom (${n.bottom}). This may cause unexpected behavior.`));}function ge(t){if(!te)return;let{velocity:e,deceleration:n=.998}=t;e===0&&W("Decay animation started with zero velocity. The animation will complete immediately."),(n<=0||n>=1)&&W(`Deceleration should be between 0 and 1 (exclusive). Got ${n}. Typical values are 0.99-0.999.`);}function B(t,e){if(typeof t!="number"||Number.isNaN(t)){let n=`Invalid animation value in ${e}: expected number, got ${t}`;return te&&console.error(`[SpringKit] ${n}`),0}if(!Number.isFinite(t)){let n=`Invalid animation value in ${e}: Infinity is not supported`;return te&&console.error(`[SpringKit] ${n}`),0}return t}function Tt(){fe.clear();}var he=class{constructor(e,n,i={}){this.state="idle";this.resolveComplete=null;this.lastUpdateTime=0;de(i),this.from=B(e,"spring.from"),this.to=B(n,"spring.to"),this.clampedFrom=this.from,this.clampedTo=this.to,this.position=this.from,this.velocity=i.velocity??0,this.target=this.to,this.config={...z,...i,stiffness:i.stiffness??z.stiffness,damping:i.damping??z.damping,mass:i.mass??z.mass,restSpeed:i.restSpeed??z.restSpeed,restDelta:i.restDelta??z.restDelta},this.finished=new Promise(r=>{this.resolveComplete=r;});}start(){return this.state==="running"?this:(this.state="running",this.lastUpdateTime=0,this.config.onStart?.(),q.add(this),this)}stop(){this.state="idle",q.remove(this);}pause(){this.state==="running"&&(this.state="paused",q.remove(this));}resume(){this.state==="paused"&&(this.state="running",this.lastUpdateTime=0,q.add(this));}reverse(){let e=this.from;this.from=this.to,this.to=e,this.clampedFrom=this.from,this.clampedTo=this.to,this.target=this.to,this.state==="running"&&(this.velocity=-this.velocity);}set(e){let n=B(e,"spring.set");this.to=n,this.clampedTo=n,this.target=n;}setWithVelocity(e,n){let i=B(e,"spring.setWithVelocity");this.from=this.position,this.clampedFrom=this.position,this.to=i,this.clampedTo=i,this.target=i,n!==void 0&&(this.velocity=B(n,"spring.setWithVelocity.velocity")),this.state==="complete"&&(this.state="idle"),this.state!=="running"&&this.start();}update(e){if(this.state!=="running")return;this.lastUpdateTime===0&&(this.lastUpdateTime=e);let n=(e-this.lastUpdateTime)/1e3;this.lastUpdateTime=e;let i=1/15,r=1/60,s=Math.min(n,i),o=Math.max(1,Math.ceil(s/r)),a=this.position,l=this.velocity,u=false;for(let m=0;m<o&&!u;m++){let p=me(a,l,this.target,this.config);a=p.position,l=p.velocity,u=p.isRest;}if(this.position=a,this.velocity=l,this.config.clamp){let m=Math.min(this.clampedFrom,this.clampedTo),p=Math.max(this.clampedFrom,this.clampedTo);this.position=$(this.position,m,p);}this.config.onUpdate?.(this.position),u&&(this.state="complete",q.remove(this),this.position=this.target,this.velocity=0,this.config.onUpdate?.(this.position),this.config.onComplete?.(),this.config.onRest?.(),this.resolveComplete?.());}isAnimating(){return this.state==="running"}isPaused(){return this.state==="paused"}isComplete(){return this.state==="complete"}getValue(){return this.position}getVelocity(){return this.velocity}destroy(){this.stop(),this.resolveComplete?.(),this.resolveComplete=null,this.config.onUpdate=void 0,this.config.onStart=void 0,this.config.onComplete=void 0,this.config.onRest=void 0;}};function be(t,e,n){return new he(t,e,n)}var ye=class{constructor(e,n={}){this.currentAnimation=null;this.subscribers=new Set;this.resolveComplete=null;this.destroyed=false;this.isNotifying=false;this.value=B(e,"createSpringValue.initial"),this.config={...z,...n},this.finishedPromise=new Promise(i=>{this.resolveComplete=i;});}get(){return this.value}getVelocity(){return this.currentAnimation?.getVelocity()??0}set(e,n={}){if(this.destroyed)return;let i=B(e,"SpringValue.set");this.currentAnimation&&(this.currentAnimation.destroy(),this.currentAnimation=null,this.resolveComplete?.());let r=null;this.finishedPromise=new Promise(l=>{r=l,this.resolveComplete=l;});let s={...this.config,...n},o=s.onUpdate,a=s.onComplete;this.currentAnimation=be(this.value,i,{...s,onUpdate:l=>{this.destroyed||(this.value=l,this.notify(),o?.(l));},onComplete:()=>{a?.(),r?.();}}),this.currentAnimation.start();}jump(e){if(this.destroyed||this.isNotifying)return;let n=B(e,"SpringValue.jump");this.currentAnimation&&(this.currentAnimation.destroy(),this.currentAnimation=null),this.value=n,this.notify();}stop(){this.currentAnimation&&(this.currentAnimation.destroy(),this.currentAnimation=null),this.resolveComplete&&this.resolveComplete();}setConfig(e){this.config={...this.config,...e};}subscribe(e){this.subscribers.add(e);try{e(this.value);}catch(n){console.error("[SpringKit] Subscriber error:",n);}return ()=>{this.subscribers.delete(e);}}isAnimating(){return this.currentAnimation?.isAnimating()??false}get finished(){return this.finishedPromise}notify(){if(!this.isNotifying){this.isNotifying=true;for(let e of this.subscribers)try{e(this.value);}catch(n){console.error("[SpringKit] Subscriber error:",n);}this.isNotifying=false;}}isDestroyed(){return this.destroyed}destroy(){this.destroyed||(this.destroyed=true,this.currentAnimation?.destroy(),this.currentAnimation=null,this.resolveComplete?.(),this.resolveComplete=null,this.subscribers.clear());}};function _(t,e){return new ye(t,e)}var ve=class{constructor(e,n={}){this.subscribers=new Set;this.resolveComplete=null;this.notifyRafId=null;this.notifyScheduled=false;this.destroyed=false;this.config={...z,...n},this.values=new Map;for(let[i,r]of Object.entries(e)){let s=_(r,this.config);s.subscribe(()=>this.scheduleNotify()),this.values.set(i,s);}this.finishedPromise=Promise.resolve(),this.resetPromise();}resetPromise(){this.finishedPromise=new Promise(e=>{this.resolveComplete=e;});}get(){let e={};for(let[n,i]of this.values)e[n]=i.get();return e}getValue(e){return this.values.get(e)?.get()??0}set(e,n={}){if(this.destroyed)return;this.resetPromise();let i=[];for(let[r,s]of Object.entries(e)){let o=this.values.get(r);o&&typeof s=="number"&&(o.set(s,n),i.push(o.finished));}Promise.all(i).then(()=>{this.resolveComplete&&!this.destroyed&&this.resolveComplete();});}jump(e){if(!this.destroyed)for(let[n,i]of Object.entries(e)){let r=this.values.get(n);r&&typeof i=="number"&&r.jump(i);}}stop(){for(let e of this.values.values())e.stop();this.resolveComplete?.();}subscribe(e){this.subscribers.add(e);try{e(this.get());}catch(n){console.error("[SpringKit] SpringGroup subscriber error:",n);}return ()=>this.subscribers.delete(e)}isAnimating(){for(let e of this.values.values())if(e.isAnimating())return  true;return  false}get finished(){return this.finishedPromise}scheduleNotify(){this.destroyed||this.notifyScheduled||(this.notifyScheduled=true,queueMicrotask(()=>{this.notifyScheduled=false,this.destroyed||this.notify();}));}notify(){let e=this.get();for(let n of this.subscribers)try{n(e);}catch(i){console.error("[SpringKit] SpringGroup subscriber error:",i);}}destroy(){this.destroyed=true;for(let e of this.values.values())e.destroy();this.resolveComplete?.(),this.resolveComplete=null,this.subscribers.clear();}isDestroyed(){return this.destroyed}};function Q(t,e){return new ve(t,e)}function De(t,e){if(!t)return {values:{},transition:{}};let n=typeof t=="function"?t(e):t,{transition:i={},...r}=n;return {values:r,transition:i}}function Ct(t,e,n){return !t||!e?{values:{},transition:{}}:De(t[e],n)}function Pt(...t){let e={};for(let n of t)n&&(Object.assign(e,n),n.transition&&(e.transition={...e.transition,...n.transition}));return e}function wt(t){return ["x","y","z","scale","scaleX","scaleY","scaleZ","rotate","rotateX","rotateY","rotateZ","skew","skewX","skewY","perspective","transformOrigin"].includes(t)}function Mt(t){return typeof t=="number"||typeof t=="string"}function Et(t){if(typeof t=="number")return {value:t,unit:""};let e=t.match(/^(-?[\d.]+)(.*)$/);return e&&e[1]?{value:parseFloat(e[1]),unit:e[2]||""}:{value:0,unit:""}}function ke(t){let e=[];if(t.x!==void 0||t.y!==void 0){let n=t.x??0,i=t.y??0;e.push(`translate(${n}px, ${i}px)`);}return t.scale!==void 0?e.push(`scale(${t.scale})`):(t.scaleX!==void 0&&e.push(`scaleX(${t.scaleX})`),t.scaleY!==void 0&&e.push(`scaleY(${t.scaleY})`)),t.rotate!==void 0&&e.push(`rotate(${t.rotate}deg)`),t.rotateX!==void 0&&e.push(`rotateX(${t.rotateX}deg)`),t.rotateY!==void 0&&e.push(`rotateY(${t.rotateY}deg)`),t.rotateZ!==void 0&&e.push(`rotateZ(${t.rotateZ}deg)`),t.skewX!==void 0&&e.push(`skewX(${t.skewX}deg)`),t.skewY!==void 0&&e.push(`skewY(${t.skewY}deg)`),e.join(" ")}function At(t,e){let n=ke(e);n&&(t.style.transform=n),e.opacity!==void 0&&(t.style.opacity=String(e.opacity)),e.backgroundColor!==void 0&&(t.style.backgroundColor=e.backgroundColor),e.borderRadius!==void 0&&(t.style.borderRadius=typeof e.borderRadius=="number"?`${e.borderRadius}px`:e.borderRadius),e.borderColor!==void 0&&(t.style.borderColor=e.borderColor),e.boxShadow!==void 0&&(t.style.boxShadow=e.boxShadow),e.color!==void 0&&(t.style.color=e.color),e.width!==void 0&&(t.style.width=typeof e.width=="number"?`${e.width}px`:e.width),e.height!==void 0&&(t.style.height=typeof e.height=="number"?`${e.height}px`:e.height);}function Fe(t,e){let{staggerChildren:n=0,staggerDirection:i=1,delayChildren:r=0}=e,s=[];for(let o=0;o<t;o++){let a=i===-1?t-1-o:o;s.push(r+a*n);}return s}function Rt(t,e,n={}){let{when:i=false,delay:r=0}=n,s=Fe(e.length,n),o=async()=>{r>0&&await new Promise(u=>setTimeout(u,r)),await t();},a=async()=>{await Promise.all(e.map((u,m)=>new Promise(p=>{setTimeout(async()=>{await u(),p();},s[m]);})));};return {parent:o,children:a,execute:async()=>{switch(i){case "beforeChildren":await o(),await a();break;case "afterChildren":await a(),await o();break;default:await Promise.all([o(),a()]);}}}}var Vt={fadeIn:{initial:{opacity:0},animate:{opacity:1},exit:{opacity:0}},fadeInUp:{initial:{opacity:0,y:20},animate:{opacity:1,y:0},exit:{opacity:0,y:-20}},fadeInDown:{initial:{opacity:0,y:-20},animate:{opacity:1,y:0},exit:{opacity:0,y:20}},fadeInLeft:{initial:{opacity:0,x:-20},animate:{opacity:1,x:0},exit:{opacity:0,x:20}},fadeInRight:{initial:{opacity:0,x:20},animate:{opacity:1,x:0},exit:{opacity:0,x:-20}},scaleIn:{initial:{opacity:0,scale:.8},animate:{opacity:1,scale:1},exit:{opacity:0,scale:.8}},popIn:{initial:{opacity:0,scale:.5},animate:{opacity:1,scale:1,transition:{spring:{stiffness:400,damping:15}}},exit:{opacity:0,scale:.5}},slideUp:{initial:{y:100,opacity:0},animate:{y:0,opacity:1},exit:{y:100,opacity:0}},slideDown:{initial:{y:-100,opacity:0},animate:{y:0,opacity:1},exit:{y:-100,opacity:0}},slideLeft:{initial:{x:-100,opacity:0},animate:{x:0,opacity:1},exit:{x:-100,opacity:0}},slideRight:{initial:{x:100,opacity:0},animate:{x:0,opacity:1},exit:{x:100,opacity:0}},staggerContainer:{initial:{},animate:{transition:{staggerChildren:.1,delayChildren:.1}},exit:{transition:{staggerChildren:.05,staggerDirection:-1}}},staggerItem:{initial:{opacity:0,y:20},animate:{opacity:1,y:0},exit:{opacity:0,y:-20}}};function Lt(t,e,n){return {initial:t,animate:e,exit:n||t}}function It(t){return typeof t=="object"&&t!==null&&!Array.isArray(t)&&Object.values(t).every(e=>typeof e=="object"||typeof e=="function")}function $t(t){return typeof t=="object"&&t!==null&&!Array.isArray(t)}async function Dt(t){for(let e of t)await e().finished;}async function kt(t){let e=t.map(n=>n().finished);await Promise.all(e);}async function Ft(t,e,n={}){let{delay:i=0,from:r="first"}=n,s=0;r==="last"?s=t.length-1:r==="center"?s=Math.floor(t.length/2):typeof r=="number"&&(s=r);let o=[],a=new Set;o.push(s),a.add(s);for(let p=1;p<t.length;p++){let c=s-p,g=s+p;g<t.length&&!a.has(g)&&(o.push(g),a.add(g)),c>=0&&!a.has(c)&&(o.push(c),a.add(c));}let l=typeof i=="function"?i:p=>i,u=[],m=[];for(let p=0;p<o.length;p++){let c=o[p],g=e(t[c],c);u.push(g);let f=l(p);if(f>0){let h=setTimeout(()=>{g.start();},f);m.push(h);}else g.start();}try{await Promise.all(u.map(p=>p.finished));}finally{m.forEach(clearTimeout);}}var Se=class{constructor(e,n={}){this.subscribers=new Set;this.frameCount=0;this.pendingUpdates=new Map;this.pendingTimeouts=new Set;this.destroyed=false;let{followDelay:i=2,...r}=n;this.followDelay=i,this.leader=_(0,r),this.springs=[];for(let s=0;s<e;s++){let o=_(0,r);this.springs.push(o);}this.leader.subscribe(()=>{this.frameCount++,this.scheduleFollowerUpdates();});}scheduleFollowerUpdates(){let e=this.leader.get();for(let n=0;n<this.springs.length;n++){let i=(n+1)*this.followDelay,r=this.frameCount+i;this.pendingUpdates.set(n,r),this.scheduleFollowerUpdate(n,e,r,i);}}scheduleFollowerUpdate(e,n,i,r){let s=this.frameCount,o=i-s;if(o<=0)this.springs[e].set(n);else {let a=Math.max(o*16,0),l=setTimeout(()=>{if(this.pendingTimeouts.delete(l),this.destroyed)return;this.pendingUpdates.get(e)===i&&this.springs[e].set(n);},a);this.pendingTimeouts.add(l);}}set(e){this.leader.set(e);}jump(e){this.leader.jump(e);for(let n of this.springs)n.jump(e);}getValues(){return this.springs.map(e=>e.get())}subscribe(e){this.subscribers.add(e);let n=[];for(let i of this.springs)n.push(i.subscribe(()=>{this.notify();}));return e(this.getValues()),()=>{this.subscribers.delete(e);for(let i of n)i();}}notify(){let e=this.getValues();for(let n of this.subscribers)n(e);}destroy(){this.destroyed=true;for(let e of this.pendingTimeouts)clearTimeout(e);this.pendingTimeouts.clear(),this.leader.destroy();for(let e of this.springs)e.destroy();this.subscribers.clear(),this.pendingUpdates.clear();}};function _t(t,e){return new Se(t,e)}var xe=class{constructor(e){this.state="idle";this.rafId=null;this.resolveComplete=null;ge(e),this.value=0,this.velocity=B(e.velocity,"decay.velocity");let n=e.deceleration??.998;this.deceleration=B(n,"decay.deceleration"),(this.deceleration<=0||this.deceleration>=1)&&(this.deceleration=.998),this.clampRange=e.clamp,this.state="idle",this.config=e,this.finished=new Promise(i=>{this.resolveComplete=i;});}start(){return this.state==="running"?this:(this.state="running",q.add(this),this)}stop(){this.state="idle",q.remove(this);}update(e){if(this.state==="running"){if(this.velocity*=this.deceleration,this.value+=this.velocity,this.clampRange){let[n,i]=this.clampRange;this.value=$(this.value,n,i),(this.value<=n&&this.velocity<0||this.value>=i&&this.velocity>0)&&(this.velocity=0);}this.config.onUpdate?.(this.value),Math.abs(this.velocity)<.01&&(this.state="complete",q.remove(this),this.config.onComplete?.(),this.resolveComplete?.());}}isComplete(){return this.state==="complete"}destroy(){this.stop(),this.resolveComplete?.(),this.resolveComplete=null,this.config.onUpdate=void 0,this.config.onComplete=void 0;}};function Ot(t){return new xe(t)}function Xt(t,e={}){let{config:n={},times:i,onKeyframe:r,onComplete:s,onUpdate:o}=e,a=t.map((v,y)=>typeof v=="number"?{value:v,at:i?.[y]}:{...v,at:v.at??i?.[y]}),l=a.length;a.forEach((v,y)=>{v.at===void 0&&(v.at=l>1?y/(l-1):0);}),a.sort((v,y)=>(v.at??0)-(y.at??0));let u=0,m=false,p=false,c=null,g=a[0]?.value??0,f=false,h=null,d=null,b=()=>{c&&c.destroy();let y=a[u]?.config??n;c=_(g,y),c.subscribe(T=>{g=T,o?.(T);});},S=async()=>{if(f||p||u>=a.length-1)return  false;u++;let v=a[u];return v?(v.config&&b(),r?.(u),c&&(c.set(v.value),await new Promise(y=>{let T=()=>{if(h=null,f||p){y();return}c&&!c.isAnimating()?y():h=requestAnimationFrame(T);};d=setTimeout(()=>{d=null,f?y():T();},16);})),true):false};return {play:async()=>{if(!f&&!m){for(m=true,p=false,u>=a.length-1&&(u=0,g=a[0]?.value??0),b(),r?.(0);await S(););!p&&!f&&(m=false,s?.());}},pause:()=>{p=true,m=false,c&&c.stop();},resume:()=>{if(!p||f)return;p=false,m=true,(async()=>{for(;await S(););!p&&!f&&(m=false,s?.());})();},stop:()=>{p=false,m=false,u=0,g=a[0]?.value??0,c&&c.jump(g);},get:()=>g,getCurrentKeyframe:()=>u,isPlaying:()=>m,jumpTo:v=>{if(v<0||v>=a.length)return;u=v;let y=a[v]?.value??0;g=y,c&&c.jump(y),o?.(y),r?.(v);},destroy:()=>{f=true,m=false,p=false,h!==null&&(cancelAnimationFrame(h),h=null),d!==null&&(clearTimeout(d),d=null),c&&(c.destroy(),c=null);}}}function Yt(t,e){return t.map((n,i)=>({value:n,at:e?.[i]}))}function jt(t){return Array.isArray(t)&&t.every(e=>typeof e=="number")}var _e=new Set(["x","y","z","scale","scaleX","scaleY","scaleZ","rotate","rotateX","rotateY","rotateZ","skew","skewX","skewY"]),Gt=new Set(["x","y","z","width","height","top","right","bottom","left","padding","paddingTop","paddingRight","paddingBottom","paddingLeft","margin","marginTop","marginRight","marginBottom","marginLeft","borderWidth","borderRadius","fontSize","letterSpacing","lineHeight"]);function Ht(t){let e=[],n=t.get("x"),i=t.get("y"),r=t.get("z");(n!==void 0||i!==void 0||r!==void 0)&&e.push(`translate3d(${n??0}px, ${i??0}px, ${r??0}px)`);let s=t.get("scale"),o=t.get("scaleX"),a=t.get("scaleY");s!==void 0?e.push(`scale(${s})`):(o!==void 0||a!==void 0)&&e.push(`scale(${o??1}, ${a??1})`);let l=t.get("rotate")??t.get("rotateZ"),u=t.get("rotateX"),m=t.get("rotateY");u!==void 0&&e.push(`rotateX(${u}deg)`),m!==void 0&&e.push(`rotateY(${m}deg)`),l!==void 0&&e.push(`rotate(${l}deg)`);let p=t.get("skewX"),c=t.get("skewY");return (p!==void 0||c!==void 0)&&e.push(`skew(${p??0}deg, ${c??0}deg)`),e.join(" ")}function Ut(t,e){let n=t,i=new Map,r={};e.forEach((s,o)=>{_e.has(o)?i.set(o,s):o==="opacity"?r.opacity=String(s):Gt.has(o)?r[o]=`${s}px`:r[o]=String(s);}),i.size>0&&(n.style.transform=Ht(i)),Object.entries(r).forEach(([s,o])=>{n.style.setProperty(s,o);});}function Nt(t,e){let i=getComputedStyle(t);if(e==="opacity")return parseFloat(i.opacity)||1;if(_e.has(e))return i.transform==="none",e==="scale"||e==="scaleX"||e==="scaleY"?1:0;let r=i.getPropertyValue(e);return parseFloat(r)||0}function Oe(t,e,n={}){let{delay:i=0,onUpdate:r,onComplete:s,...o}=n,a=typeof t=="string"?document.querySelector(t):t;if(!a)return console.warn("animate: Element not found"),Bt();let l=new Map,u=new Map,m=true,p=false,c,g=new Set,f=new Set,h=null,d=new Promise((v,y)=>{c=v;}),S=()=>{let v=Object.entries(e),y=0,T=v.length;v.forEach(([V,P])=>{let A=Array.isArray(P)?P:[P],C=Nt(a,V),R=_(C,{stiffness:o.stiffness??100,damping:o.damping??10,mass:o.mass??1});l.set(V,R),u.set(V,C),R.subscribe(D=>{if(!(!m||p)&&(u.set(V,D),Ut(a,u),r)){let O={};u.forEach((U,Y)=>{O[Y]=U;}),r(O);}}),(async()=>{for(let D of A){if(!m)break;let O=typeof D=="string"?parseFloat(D)||0:D;await new Promise(U=>{R.set(O);let Y=null,Z=()=>{if(Y!==null&&(g.delete(Y),f.delete(Y)),!m||!R.isAnimating())U();else if(!p)Y=requestAnimationFrame(Z),g.add(Y);else {let j=setTimeout(()=>{f.delete(j),Z();},100);Y=j,f.add(j);}};Y=requestAnimationFrame(Z),g.add(Y);});}if(y++,y===T&&m){m=false;try{s?.();}catch{}c();}})();});};i>0?h=setTimeout(S,i):S();let x=()=>{g.forEach(v=>{cancelAnimationFrame(v);}),g.clear(),f.forEach(v=>{clearTimeout(v);}),f.clear(),h!==null&&(clearTimeout(h),h=null);};return {stop:()=>{m=false,x(),l.forEach(v=>v.stop()),c();},pause:()=>{p=true;},resume:()=>{p=false;},getProgress:()=>{let v=0,y=0;return l.forEach(T=>{v+=T.isAnimating()?.5:1,y++;}),y>0?v/y:1},isAnimating:()=>m&&!p,finished:d}}function Bt(){return {stop:()=>{},pause:()=>{},resume:()=>{},getProgress:()=>1,isAnimating:()=>false,finished:Promise.resolve()}}function zt(t,e,n={}){let{stagger:i=0,...r}=n,s=document.querySelectorAll(t);return Array.from(s).map((o,a)=>Oe(o,e,{...r,delay:(r.delay??0)+i*a}))}var qt={clamp:false},Te=class{constructor(e,n,i,r={}){this.source=e,this.input=n,this.output=i,this.options={...qt,...r};}get(){let e=typeof this.source=="function"?this.source():this.source.get();return Number.isFinite(e)?this.interpolate(e):this.output[0]??0}interpolate(e){let{input:n,output:i}=this,{extrapolate:r,extrapolateLeft:s,extrapolateRight:o,clamp:a}=this.options;if(n.length===1)return i[0];if(e<n[0]){let c=this.getExtrapolationMode(s,r);if(c==="clamp")e=n[0];else if(c==="identity")return e}else if(e>n[n.length-1]){let c=this.getExtrapolationMode(o,r);if(c==="clamp")e=n[n.length-1];else if(c==="identity")return e}let l=1;for(;l<n.length-1&&e>n[l];)l++;let u=n[l]-n[l-1],m=u===0?0:(e-n[l-1])/u,p=i[l-1]+m*(i[l]-i[l-1]);if(a){let c=Math.min(...i),g=Math.max(...i);return Math.max(c,Math.min(g,p))}return p}getExtrapolationMode(e,n){return e!==void 0?e:n!==void 0?n:"extend"}};function Kt(t,e,n,i){return new Te(t,e,n,i)}var J=new Map,Ce=class{constructor(e,n,i,r={}){this.source=e,this.input=n,this.colors=i.map(s=>this.parseColorCached(s)),this.options=r;}parseColorCached(e){let n=J.get(e);if(n)return J.delete(e),J.set(e,n),n;let i=this.parseColorInternal(e);if(J.size>=1e3){let r=J.keys().next().value;r!==void 0&&J.delete(r);}return J.set(e,i),i}get(){let e=typeof this.source=="function"?this.source():this.source.get(),{extrapolate:n,extrapolateLeft:i,extrapolateRight:r}=this.options;if(this.input.length===1){let[p,c,g]=this.colors[0];return `rgb(${p}, ${c}, ${g})`}if(e<this.input[0]){let p=i??n??"extend";p==="clamp"?e=this.input[0]:p==="identity"&&(e=this.input[0]);}else if(e>this.input[this.input.length-1]){let p=r??n??"extend";p==="clamp"?e=this.input[this.input.length-1]:p==="identity"&&(e=this.input[this.input.length-1]);}let s=1;for(;s<this.input.length-1&&e>this.input[s];)s++;let o=this.input[s]-this.input[s-1],a=o!==0?(e-this.input[s-1])/o:0,l=this.lerp(this.colors[s-1][0],this.colors[s][0],a),u=this.lerp(this.colors[s-1][1],this.colors[s][1],a),m=this.lerp(this.colors[s-1][2],this.colors[s][2],a);return `rgb(${Math.round(l)}, ${Math.round(u)}, ${Math.round(m)})`}parseColorInternal(e){let n=e.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);if(n){let o=n[1];return o.length===3?[parseInt(o.charAt(0)+o.charAt(0),16),parseInt(o.charAt(1)+o.charAt(1),16),parseInt(o.charAt(2)+o.charAt(2),16)]:[parseInt(o.slice(0,2),16),parseInt(o.slice(2,4),16),parseInt(o.slice(4,6),16)]}let i=e.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/i);if(i)return [parseInt(i[1],10),parseInt(i[2],10),parseInt(i[3],10)];let r=e.match(/rgba\((\d+),\s*(\d+),\s*(\d+),\s*[\d.]+\)/i);if(r)return [parseInt(r[1],10),parseInt(r[2],10),parseInt(r[3],10)];let s=e.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/i);return s?this.hslToRgb(parseInt(s[1],10),parseInt(s[2],10),parseInt(s[3],10)):[0,0,0]}hslToRgb(e,n,i){if(e=(e%360+360)%360,n=Math.max(0,Math.min(100,n))/100,i=Math.max(0,Math.min(100,i))/100,n===0){let a=Math.round(i*255);return [a,a,a]}let r=(a,l,u)=>(u<0&&(u+=1),u>1&&(u-=1),u<1/6?a+(l-a)*6*u:u<1/2?l:u<2/3?a+(l-a)*(2/3-u)*6:a),s=i<.5?i*(1+n):i+n-i*n,o=2*i-s;return [Math.round(r(o,s,e/360+1/3)*255),Math.round(r(o,s,e/360)*255),Math.round(r(o,s,e/360-1/3)*255)]}lerp(e,n,i){return e+(n-e)*i}};function Wt(t,e,n,i){return new Ce(t,e,n,i)}var Zt={axis:"both",rubberBand:false,rubberBandFactor:.5,elasticBounce:.3,momentum:true,momentumDecay:.95,stiffness:200,damping:20,mass:1,restSpeed:.01,restDelta:.01,clamp:false},Pe=class{constructor(e,n={}){this.enabled=true;this.position={x:0,y:0};this._isDragging=false;this.startPosition={x:0,y:0};this.pointerStart={x:0,y:0};this.lastPosition={x:0,y:0};this.lastTime=0;this.velocity={x:0,y:0};this.currentSnap=null;this.snapTimeoutId=null;this.snapGeneration=0;this.destroyed=false;this.onPointerDown=e=>{!this.enabled||e.button!==0||(this._isDragging=true,this.startPosition={...this.position},this.pointerStart={x:e.clientX,y:e.clientY},this.lastPosition={x:e.clientX,y:e.clientY},this.lastTime=performance.now(),this.velocity={x:0,y:0},this.element.setPointerCapture(e.pointerId),this.element.addEventListener("pointermove",this.onPointerMove),this.element.addEventListener("pointerup",this.onPointerUp),this.element.addEventListener("pointercancel",this.onPointerUp),this.config.onDragStart&&this.config.onDragStart(e));};this.onPointerMove=e=>{let n=performance.now(),i=n-this.lastTime,r=Math.min(Math.max(i,16),100),s={x:(e.clientX-this.lastPosition.x)/r,y:(e.clientY-this.lastPosition.y)/r},o=.5;this.velocity={x:this.velocity.x*(1-o)+s.x*o,y:this.velocity.y*(1-o)+s.y*o},this.lastPosition={x:e.clientX,y:e.clientY},this.lastTime=n;let a=this.startPosition.x+(e.clientX-this.pointerStart.x),l=this.startPosition.y+(e.clientY-this.pointerStart.y);this.config.bounds&&(a=this.applyBounds(a,this.config.bounds.left??-1/0,this.config.bounds.right??1/0,"x"),l=this.applyBounds(l,this.config.bounds.top??-1/0,this.config.bounds.bottom??1/0,"y")),this.config.axis==="x"?l=0:this.config.axis==="y"&&(a=0),this.position={x:a,y:l},this.config.onDrag&&this.config.onDrag(a,l,e),this.config.onUpdate&&this.config.onUpdate(a,l);};this.onPointerUp=e=>{if(this._isDragging=false,this.element&&document.contains(this.element)){try{this.element.releasePointerCapture(e.pointerId);}catch{}this.element.removeEventListener("pointermove",this.onPointerMove),this.element.removeEventListener("pointerup",this.onPointerUp),this.element.removeEventListener("pointercancel",this.onPointerUp);}if(this.config.snap?.snapOnRelease!==false){let n=this.findNearestSnapPoint();if(n){this.snapTo(n),this.config.onDragEnd&&this.config.onDragEnd(this.position.x,this.position.y,this.velocity);return}}this.release(this.velocity.x*16,this.velocity.y*16),this.config.onDragEnd&&this.config.onDragEnd(this.position.x,this.position.y,this.velocity);};this.element=e,this.config={...Zt,...n,bounds:n.bounds?{...n.bounds}:void 0};let i={stiffness:this.config.stiffness,damping:this.config.damping,mass:this.config.mass,restSpeed:this.config.restSpeed,restDelta:this.config.restDelta,clamp:this.config.clamp};this.springX=_(0,i),this.springY=_(0,i),this.springX.subscribe(()=>{this._isDragging||(this.position.x=this.springX.get(),this.config.onUpdate&&this.config.onUpdate(this.position.x,this.position.y));}),this.springY.subscribe(()=>{this._isDragging||(this.position.y=this.springY.get(),this.config.onUpdate&&this.config.onUpdate(this.position.x,this.position.y));}),this.setupPointerEvents();}setupPointerEvents(){this.element.addEventListener("pointerdown",this.onPointerDown);}getElasticFactor(e){let n=this.config.dragElastic;return n===void 0?this.config.rubberBand?this.config.rubberBandFactor??.5:0:typeof n=="boolean"?n?.5:0:typeof n=="number"?$(n,0,1):$(n[e]??.5,0,1)}applyBounds(e,n,i,r="x"){if(!isFinite(n)&&!isFinite(i))return e;let s=isFinite(n)?n:-1/0,o=isFinite(i)?i:1/0;if(this.config.dragElastic!==void 0||this.config.rubberBand){if(e<s){let l=this.getElasticFactor(r==="x"?"left":"top");return s-(s-e)*l}if(e>o){let l=this.getElasticFactor(r==="x"?"right":"bottom");return o+(e-o)*l}}return $(e,s,o)}findNearestSnapPoint(){let e=this.config.snap;if(!e)return null;if(e.grid){let n=Math.round(this.position.x/e.grid.x)*e.grid.x,i=Math.round(this.position.y/e.grid.y)*e.grid.y;return {x:n,y:i}}if(e.points&&e.points.length>0){let n=Math.sqrt(this.velocity.x**2+this.velocity.y**2),i=e.velocityThreshold??.5;if(n>i)return null;let r=null,s=1/0;for(let o of e.points){let a=this.position.x-o.x,l=this.position.y-o.y,u=Math.sqrt(a*a+l*l),m=o.radius??50;u<m&&u<s&&(s=u,r=o);}return r}return null}getEffectiveBounds(){let e={left:this.config.bounds?.left??this.config.constraints?.bounds?.left??-1/0,right:this.config.bounds?.right??this.config.constraints?.bounds?.right??1/0,top:this.config.bounds?.top??this.config.constraints?.bounds?.top??-1/0,bottom:this.config.bounds?.bottom??this.config.constraints?.bounds?.bottom??1/0},n=this.config.constraints;if(n?.constrainToParent&&this.element.parentElement){let r=this.element.parentElement.getBoundingClientRect(),s=this.element.getBoundingClientRect(),o=this.normalizePadding(n.constraintPadding);e.left=Math.max(e.left,o.left),e.right=Math.min(e.right,r.width-s.width-o.right),e.top=Math.max(e.top,o.top),e.bottom=Math.min(e.bottom,r.height-s.height-o.bottom);}if(n?.constrainToElement){let i=n.constrainToElement.getBoundingClientRect(),r=this.element.getBoundingClientRect(),s=this.element.parentElement?.getBoundingClientRect()??{left:0,top:0},o=this.normalizePadding(n.constraintPadding),a=i.left-s.left,l=i.top-s.top;e.left=Math.max(e.left,a+o.left),e.right=Math.min(e.right,a+i.width-r.width-o.right),e.top=Math.max(e.top,l+o.top),e.bottom=Math.min(e.bottom,l+i.height-r.height-o.bottom);}return e}normalizePadding(e){return typeof e=="number"?{top:e,right:e,bottom:e,left:e}:{top:e?.top??0,right:e?.right??0,bottom:e?.bottom??0,left:e?.left??0}}enable(){this.enabled=true;}disable(){this.enabled=false,this._isDragging&&(this._isDragging=false);}isEnabled(){return this.enabled}isDragging(){return this._isDragging}reset(){this.springX.jump(0),this.springY.jump(0),this.position={x:0,y:0},this.velocity={x:0,y:0},this.currentSnap=null,this.config.onUpdate&&this.config.onUpdate(0,0);}getPosition(){return {...this.position}}getVelocity(){return {...this.velocity}}setPosition(e,n){if(this.destroyed)return;let i=Number.isFinite(e)?e:this.position.x,r=Number.isFinite(n)?n:this.position.y;this.position={x:i,y:r},this.springX.jump(i),this.springY.jump(r);}jumpTo(e,n){if(this.destroyed)return;let i=Number.isFinite(e)?e:this.position.x,r=Number.isFinite(n)?n:this.position.y;this.position={x:i,y:r},this.springX.jump(i),this.springY.jump(r),this.config.onUpdate&&this.config.onUpdate(i,r);}animateTo(e,n){if(this.destroyed)return;let i=Number.isFinite(e)?e:this.position.x,r=Number.isFinite(n)?n:this.position.y;this.springX.set(i),this.springY.set(r);}release(e,n){let i=this.getEffectiveBounds(),{left:r,right:s,top:o,bottom:a}=i,l=this.position.x,u=this.position.y;if(this.config.momentum){let m=this.config.momentumDecay??.95,p=Math.max(0,Math.min(.99,m)),c=p<1?1/(1-p):100,g=e*c*.1,f=n*c*.1;l+=g,u+=f;}if(this.config.modifyTarget){let m=this.config.modifyTarget({x:l,y:u});l=m.x,u=m.y;}l=$(l,r,s),u=$(u,o,a),this.config.onBoundsHit&&(this.position.x<r&&this.config.onBoundsHit("left"),this.position.x>s&&this.config.onBoundsHit("right"),this.position.y<o&&this.config.onBoundsHit("top"),this.position.y>a&&this.config.onBoundsHit("bottom")),(l!==this.position.x||this.position.x<r||this.position.x>s)&&this.springX.set(l,{velocity:e}),(u!==this.position.y||this.position.y<o||this.position.y>a)&&this.springY.set(u,{velocity:n});}snapToNearest(){let e=this.findNearestSnapPoint();e&&this.snapTo(e);}snapTo(e){this.currentSnap=e,this.config.onSnapStart&&this.config.onSnapStart(e),this.springX.set(e.x),this.springY.set(e.y),this.snapTimeoutId!==null&&clearTimeout(this.snapTimeoutId);let n=++this.snapGeneration;this.snapTimeoutId=setTimeout(()=>{this.snapTimeoutId=null,!this.destroyed&&n===this.snapGeneration&&this.currentSnap===e&&this.config.onSnapComplete&&this.config.onSnapComplete(e);},500);}setConstraints(e){this.config.constraints=e;}setSnap(e){this.config.snap=e;}destroy(){this.destroyed=true,this.snapTimeoutId!==null&&(clearTimeout(this.snapTimeoutId),this.snapTimeoutId=null),this.element.removeEventListener("pointerdown",this.onPointerDown),this.element.removeEventListener("pointermove",this.onPointerMove),this.element.removeEventListener("pointerup",this.onPointerUp),this.element.removeEventListener("pointercancel",this.onPointerUp),this.springX.destroy(),this.springY.destroy();}};function Qt(t,e){return new Pe(t,e)}var Jt={direction:"vertical",momentum:false,momentumDecay:.95,bounce:false,stiffness:100,damping:10,mass:1,restSpeed:.01,restDelta:.01,clamp:false},we=class{constructor(e,n={}){this.scroll={x:0,y:0};this.target={x:0,y:0};this.isScrolling=false;this.isEnabled=true;this.pendingRafId=null;this.destroyed=false;this.onWheel=e=>{if(!this.isEnabled)return;this.isScrolling||(this.isScrolling=true,this.config.onScrollStart?.());let n=e.deltaX,i=e.deltaY;if(this.config.direction==="horizontal"?i=0:this.config.direction==="vertical"&&(n=0),this.config.bounce){let r=this.container.scrollWidth-this.container.clientWidth,s=this.container.scrollHeight-this.container.clientHeight;this.target.x+=n,this.target.y+=i,this.target.x<0?this.target.x=-Math.sqrt(Math.abs(this.target.x))*10:this.target.x>r&&(this.target.x=r+Math.sqrt(Math.abs(this.target.x-r))*10),this.target.y<0?this.target.y=-Math.sqrt(Math.abs(this.target.y))*10:this.target.y>s&&(this.target.y=s+Math.sqrt(Math.abs(this.target.y-s))*10),e.preventDefault();}else {this.target.x+=n,this.target.y+=i;let r=this.container.scrollWidth-this.container.clientWidth,s=this.container.scrollHeight-this.container.clientHeight;this.target.x=Math.max(0,Math.min(this.target.x,r)),this.target.y=Math.max(0,Math.min(this.target.y,s));}this.startScrollLoop();};this.container=e,this.config={...Jt,...n};let i={stiffness:this.config.stiffness,damping:this.config.damping,mass:this.config.mass,restSpeed:this.config.restSpeed,restDelta:this.config.restDelta,clamp:this.config.clamp};this.springX=_(0,i),this.springY=_(0,i),this.springX.subscribe(()=>{this.scroll.x=this.springX.get(),this.config.onScroll?.(this.scroll.x,this.scroll.y);}),this.springY.subscribe(()=>{this.scroll.y=this.springY.get(),this.config.onScroll?.(this.scroll.x,this.scroll.y);}),this.setupScrollEvents();}setupScrollEvents(){this.container.addEventListener("wheel",this.onWheel,{passive:false});}startScrollLoop(){this.springX.set(this.target.x),this.springY.set(this.target.y);let e=()=>{if(this.pendingRafId=null,this.destroyed)return;Math.abs(this.scroll.x-this.target.x)<.1&&Math.abs(this.scroll.y-this.target.y)<.1&&!this.springX.isAnimating()&&!this.springY.isAnimating()&&this.isScrolling?(this.isScrolling=false,this.config.onScrollEnd?.()):this.isScrolling&&(this.pendingRafId=requestAnimationFrame(e));};e();}getScroll(){return {...this.scroll}}scrollTo(e,n){this.target={x:e,y:n},this.springX.set(e),this.springY.set(n);}scrollToElement(e,n=0){let i=this.container.getBoundingClientRect(),r=e.getBoundingClientRect(),s=r.left-i.left+this.scroll.x+n,o=r.top-i.top+this.scroll.y+n;this.scrollTo(s,o);}enable(){this.isEnabled=true;}disable(){this.isEnabled=false,this.pendingRafId!==null&&(cancelAnimationFrame(this.pendingRafId),this.pendingRafId=null),this.isScrolling&&(this.isScrolling=false,this.config.onScrollEnd?.());}destroy(){this.destroyed=true,this.pendingRafId!==null&&(cancelAnimationFrame(this.pendingRafId),this.pendingRafId=null),this.container.removeEventListener("wheel",this.onWheel),this.springX.destroy(),this.springY.destroy();}};function en(t,e){return new we(t,e)}function Me(t,e){let n=e.x-t.x,i=e.y-t.y;return Math.sqrt(n*n+i*i)}function Xe(t,e){return Math.atan2(e.y-t.y,e.x-t.x)*180/Math.PI}function Ye(t,e){return {x:(t.x+e.x)/2,y:(t.y+e.y)/2}}function tn(t,e,n,i){return t<e?e-Math.pow(e-t,i):t>n?n+Math.pow(t-n,i):t}function je(t,e={}){let{minScale:n=.1,maxScale:i=10,rubberBand:r=true,rubberBandFactor:s=.5,spring:o={stiffness:200,damping:20},onPinch:a,onPinchStart:l,onPinchEnd:u}=e,m=true,p=false,c=0,g=1,f=1,h=1,d=0,b=0,S=0,x=new Map,v=null,y=(A,C=false,R=false)=>{let I=Array.from(x.values()),D=I[0]??{x:0,y:0},O=I[1]??{x:0,y:0},U=I.length>=2?Ye(D,O):{x:0,y:0};return {active:p,first:C,last:R,event:A,elapsedTime:performance.now()-b,cancelled:false,scale:f,velocity:d,distance:I.length>=2?Me(D,O):0,initialDistance:c,origin:U,movement:f-g,offset:f-1}},T=A=>{if(m){for(let C of Array.from(A.changedTouches))x.set(C.identifier,{x:C.clientX,y:C.clientY});if(x.size===2){let C=Array.from(x.values()),R=C[0],I=C[1];c=Me(R,I),g=f,b=performance.now(),S=b,p=true,v?.destroy(),v=null,l?.(y(A,true,false));}}},V=A=>{if(!(!m||!p)){for(let C of Array.from(A.changedTouches))x.has(C.identifier)&&x.set(C.identifier,{x:C.clientX,y:C.clientY});if(x.size>=2){let C=Array.from(x.values()),R=C[0],I=C[1],D=Me(R,I),O=performance.now(),U=O-S,Y=g*(D/c);r?Y=tn(Y,n,i,s):Y=$(Y,n,i),h=f,f=Y,d=U>0?(f-h)/U*1e3:0,S=O,a?.(y(A,false,false)),A.preventDefault();}}},P=A=>{for(let C of Array.from(A.changedTouches))x.delete(C.identifier);if(p&&x.size<2){if(p=false,f<n||f>i){let C=$(f,n,i);v=_(f,{stiffness:o.stiffness,damping:o.damping}),v.subscribe(()=>{f=v.get(),a?.(y(A,false,false));}),v.set(C);}u?.(y(A,false,true));}};return t.addEventListener("touchstart",T,{passive:false}),t.addEventListener("touchmove",V,{passive:false}),t.addEventListener("touchend",P),t.addEventListener("touchcancel",P),{enable:()=>{m=true;},disable:()=>{m=false,v?.destroy(),v=null;},isEnabled:()=>m,destroy:()=>{t.removeEventListener("touchstart",T),t.removeEventListener("touchmove",V),t.removeEventListener("touchend",P),t.removeEventListener("touchcancel",P),v?.destroy(),v=null,x.clear();}}}function Ge(t,e={}){let{enabled:n=true,threshold:i=0,onRotate:r,onRotateStart:s,onRotateEnd:o}=e,a=n,l=false,u=0,m=0,p=0,c=0,g=0,f=0,h=0,d=new Map,b=(y,T=false,V=false)=>{let P=Array.from(d.values()),A=P[0]??{x:0,y:0},C=P[1]??{x:0,y:0},R=P.length>=2?Ye(A,C):{x:0,y:0};return {active:l,first:T,last:V,event:y,elapsedTime:performance.now()-g,cancelled:false,angle:m,velocity:c,initialAngle:u,origin:R,movement:m-u,offset:h}},S=y=>{if(a){for(let T of Array.from(y.changedTouches))d.set(T.identifier,{x:T.clientX,y:T.clientY});if(d.size===2){let T=Array.from(d.values()),V=T[0],P=T[1];u=Xe(V,P),g=performance.now(),f=g,p=m,l=true,s?.(b(y,true,false));}}},x=y=>{if(!(!a||!l)){for(let T of Array.from(y.changedTouches))d.has(T.identifier)&&d.set(T.identifier,{x:T.clientX,y:T.clientY});if(d.size>=2){let T=Array.from(d.values()),V=T[0],P=T[1],A=Xe(V,P),C=performance.now(),R=C-f,I=A-u;I>180&&(I-=360),I<-180&&(I+=360),Math.abs(I)>=i&&(m=h+I,c=R>0?(m-p)/R*1e3:0,p=m,f=C,r?.(b(y,false,false))),y.preventDefault();}}},v=y=>{for(let T of Array.from(y.changedTouches))d.delete(T.identifier);l&&d.size<2&&(l=false,h=m,o?.(b(y,false,true)));};return t.addEventListener("touchstart",S,{passive:false}),t.addEventListener("touchmove",x,{passive:false}),t.addEventListener("touchend",v),t.addEventListener("touchcancel",v),{enable:()=>{a=true;},disable:()=>{a=false;},isEnabled:()=>a,destroy:()=>{t.removeEventListener("touchstart",S),t.removeEventListener("touchmove",x),t.removeEventListener("touchend",v),t.removeEventListener("touchcancel",v),d.clear();}}}function He(t,e={}){let{velocityThreshold:n=.5,distanceThreshold:i=50,maxDuration:r=300,axis:s="both",onSwipe:o,onSwipeStart:a,onSwipeEnd:l}=e,u=true,m=false,p={x:0,y:0},c={x:0,y:0},g=0,f=0,h=null,d=(y,T=false,V=false,P=null)=>{let A=performance.now(),C=A-g,R=A-f,I={x:y.clientX-p.x,y:y.clientY-p.y},D={x:R>0?(y.clientX-c.x)/R:0,y:R>0?(y.clientY-c.y)/R:0};return {active:m,first:T,last:V,event:y,elapsedTime:C,cancelled:false,direction:P,velocity:D,distance:I,movement:I,duration:C}},b=(y,T)=>{let V=Math.abs(y.x),P=Math.abs(y.y),A=Math.abs(T.x),C=Math.abs(T.y),R=V>=i,I=P>=i,D=A>=n,O=C>=n;return (s==="x"||s==="both"&&V>P)&&(R||D)?y.x>0?"right":"left":(s==="y"||s==="both"&&P>V)&&(I||O)?y.y>0?"down":"up":null},S=y=>{!u||h!==null||(h=y.pointerId,p={x:y.clientX,y:y.clientY},c={...p},g=performance.now(),f=g,m=true,t.setPointerCapture(y.pointerId),a?.(d(y,true,false)));},x=y=>{if(!u||!m||y.pointerId!==h)return;let T=performance.now();c={x:y.clientX,y:y.clientY},f=T;},v=y=>{if(!m||y.pointerId!==h)return;if(m=false,h=null,performance.now()-g<=r){let V={x:y.clientX-p.x,y:y.clientY-p.y},P=performance.now()-f,A={x:P>0?(y.clientX-c.x)/P:0,y:P>0?(y.clientY-c.y)/P:0},C=b(V,A),R=d(y,false,true,C);C&&o?.(R),l?.(R);}else l?.(d(y,false,true,null));try{t.releasePointerCapture(y.pointerId);}catch{}};return t.addEventListener("pointerdown",S),t.addEventListener("pointermove",x),t.addEventListener("pointerup",v),t.addEventListener("pointercancel",v),{enable:()=>{u=true;},disable:()=>{u=false;},isEnabled:()=>u,destroy:()=>{t.removeEventListener("pointerdown",S),t.removeEventListener("pointermove",x),t.removeEventListener("pointerup",v),t.removeEventListener("pointercancel",v);}}}function Ue(t,e={}){let{threshold:n=500,movementTolerance:i=10,onLongPress:r,onPressStart:s,onPressEnd:o}=e,a=true,l=false,u=false,m={x:0,y:0},p=0,c=null,g=null,f=(S,x=false,v=false)=>({active:l,first:x,last:v,event:S,elapsedTime:performance.now()-p,cancelled:false,position:m,duration:performance.now()-p,triggered:u}),h=S=>{!a||g!==null||(g=S.pointerId,m={x:S.clientX,y:S.clientY},p=performance.now(),l=true,u=false,t.setPointerCapture(S.pointerId),s?.(f(S,true,false)),c=setTimeout(()=>{l&&!u&&(u=true,r?.(f(S,false,false)));},n));},d=S=>{if(!l||S.pointerId!==g)return;let x=S.clientX-m.x,v=S.clientY-m.y;Math.sqrt(x*x+v*v)>i&&c&&(clearTimeout(c),c=null);},b=S=>{if(!(!l||S.pointerId!==g)){l=false,g=null,c&&(clearTimeout(c),c=null),o?.(f(S,false,true));try{t.releasePointerCapture(S.pointerId);}catch{}}};return t.addEventListener("pointerdown",h),t.addEventListener("pointermove",d),t.addEventListener("pointerup",b),t.addEventListener("pointercancel",b),{enable:()=>{a=true;},disable:()=>{a=false,c&&(clearTimeout(c),c=null);},isEnabled:()=>a,destroy:()=>{c&&clearTimeout(c),t.removeEventListener("pointerdown",h),t.removeEventListener("pointermove",d),t.removeEventListener("pointerup",b),t.removeEventListener("pointercancel",b);}}}function nn(t,e){let n=[];return e.pinch&&n.push(je(t,e.pinch)),e.rotate&&n.push(Ge(t,e.rotate)),e.swipe&&n.push(He(t,e.swipe)),e.longPress&&n.push(Ue(t,e.longPress)),{enable:()=>n.forEach(i=>i.enable()),disable:()=>n.forEach(i=>i.disable()),isEnabled:()=>n.every(i=>i.isEnabled()),destroy:()=>n.forEach(i=>i.destroy())}}function le(t){if(t.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i))return Ne(t);let n=t.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/i);if(n)return {r:parseInt(n[1],10),g:parseInt(n[2],10),b:parseInt(n[3],10)};let i=t.match(/rgba\((\d+),\s*(\d+),\s*(\d+),\s*[\d.]+\)/i);if(i)return {r:parseInt(i[1],10),g:parseInt(i[2],10),b:parseInt(i[3],10)};let r=t.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/i);return r?Be(parseInt(r[1],10),parseInt(r[2],10),parseInt(r[3],10)):{r:0,g:0,b:0}}function Ee(t,e,n){let i=r=>Math.round(Math.max(0,Math.min(255,r))).toString(16).padStart(2,"0");return `#${i(t)}${i(e)}${i(n)}`}function Ne(t){let e=t.replace("#","");return e.length===3?{r:parseInt(e.charAt(0)+e.charAt(0),16),g:parseInt(e.charAt(1)+e.charAt(1),16),b:parseInt(e.charAt(2)+e.charAt(2),16)}:{r:parseInt(e.slice(0,2),16),g:parseInt(e.slice(2,4),16),b:parseInt(e.slice(4,6),16)}}function Be(t,e,n){if(t=(t%360+360)%360,e=Math.max(0,Math.min(100,e))/100,n=Math.max(0,Math.min(100,n))/100,e===0){let o=Math.round(n*255);return {r:o,g:o,b:o}}let i=(o,a,l)=>(l<0&&(l+=1),l>1&&(l-=1),l<1/6?o+(a-o)*6*l:l<1/2?a:l<2/3?o+(a-o)*(2/3-l)*6:o),r=n<.5?n*(1+e):n+e-n*e,s=2*n-r;return {r:Math.round(i(s,r,t/360+1/3)*255),g:Math.round(i(s,r,t/360)*255),b:Math.round(i(s,r,t/360-1/3)*255)}}function rn(t,e,n){t=Math.max(0,Math.min(255,t))/255,e=Math.max(0,Math.min(255,e))/255,n=Math.max(0,Math.min(255,n))/255;let i=Math.max(t,e,n),r=Math.min(t,e,n),s=i-r,o=0,a=0;return s!==0&&(a=(i+r)/2>.5?s/(2-i-r):s/(i+r),i===t?o=((e-n)/s+(e<n?6:0))/6:i===e?o=((n-t)/s+2)/6:o=((t-e)/s+4)/6),{h:Math.round(o*360),s:Math.round(a*100),l:Math.round((i+r)/2*100)}}function on(t,e,n){let i=le(t),r=le(e);return Ee(Math.round(N(i.r,r.r,n)),Math.round(N(i.g,r.g,n)),Math.round(N(i.b,r.b,n)))}function sn(t,e={}){let{offset:n=["start","end"],smooth:i=0}=e,r=0,s=0,o=0,a=performance.now(),l=0,u=0,m=null,p=false,c=new Set,g=()=>{let b=window.scrollY,S=window.innerHeight,x=performance.now(),v=Math.max(x-a,1);l=(b-o)/v*1e3,u=b>o?1:b<o?-1:0,o=b,a=x;let y,T=true,V=1;if(t){let P=t.getBoundingClientRect(),A=P.top+b,C=P.height,R=n[0]==="start"?A:n[0]==="center"?A+C/2:A+C,I=n[1]==="start"?S:n[1]==="center"?S/2:0,D=R-S,O=R-I,U=O-D;y=U!==0?$((b-D)/U,0,1):b>=O?1:0,T=P.top<S&&P.bottom>0,V=T?$((Math.min(P.bottom,S)-Math.max(P.top,0))/P.height,0,1):0;}else {let P=document.documentElement.scrollHeight-S;y=P>0?$(b/P,0,1):0;}return i>0?(s=N(s,y,1-i),r=s):r=y,{progress:r,scrollY:b,velocity:l,direction:u,isInView:T,visibleRatio:V}},f=b=>{c.forEach(S=>{try{S(b);}catch(x){console.error("[SpringKit] ScrollProgress subscriber error:",x);}});},h=()=>{m||p||(m=requestAnimationFrame(()=>{if(m=null,p)return;let b=g();f(b);}));},d=g();return window.addEventListener("scroll",h,{passive:true}),window.addEventListener("resize",h,{passive:true}),{get:()=>r,getInfo:()=>g(),subscribe:b=>(c.add(b),b(d),()=>c.delete(b)),destroy:()=>{p||(p=true,m&&cancelAnimationFrame(m),window.removeEventListener("scroll",h),window.removeEventListener("resize",h),c.clear());}}}function an(t,e={}){let{speed:n=.5,direction:i="vertical",easing:r=g=>g,rootMargin:s="0px"}=e,o=0,a=false,l=null,u=null,m=false,p=()=>{if(!a)return;let g=t.getBoundingClientRect(),f=window.innerHeight,h=g.top+g.height/2,d=f/2,S=(h-d)/f;o=r(Math.abs(S))*Math.sign(S)*n*100,i==="vertical"?t.style.transform=`translate3d(0, ${o}px, 0)`:t.style.transform=`translate3d(${o}px, 0, 0)`;};l=new IntersectionObserver(g=>{let f=g[0];f&&(a=f.isIntersecting,a&&p());},{rootMargin:s}),l.observe(t);let c=()=>{m||a&&u===null&&(u=requestAnimationFrame(()=>{u=null,m||p();}));};return window.addEventListener("scroll",c,{passive:true}),{getOffset:()=>o,update:p,destroy:()=>{m=true,u!==null&&(cancelAnimationFrame(u),u=null),l?.disconnect(),window.removeEventListener("scroll",c),t.style.transform="";}}}function ln(t,e={}){let{start:n="top",end:i="bottom",startOffset:r=0,endOffset:s=0,onEnter:o,onLeave:a,onProgress:l,once:u=false,scrub:m=false}=e,p=false,c=0,g=false,f=0,h=null,d=(x,v)=>{if(typeof x=="number")return x;switch(x){case "top":return v.top;case "center":return v.top+v.height/2;case "bottom":return v.bottom}},b=()=>{let x=t.getBoundingClientRect(),v=window.innerHeight,y=d(n,x)+r,T=d(i,x)+s,V=v,A=V-0,C=A!==0?(V-y)/A:0,I=(A!==0?(V-T)/A:1)-C,D=I!==0?$((C-0)/I,0,1):C>=0?1:0;typeof m=="number"&&m>0?(f=N(f,D,1-m),c=f):c=D;let O=x.top<v&&x.bottom>0;return {progress:c,scrollY:window.scrollY,velocity:0,direction:0,isInView:O,visibleRatio:O?$((Math.min(x.bottom,v)-Math.max(x.top,0))/x.height,0,1):0}},S=()=>{h||(h=requestAnimationFrame(()=>{h=null;let x=b(),v=p;if(p=x.progress>0&&x.progress<1,!v&&p&&(!u||!g)){g=true;try{o?.(x);}catch(y){console.error("[SpringKit] ScrollTrigger onEnter error:",y);}}if(v&&!p)try{a?.(x);}catch(y){console.error("[SpringKit] ScrollTrigger onLeave error:",y);}if(p||m)try{l?.(x);}catch(y){console.error("[SpringKit] ScrollTrigger onProgress error:",y);}}));};return window.addEventListener("scroll",S,{passive:true}),window.addEventListener("resize",S,{passive:true}),S(),{isActive:()=>p,getProgress:()=>c,refresh:()=>{b();},destroy:()=>{h&&cancelAnimationFrame(h),window.removeEventListener("scroll",S),window.removeEventListener("resize",S);}}}function un(t,e){let{inputRange:n,outputRange:i,clamp:r=true,easing:s}=e;if(n.length!==i.length)throw new Error("inputRange and outputRange must have the same length");let o=i[0],a=typeof o=="string"&&(o.startsWith("#")||o.startsWith("rgb")||o.startsWith("hsl")),l=o??0,u=new Set,m=c=>{let g=c;s&&(g=s(g));let f=n[0]??0,h=n[n.length-1]??1;r&&(g=$(g,f,h));let d=0;for(let T=0;T<n.length-1;T++){let V=n[T]??0,P=n[T+1]??1;if(g>=V&&g<=P){d=T;break}g>P&&(d=T+1);}let b=n[d]??0,S=n[d+1]??b,x=S!==b?(g-b)/(S-b):0,v=i[d]??0,y=i[d+1]??v;return a&&typeof v=="string"&&typeof y=="string"?on(v,y,x):N(v,y,x)},p=t.subscribe(c=>{l=m(c.progress),u.forEach(g=>g(l));});return {get:()=>l,subscribe:c=>(u.add(c),c(l),()=>u.delete(c)),destroy:()=>{p(),u.clear();}}}var cn={linear:t=>t,easeIn:t=>t*t,easeOut:t=>t*(2-t),easeInOut:t=>t<.5?2*t*t:-1+(4-2*t)*t,easeInCubic:t=>t*t*t,easeOutCubic:t=>--t*t*t+1,easeInOutCubic:t=>t<.5?4*t*t*t:(t-1)*(2*t-2)*(2*t-2)+1,easeInQuart:t=>t*t*t*t,easeOutQuart:t=>1- --t*t*t*t,easeInOutQuart:t=>t<.5?8*t*t*t*t:1-8*--t*t*t*t};var mn=0;function Ae(t={}){let e=++mn,n=0,{defaults:i={},autoplay:r=false,repeat:s=0,yoyo:o=false,repeatDelay:a=0,onStart:l,onUpdate:u,onComplete:m,onRepeat:p}=t,c=[],g=new Map,f=new Map,h=new Map,d=0,b=0,S=false,x=false,v=false,y=0,T=null,V=null,P=0,A=false,C=0,R=w=>{if(w===void 0)return C;if(typeof w=="number")return w;if(w==="<"){let E=c[c.length-1];return E?E.startTime:(console.warn('[SpringKit] Timeline: "<" position used with no previous segments'),0)}if(w===">")return C;if(w.startsWith("+="))return C+parseFloat(w.slice(2));if(w.startsWith("-="))return C-parseFloat(w.slice(2));if(g.has(w))return g.get(w);let L=w.match(/^([a-zA-Z_]\w*)([+-]=?\d*\.?\d+)?$/);if(L){let E=L[1],k=L[2];if(!E)return console.warn(`[SpringKit] Timeline: Invalid label reference in position "${w}"`),C;let F=g.get(E)??0;if(k){let M=parseFloat(k.replace("=",""));return F+M}return F}return C},I=w=>typeof w=="string"?document.querySelector(w):w instanceof HTMLElement?w:null,D=w=>{let L={};for(let[E,k]of Object.entries(w))typeof k=="number"&&!["duration","delay"].includes(E)&&(L[E]=k);return L},O=(w,L)=>{let E=[],k={};for(let[F,M]of Object.entries(L))switch(F){case "x":E.push(`translateX(${M}px)`);break;case "y":E.push(`translateY(${M}px)`);break;case "z":E.push(`translateZ(${M}px)`);break;case "scale":E.push(`scale(${M})`);break;case "scaleX":E.push(`scaleX(${M})`);break;case "scaleY":E.push(`scaleY(${M})`);break;case "rotate":case "rotation":E.push(`rotate(${M}deg)`);break;case "rotateX":E.push(`rotateX(${M}deg)`);break;case "rotateY":E.push(`rotateY(${M}deg)`);break;case "rotateZ":E.push(`rotateZ(${M}deg)`);break;case "skewX":E.push(`skewX(${M}deg)`);break;case "skewY":E.push(`skewY(${M}deg)`);break;case "opacity":k.opacity=String(M);break;default:k[F]=typeof M=="number"?`${M}px`:String(M);}E.length>0&&(w.style.transform=E.join(" "));for(let[F,M]of Object.entries(k))w.style[F]=M;},U=(w,L)=>{let E={},k=getComputedStyle(w);for(let F of Object.keys(L))switch(F){case "opacity":E[F]=parseFloat(k.opacity)||1;break;case "x":case "y":case "z":case "scale":case "scaleX":case "scaleY":case "rotate":case "rotation":case "rotateX":case "rotateY":case "rotateZ":case "skewX":case "skewY":E[F]=F.startsWith("scale")?1:0;break;default:E[F]=parseFloat(k.getPropertyValue(F))||0;}return E},Y=64,Z=w=>{if(!S||v)return;let L=P?w-P:0,E=Math.min(L,Y)/1e3;P=w,d+=x?-E:E,d=$(d,0,b);let k=f.get(Math.floor(d*1e3));k&&k.forEach(M=>{try{M();}catch(G){console.error("[SpringKit] Timeline callback error:",G);}});let F=h.get(Math.floor(d*1e3));if(F!==void 0){v=true;try{F?.();}catch(M){console.error("[SpringKit] Timeline pause callback error:",M);}return}for(let M of c){let G=M.endTime-M.startTime,H=G>0?$((d-M.startTime)/G,0,1):d>=M.endTime?1:0,X=d>=M.startTime&&d<=M.endTime;X&&!M.isActive&&(M.isActive=true,M.props.onStart?.()),M.isActive&&M.spring&&M.props.onUpdate?.(H),X&&H>=1&&!M.isComplete&&(M.isComplete=true,M.props.onComplete?.());}if(u?.(b>0?d/b:1),x&&d<=0||!x&&d>=b)if(s===-1||y<s){if(y++,p?.(y),o?x=!x:(d=0,c.forEach(M=>{M.isActive=false,M.isComplete=false;})),a>0){V=setTimeout(()=>{V=null,T=requestAnimationFrame(Z);},a*1e3);return}}else {S=false,m?.();return}T=requestAnimationFrame(Z);},j={to(w,L,E){let k=R(E)+(L.delay||0),F=L.duration||.5,M=k+F,G=I(w),H=D(L),X={id:`segment_${e}_${n++}`,target:w,props:L,startTime:k,endTime:M,spring:null,isActive:false,isComplete:false};if(G&&Object.keys(H).length>0){let ee=U(G,H),K={...i,...L.spring};X.spring=Q(ee,K),X.spring.subscribe(ie=>{O(G,ie);});let ne=X.props.onStart;X.props.onStart=()=>{X.spring?.set(H),ne?.();};}return c.push(X),C=M,b=Math.max(b,M),j},from(w,L,E){let k=R(E)+(L.delay||0),F=L.duration||.5,M=k+F,G=I(w),H=D(L),X={id:`segment_${e}_${n++}`,target:w,props:L,startTime:k,endTime:M,spring:null,isActive:false,isComplete:false};if(G&&Object.keys(H).length>0){let ee=U(G,H),K={...i,...L.spring};X.spring=Q(H,K),O(G,H),X.spring.subscribe(ie=>{O(G,ie);});let ne=X.props.onStart;X.props.onStart=()=>{X.spring?.set(ee),ne?.();};}return c.push(X),C=M,b=Math.max(b,M),j},fromTo(w,L,E,k){let F=R(k)+(E.delay||0),M=E.duration||.5,G=F+M,H=I(w),X=D(L),ee=D(E),K={id:`segment_${e}_${n++}`,target:w,props:E,startTime:F,endTime:G,spring:null,isActive:false,isComplete:false};if(H&&Object.keys(ee).length>0){let ne={...i,...E.spring};K.spring=Q(X,ne),O(H,X),K.spring.subscribe(ot=>{O(H,ot);});let ie=K.props.onStart;K.props.onStart=()=>{K.spring?.set(ee),ie?.();};}return c.push(K),C=G,b=Math.max(b,G),j},addLabel(w,L){let E=R(L);return g.set(w,E),j},call(w,L){let E=Math.floor(R(L)*1e3);return f.has(E)||f.set(E,[]),f.get(E).push(w),j},set(w,L,E){let k=I(w);if(k){let F=R(E);this.call(()=>{O(k,D(L));},F);}return j},addPause(w,L){let E=Math.floor(R(w)*1e3);return h.set(E,L),j},play(){return A||(A=true,l?.()),S=true,v=false,P=0,T=requestAnimationFrame(Z),j},pause(){return v=true,T&&(cancelAnimationFrame(T),T=null),j},resume(){return v&&(v=false,P=0,T=requestAnimationFrame(Z)),j},reverse(){return x=!x,j},restart(){return d=x?b:0,y=0,A=false,c.forEach(w=>{w.isActive=false,w.isComplete=false;}),this.play()},seek(w){return typeof w=="string"?d=g.get(w)??0:d=$(w,0,b),j},kill(){S=false,T&&(cancelAnimationFrame(T),T=null),V&&(clearTimeout(V),V=null),c.forEach(w=>w.spring?.destroy()),c.length=0,g.clear(),f.clear(),h.clear();},time:()=>d,duration:()=>b,progress:()=>b>0?d/b:0,isPlaying:()=>S&&!v,isReversed:()=>x,getById(w){return c.find(L=>L.id===w)}};return r&&j.play(),j}function pn(t,e){return Ae().to(t,e).play()}function fn(t,e){let n=Ae();return t.forEach((i,r)=>{n.to(i,e,r===0?0:"<");}),n.play()}function ze(t){let e=[],n=/([MLCQAZHVST])([^MLCQAZHVST]*)/gi,i=t.matchAll(n);for(let r of i){let s=r[1],o=r[2];if(!s||o===void 0)continue;let a=s.toUpperCase(),l=o.trim().split(/[\s,]+/).filter(u=>u!=="").map(parseFloat).filter(u=>!isNaN(u));e.push({type:a,values:l});}return e}function qe(t){return t.map(s=>{let{type:o,values:a}=s,l=[...a];switch(o){case "M":a[0]??0,a[1]??0;break;case "L":a[0]??0,a[1]??0;break;case "H":l[0]=a[0]??0,a[0]??0;break;case "V":l[0]=a[0]??0,a[0]??0;break;case "C":a[4]??0,a[5]??0;break;case "Q":a[2]??0,a[3]??0;break;case "A":a[5]??0,a[6]??0;break;case "S":a[2]??0,a[3]??0;break;case "T":a[0]??0,a[1]??0;break;}return {type:o,values:l}})}function dn(){if(typeof document>"u")return  false;try{let t="http://www.w3.org/2000/svg",e=document.createElementNS(t,"svg"),n=document.createElementNS(t,"path");n.setAttribute("d","M0,0 L10,10"),e.appendChild(n),document.body.appendChild(e);let i=typeof n.getTotalLength=="function",r=!1;if(i)try{n.getTotalLength(),r=!0;}catch{r=!1;}return document.body.removeChild(e),r}catch{return  false}}function gn(t,e){let n=[];for(let i of t)if(i.type==="M"||i.type==="L")n.push({x:i.values[0]??0,y:i.values[1]??0});else if(i.type==="C")n.push({x:i.values[4]??0,y:i.values[5]??0,cp1x:i.values[0]??0,cp1y:i.values[1]??0,cp2x:i.values[2]??0,cp2y:i.values[3]??0});else if(i.type==="Q")n.push({x:i.values[2]??0,y:i.values[3]??0,cp1x:i.values[0]??0,cp1y:i.values[1]??0});else if(i.type==="A")n.push({x:i.values[5]??0,y:i.values[6]??0});else if(i.type==="H"){let r=n[n.length-1];n.push({x:i.values[0]??0,y:r?.y??0});}else if(i.type==="V"){let r=n[n.length-1];n.push({x:r?.x??0,y:i.values[0]??0});}if(n.length>0&&n.length<e){let i=[],r=(n.length-1)/(e-1);for(let s=0;s<e;s++){let o=s*r,a=Math.floor(o),l=o-a;if(a>=n.length-1)i.push(n[n.length-1]);else {let u=n[a],m=n[a+1];i.push({x:N(u.x,m.x,l),y:N(u.y,m.y,l)});}}return i}return n}function Ke(t,e){if(!dn())return gn(t,e);let n=[],i="http://www.w3.org/2000/svg",r=document.createElementNS(i,"svg"),s=document.createElementNS(i,"path"),o="";for(let a of t)o+=a.type+a.values.join(" ");s.setAttribute("d",o),r.appendChild(s),document.body.appendChild(r);try{let l=s.getTotalLength()/(e-1);for(let u=0;u<e;u++){let m=s.getPointAtLength(u*l);n.push({x:m.x,y:m.y});}}finally{document.body.removeChild(r);}return n}function We(t,e,n){return {x:N(t.x,e.x,n),y:N(t.y,e.y,n)}}function Ze(t){if(t.length===0)return "";let e=t[0],n=`M ${e.x} ${e.y}`;for(let i=1;i<t.length;i++){let r=t[i];n+=` L ${r.x} ${r.y}`;}return n}function Qe(t,e={}){let{spring:n={stiffness:120,damping:14},samples:i=100,onProgress:r,onComplete:s}=e,o=t,a=[],l=[],u=[],m=new Set,p=ze(t);a=Ke(qe(p),i),u=[...a],l=[...a];let c=_(0,n);return c.subscribe(()=>{let g=c.get();r?.(g),u=a.map((f,h)=>We(f,l[h]??f,g)),o=Ze(u),m.forEach(f=>{try{f(o);}catch(h){console.error("[SpringKit] Morph subscriber error:",h);}}),g>=.999&&s?.();}),{getPath:()=>o,getProgress:()=>c.get(),morphTo(g){let f=ze(g),h=Ke(qe(f),i);for(a=[...u],l=h;a.length<l.length;)a.push(a[a.length-1]||{x:0,y:0});for(;l.length<a.length;)l.push(l[l.length-1]||{x:0,y:0});c.jump(0),c.set(1);},setProgress(g){let f=$(g,0,1);c.jump(f),u=a.map((h,d)=>We(h,l[d]??h,f)),o=Ze(u),m.forEach(h=>{try{h(o);}catch(d){console.error("[SpringKit] Morph subscriber error:",d);}});},subscribe(g){m.add(g);try{g(o);}catch(f){console.error("[SpringKit] Morph subscriber error:",f);}return ()=>m.delete(g)},destroy(){c.destroy(),m.clear();}}}function hn(t,e={}){if(t.length===0)throw new Error("At least one path is required");let n=0,i=t[0],r=Qe(i,e);return {getPath:()=>r.getPath(),getCurrentIndex:()=>n,morphToIndex(s){let o=$(s,0,t.length-1);if(o!==n){n=o;let a=t[o];r.morphTo(a);}},morphToNext(){this.morphToIndex((n+1)%t.length);},morphToPrevious(){this.morphToIndex((n-1+t.length)%t.length);},subscribe:s=>r.subscribe(s),destroy:()=>r.destroy()}}var bn={circle(t,e,n){return `M ${t-n} ${e}
-            A ${n} ${n} 0 1 1 ${t+n} ${e}
-            A ${n} ${n} 0 1 1 ${t-n} ${e}`},rect(t,e,n,i,r=0){return r===0?`M ${t} ${e}
-              L ${t+n} ${e}
-              L ${t+n} ${e+i}
-              L ${t} ${e+i}
-              Z`:`M ${t+r} ${e}
-            L ${t+n-r} ${e}
-            Q ${t+n} ${e} ${t+n} ${e+r}
-            L ${t+n} ${e+i-r}
-            Q ${t+n} ${e+i} ${t+n-r} ${e+i}
-            L ${t+r} ${e+i}
-            Q ${t} ${e+i} ${t} ${e+i-r}
-            L ${t} ${e+r}
-            Q ${t} ${e} ${t+r} ${e}
-            Z`},polygon(t,e,n,i){let r=[];for(let s=0;s<i;s++){let o=s/i*Math.PI*2-Math.PI/2,a=t+n*Math.cos(o),l=e+n*Math.sin(o);r.push(`${s===0?"M":"L"} ${a} ${l}`);}return r.join(" ")+" Z"},star(t,e,n,i,r){let s=[],o=Math.PI/r;for(let a=0;a<r*2;a++){let l=a%2===0?n:i,u=a*o-Math.PI/2,m=t+l*Math.cos(u),p=e+l*Math.sin(u);s.push(`${a===0?"M":"L"} ${m} ${p}`);}return s.join(" ")+" Z"},heart(t,e,n){let i=n/4;return `M ${t} ${e+i}
-            C ${t} ${e} ${t-2*i} ${e} ${t-2*i} ${e-i}
-            C ${t-2*i} ${e-2*i} ${t} ${e-2*i} ${t} ${e-i}
-            C ${t} ${e-2*i} ${t+2*i} ${e-2*i} ${t+2*i} ${e-i}
-            C ${t+2*i} ${e} ${t} ${e} ${t} ${e+i}
-            Z`},arrow(t,e,n,i,r="right"){let s=n/2,o=i/2;switch(r){case "right":return `M ${t} ${e-o} L ${t+n} ${e} L ${t} ${e+o} Z`;case "left":return `M ${t+n} ${e-o} L ${t} ${e} L ${t+n} ${e+o} Z`;case "up":return `M ${t-s} ${e+i} L ${t} ${e} L ${t+s} ${e+i} Z`;case "down":return `M ${t-s} ${e} L ${t} ${e+i} L ${t+s} ${e} Z`}}};function ue(t){let e=t.getBoundingClientRect(),n=getComputedStyle(t);return {x:e.left+window.scrollX,y:e.top+window.scrollY,width:e.width,height:e.height,opacity:parseFloat(n.opacity)||1,borderRadius:parseFloat(n.borderRadius)||0,scaleX:1,scaleY:1}}function yn(t,e,n,i){let r=i.x!==void 0?e.x-n.x+(i.x-e.x):0,s=i.y!==void 0?e.y-n.y+(i.y-e.y):0,o=i.width!==void 0&&n.width!==0?i.width/n.width:1,a=i.height!==void 0&&n.height!==0?i.height/n.height:1;if(t.style.transform=`translate(${r}px, ${s}px) scale(${o}, ${a})`,t.style.transformOrigin="top left",i.opacity!==void 0&&(t.style.opacity=String(i.opacity)),i.borderRadius!==void 0){let l=i.borderRadius/Math.max(o,a);t.style.borderRadius=`${l}px`;}}function Je(t){t.style.transform="",t.style.transformOrigin="",t.style.opacity="",t.style.borderRadius="";}function Re(t={}){let{spring:e={stiffness:300,damping:30},onAnimationStart:n,onAnimationComplete:i,crossfade:r=false,transition:s={}}=t,o=new Map,a=new Map,l=(f,h)=>{o.has(f)||o.set(f,[]);let d=o.get(f);if(!d.some(S=>S.element===h)){let S=ue(h);d.push({id:f,element:h,measurement:S,spring:null,isAnimating:false,pendingRafId:null}),a.has(f)||a.set(f,S);}},u=(f,h)=>{let d=o.get(f);if(!d)return;let b=d.findIndex(S=>S.element===h);if(b!==-1){let S=d[b];a.set(f,ue(h)),S.pendingRafId!==null&&(cancelAnimationFrame(S.pendingRafId),S.pendingRafId=null),S.spring?.destroy(),d.splice(b,1),d.length===0&&o.delete(f);}},m=(f,h,d)=>{f.spring?.destroy();let b={x:h.x,y:h.y,width:h.width,height:h.height};r&&(b.opacity=h.opacity??1),h.borderRadius!==void 0&&(b.borderRadius=h.borderRadius),f.spring=Q(b,e),f.isAnimating=true,n?.(f.id),f.spring.subscribe(v=>{yn(f.element,h,d,v);});let S={x:d.x,y:d.y,width:d.width,height:d.height};r&&(S.opacity=d.opacity??1),d.borderRadius!==void 0&&(S.borderRadius=d.borderRadius),f.spring.set(S);let x=()=>{f.pendingRafId=null,f.spring&&!f.spring.isAnimating()?(f.isAnimating=false,Je(f.element),i?.(f.id)):f.isAnimating&&(f.pendingRafId=requestAnimationFrame(x));};f.pendingRafId=requestAnimationFrame(x);};return {register:l,unregister:u,update:()=>{for(let[f,h]of o)for(let d of h){let b=a.get(f),S=ue(d.element);b&&(b.x!==S.x||b.y!==S.y||b.width!==S.width||b.height!==S.height)&&m(d,b,S),d.measurement=S,a.set(f,S);}},forceUpdate:()=>{for(let[f,h]of o)for(let d of h)d.measurement=ue(d.element),a.set(f,d.measurement);},destroy:()=>{for(let f of o.values())for(let h of f)h.pendingRafId!==null&&(cancelAnimationFrame(h.pendingRafId),h.pendingRafId=null),h.spring?.destroy(),Je(h.element);o.clear(),a.clear();}}}var vn=0;function Sn(){let t=new Map;return {createGroup(e){let n=e??`layout-group-${vn++}`,i=Re();return t.set(n,i),i},getGroup(e){return t.get(e)},updateAll(){for(let e of t.values())e.update();},destroy(){for(let e of t.values())e.destroy();t.clear();}}}function xn(t={}){let{root:e=typeof document<"u"?document.body:null,attribute:n="data-layout-id",debounce:i=0,...r}=t;if(!e)return {update:()=>{},forceUpdate:()=>{},destroy:()=>{}};let s=Re(r),o=null,a=null,l=null,u=()=>{e.querySelectorAll(`[${n}]`).forEach(c=>{let g=c.getAttribute(n);g&&c instanceof HTMLElement&&s.register(g,c);});},m=()=>{l&&clearTimeout(l),i>0?l=setTimeout(()=>{u(),s.update();},i):(u(),s.update());};return u(),o=new MutationObserver(p=>{let c=false;for(let g of p)g.type==="childList"&&(g.addedNodes.forEach(f=>{f instanceof HTMLElement&&(f.hasAttribute(n)&&(c=true),f.querySelector(`[${n}]`)&&(c=true));}),g.removedNodes.forEach(f=>{if(f instanceof HTMLElement){let h=f.getAttribute(n);h&&s.unregister(h,f);}})),g.type==="attributes"&&g.attributeName===n&&(c=true);c&&m();}),o.observe(e,{childList:true,subtree:true,attributes:true,attributeFilter:[n]}),a=new ResizeObserver(()=>{m();}),a.observe(e),{update:()=>{u(),s.update();},forceUpdate:()=>{u(),s.forceUpdate();},destroy:()=>{l&&clearTimeout(l),o?.disconnect(),a?.disconnect(),s.destroy();}}}function Tn(t){let e=t;return ()=>(e=e*1103515245+12345&2147483647,e/2147483647)}function et(t,e,n,i){let r=t%e,s=Math.floor(t/e),o,a;switch(i){case "top-left":o=0,a=0;break;case "top-right":o=e-1,a=0;break;case "bottom-left":o=0,a=n-1;break;case "bottom-right":o=e-1,a=n-1;break;default:o=(e-1)/2,a=(n-1)/2;break}let l=r-o,u=s-a;return Math.sqrt(l*l+u*u)}function ce(t){let{count:e,delay:n=.1,easing:i=s=>s}=t,r=[];for(let s=0;s<e;s++){let o=e>1?s/(e-1):0;r.push(i(o)*n*(e-1));}return r}function Cn(t){return ce(t).reverse()}function tt(t){let{count:e,delay:n=.1,easing:i=o=>o}=t,r=[],s=(e-1)/2;for(let o=0;o<e;o++){let a=Math.abs(o-s),l=s,u=l>0?a/l:0;r.push(i(u)*n*l);}return r}function nt(t){let{count:e,delay:n=.1,easing:i=a=>a}=t,r=[],s=(e-1)/2,o=n*s;for(let a=0;a<e;a++){let l=Math.abs(a-s),u=s,m=u>0?1-l/u:0;r.push(i(m)*o);}return r}function Ve(t){let{count:e,columns:n,origin:i="top-left",direction:r="diagonal",delay:s=.1,easing:o=u=>u}=t,a=Math.ceil(e/n),l=[];for(let u=0;u<e;u++){let m=u%n,p=Math.floor(u/n),c;switch(r){case "row":c=p/Math.max(a-1,1);break;case "column":c=m/Math.max(n-1,1);break;case "diagonal":c=(m+p)/(n+a-2);break;default:{let g=et(i==="center"?0:e-1,n,a,i==="center"?"top-left":i),f=et(u,n,a,i);c=g>0?f/g:0;break}}l.push(o($(c,0,1))*s*Math.max(n,a));}return l}function Pn(t){let{count:e,direction:n="horizontal",frequency:i=1,amplitude:r=.5,delay:s=.1,easing:o=l=>l}=t,a=[];for(let l=0;l<e;l++){let u=e>1?l/(e-1):0,m=u,p=Math.sin(u*Math.PI*2*i)*r;switch(n){case "horizontal":m=u+p*.5;break;case "vertical":m=u+Math.abs(p);break;case "diagonal":m=u+p;break}a.push(o($(m,0,1.5))*s*(e-1));}return a}function Le(t){let{count:e,columns:n,direction:i="clockwise",startFrom:r="edge",delay:s=.1,easing:o=d=>d}=t,a=Math.ceil(e/n),l=[],u=new Set,m=0,p=a-1,c=0,g=n-1;for(;m<=p&&c<=g;){for(let d=c;d<=g;d++){let b=m*n+d;b<e&&!u.has(`${m},${d}`)&&(l.push(b),u.add(`${m},${d}`));}m++;for(let d=m;d<=p;d++){let b=d*n+g;b<e&&!u.has(`${d},${g}`)&&(l.push(b),u.add(`${d},${g}`));}if(g--,m<=p){for(let d=g;d>=c;d--){let b=p*n+d;b<e&&!u.has(`${p},${d}`)&&(l.push(b),u.add(`${p},${d}`));}p--;}if(c<=g){for(let d=p;d>=m;d--){let b=d*n+c;b<e&&!u.has(`${d},${c}`)&&(l.push(b),u.add(`${d},${c}`));}c++;}}r==="center"&&l.reverse(),i==="counter-clockwise"&&l.reverse();let f=new Array(e).fill(0),h=s*(l.length-1);return l.forEach((d,b)=>{let S=l.length>1?b/(l.length-1):0;f[d]=o(S)*h;}),f}function it(t){let{count:e,seed:n=Date.now(),delay:i=.1,minMultiplier:r=0,maxMultiplier:s=1,easing:o=m=>m}=t,a=Tn(n),l=[],u=i*(e-1);for(let m=0;m<e;m++){let p=a(),c=r+p*(s-r);l.push(o(c)*u);}return l}function wn(t,e){let{count:n,delay:i=.1}=t,r=[],s=i*(n-1);for(let o=0;o<n;o++){let a=e(o,n);r.push($(a,0,1)*s);}return r}function Mn(t,e){return t.map((n,i)=>({...n,delay:(n.delay??0)+(e[i]??0)}))}var En={cascade:t=>ce({count:t,delay:.05}),reveal:t=>ce({count:t,delay:.15}),pop:t=>tt({count:t,delay:.08}),ripple:t=>nt({count:t,delay:.08}),scatter:t=>it({count:t,delay:.1,seed:42}),gridWave:(t,e)=>Ve({count:t,columns:e,direction:"diagonal",delay:.05}),gridRadial:(t,e)=>Ve({count:t,columns:e,origin:"center",direction:"radial",delay:.05}),spiralIn:(t,e)=>Le({count:t,columns:e,startFrom:"edge",delay:.05}),spiralOut:(t,e)=>Le({count:t,columns:e,startFrom:"center",delay:.05})};var re=class{constructor(e,n={}){this._velocity=0;this._subscribers=new Set;this._eventListeners=new Map;this._springValue=null;this._isAnimating=false;this._destroyed=false;this._checkEndRafId=null;this._value=e,this._springConfig=n.spring??{stiffness:100,damping:15},typeof e=="number"&&(this._springValue=_(e,{...this._springConfig,onUpdate:i=>{this._destroyed||(this._value=i,this._velocity=this._springValue?.getVelocity()??0,this._notify());}}));}get(){return this._value}getVelocity(){return this._velocity}isAnimating(){return this._isAnimating}isDestroyed(){return this._destroyed}set(e,n=true){if(!this._destroyed)if(this._checkEndRafId!==null&&(cancelAnimationFrame(this._checkEndRafId),this._checkEndRafId=null),typeof e=="number"&&this._springValue&&n){this._isAnimating=true,this._emit("animationStart"),this._springValue.set(e);let i=e,r=()=>{if(this._destroyed){this._checkEndRafId=null;return}let s=Math.abs(this._springValue?.getVelocity()??0),o=this._springValue?.get()??0,a=s<.01,l=Math.abs(o-i)<.01;a||l?(this._isAnimating=false,this._checkEndRafId=null,this._emit("animationEnd")):this._isAnimating?this._checkEndRafId=requestAnimationFrame(r):this._checkEndRafId=null;};this._checkEndRafId=requestAnimationFrame(r);}else this._value=e,this._velocity=0,this._notify();}jump(e){this._destroyed||(this._value=e,this._velocity=0,typeof e=="number"&&this._springValue&&this._springValue.jump(e),this._isAnimating=false,this._notify());}stop(){this._checkEndRafId!==null&&(cancelAnimationFrame(this._checkEndRafId),this._checkEndRafId=null),this._springValue&&this._springValue.stop(),this._isAnimating=false,this._emit("animationEnd");}subscribe(e){return this._subscribers.add(e),e(this._value),()=>{this._subscribers.delete(e);}}on(e,n){return this._eventListeners.has(e)||this._eventListeners.set(e,new Set),this._eventListeners.get(e).add(n),()=>{this._eventListeners.get(e)?.delete(n);}}setConfig(e){this._springConfig={...this._springConfig,...e},this._springValue&&this._springValue.setConfig(e);}destroy(){this._destroyed=true,this._checkEndRafId!==null&&(cancelAnimationFrame(this._checkEndRafId),this._checkEndRafId=null),this._subscribers.clear(),this._eventListeners.clear(),this._springValue&&(this._springValue.destroy(),this._springValue=null);}_notify(){this._subscribers.forEach(e=>{try{e(this._value);}catch(n){console.error("MotionValue subscriber error:",n);}}),this._emit("change");}_emit(e){this._eventListeners.get(e)?.forEach(n=>{try{n();}catch(i){console.error(`MotionValue ${e} listener error:`,i);}});}};function An(t,e){return new re(t,e)}function rt(t,e){let n=new re(e(t.get())),i=t.subscribe(s=>{n.jump(e(s));}),r=n.destroy.bind(n);return n.destroy=()=>{i(),r();},n}function Rn(t,e,n,i={}){let[r,s]=e,[o,a]=n,l=s-r;return rt(t,u=>{if(l===0)return o;let m=(u-r)/l;return i.clamp&&(m=Math.max(0,Math.min(1,m))),o+m*(a-o)})}function Vn(t,e={}){let{config:n={},autoPlay:i=false,onUpdate:r,onComplete:s}=e,o=t.getTotalLength?.()??0;t.style.strokeDasharray=String(o),t.style.strokeDashoffset=String(o);let a=0,l=false,u=null,m=null,p=_(0,n),c=p.subscribe(h=>{if(l)return;a=h;let d=o*(1-h);t.style.strokeDashoffset=String(d),r?.(h);}),g=()=>new Promise(h=>{let d=()=>{u=null,l||!p.isAnimating()?h():u=requestAnimationFrame(d);};m=setTimeout(()=>{m=null,d();},16);}),f={play:async(h=1)=>{l||(p.set(h),await g(),s?.());},reverse:async()=>{l||(p.set(0),await g(),s?.());},set:(h,d=false)=>{if(!l)if(d)p.set(h);else {p.jump(h),a=h;let b=o*(1-h);t.style.strokeDashoffset=String(b);}},get:()=>a,pause:()=>{l||p.stop();},resume:()=>{l||p.set(a);},reset:()=>{l||(p.jump(0),a=0,t.style.strokeDashoffset=String(o));},isAnimating:()=>p.isAnimating(),destroy:()=>{l=true,u!==null&&(cancelAnimationFrame(u),u=null),m!==null&&(clearTimeout(m),m=null),c(),p.destroy();}};return i&&f.play(),f}function Ln(t){return t.getTotalLength?.()??0}function In(t,e=0){let n=t.getTotalLength?.()??0;t.style.strokeDasharray=String(n),t.style.strokeDashoffset=String(n*(1-e));}function $n(t,e){try{let n=t.getTotalLength();return t.getPointAtLength(n*Math.max(0,Math.min(1,e)))}catch{return null}}function oe(t){let e=t.getBoundingClientRect();return {x:e.left+window.scrollX,y:e.top+window.scrollY,width:e.width,height:e.height}}function Ie(t,e,n,i={}){let{config:r={},position:s=true,size:o=true,onComplete:a,onUpdate:l}=i,u=e.x-n.x,m=e.y-n.y,p=n.width===0?1:e.width/n.width,c=n.height===0?1:e.height/n.height,g=0,f=false,h=false,d=null,b=null,S=null,x=_(0,r),v=t.style.transform,y=t.style.transformOrigin;o&&(t.style.transformOrigin="0 0");let T=P=>{g=P;let A=1-P,C=[];if(s&&C.push(`translate(${u*A}px, ${m*A}px)`),o&&(p!==1||c!==1)){let R=1+(p-1)*A,I=1+(c-1)*A;C.push(`scale(${R}, ${I})`);}t.style.transform=C.length>0?C.join(" "):"";try{l?.(P);}catch(R){console.error("[SpringKit] FLIP onUpdate error:",R);}};T(0);let V=()=>{t.style.transform=v,t.style.transformOrigin=y;};return {play:async()=>{if(!h)return f=true,new Promise(P=>{S=P;let A=x.subscribe(R=>{if(h){A(),S=null,P();return}T(R);});x.set(1);let C=()=>{if(d=null,h){A(),V(),S=null,P();return}if(x.isAnimating())d=requestAnimationFrame(C);else {f=false,A(),V();try{a?.();}catch(R){console.error("[SpringKit] FLIP onComplete error:",R);}S=null,P();}};b=setTimeout(()=>{b=null,C();},16);})},getProgress:()=>g,cancel:()=>{h=true,f=false,d!==null&&(cancelAnimationFrame(d),d=null),b!==null&&(clearTimeout(b),b=null),x.stop(),V(),S&&(S(),S=null);},isAnimating:()=>f}}async function Dn(t,e,n={}){let i=oe(t);await e(),t.offsetHeight;let r=oe(t);await Ie(t,i,r,n).play();}async function kn(t,e,n={}){let i=t.map(s=>oe(s));await e(),document.body.offsetHeight;let r=t.map((s,o)=>{let a=oe(s);return Ie(s,i[o],a,n)});await Promise.all(r.map(s=>s.play()));}export{ae as AnimationState,re as MotionValue,ct as adjustBounce,ut as adjustSpeed,fn as allTo,Oe as animate,zt as animateAll,Mn as applyStagger,At as applyValuesToElement,ke as buildTransformString,se as calculateDampingRatio,dt as calculatePeriod,Fe as calculateStaggerDelays,tt as centerStagger,$ as clamp,Tt as clearWarnings,pt as configFromBounce,mt as configFromDuration,xn as createAutoLayout,Qt as createDragSpring,lt as createFeeling,Ie as createFlip,nn as createGestures,Re as createLayoutGroup,Ue as createLongPressGesture,Qe as createMorph,hn as createMorphSequence,An as createMotionValue,Rt as createOrchestration,an as createParallax,Vn as createPathAnimation,je as createPinchGesture,Ge as createRotateGesture,un as createScrollLinkedValue,sn as createScrollProgress,en as createScrollSpring,ln as createScrollTrigger,Sn as createSharedLayoutContext,Q as createSpringGroup,_ as createSpringValue,He as createSwipeGesture,Ae as createTimeline,_t as createTrail,Lt as createVariantPreset,wn as customStagger,Ot as decay,vt as degToRad,nt as edgeStagger,Dn as flip,kn as flipBatch,Ln as getPathLength,at as getPhysicsPreset,$n as getPointAtProgress,Ct as getVariant,q as globalLoop,Ve as gridStagger,Ne as hexToRgb,Be as hslToRgb,Kt as interpolate,Wt as interpolateColor,Mt as isAnimatable,ht as isCriticallyDamped,jt as isKeyframeArray,bt as isOverdamped,wt as isTransformProperty,gt as isUnderdamped,$t as isVariant,It as isVariants,Xt as keyframes,N as lerp,ce as linearStagger,yt as mapRange,oe as measureElement,Pt as mergeVariants,kt as parallel,le as parseColor,Yt as parseKeyframeArray,Et as parseValueWithUnit,$e as physicsPresets,In as preparePathForAnimation,St as radToDeg,it as randomStagger,De as resolveVariant,Cn as reverseStagger,Ee as rgbToHex,rn as rgbToHsl,cn as scrollEasings,Dt as sequence,bn as shapes,me as simulateSpring,Le as spiralStagger,be as spring,st as springPresets,Ft as stagger,En as staggerPresets,Rn as transformMapRange,rt as transformValue,pn as tween,ge as validateDecayConfig,xt as validateDragConfig,de as validateSpringConfig,Vt as variantPresets,Pn as waveStagger};//# sourceMappingURL=springkit.mjs.map
-//# sourceMappingURL=springkit.mjs.map
+// src/core/config.ts
+var defaultConfig = {
+  stiffness: 100,
+  damping: 10,
+  mass: 1,
+  velocity: 0,
+  restSpeed: 0.01,
+  restDelta: 0.01,
+  clamp: false
+};
+var springPresets = {
+  default: { stiffness: 100, damping: 10 },
+  gentle: { stiffness: 120, damping: 14 },
+  wobbly: { stiffness: 180, damping: 12 },
+  stiff: { stiffness: 210, damping: 20 },
+  slow: { stiffness: 280, damping: 60 },
+  molasses: { stiffness: 280, damping: 120 },
+  bounce: { stiffness: 200, damping: 8 },
+  noWobble: { stiffness: 170, damping: 26 }
+};
+var physicsPresets = {
+  // ---- UI Interactions ----
+  /** Button press/release - snappy response */
+  button: { stiffness: 400, damping: 30, mass: 1 },
+  /** Toggle switch - quick but smooth */
+  toggle: { stiffness: 500, damping: 35, mass: 0.8 },
+  /** Checkbox/Radio - instant feedback */
+  checkbox: { stiffness: 600, damping: 40, mass: 0.5 },
+  /** Hover state - subtle and responsive */
+  hover: { stiffness: 300, damping: 25, mass: 0.8 },
+  /** Focus ring - gentle attention */
+  focus: { stiffness: 200, damping: 20, mass: 1 },
+  // ---- Layout & Navigation ----
+  /** Page transitions - smooth and professional */
+  pageTransition: { stiffness: 100, damping: 20, mass: 1.5 },
+  /** Modal/Dialog entry - dramatic but controlled */
+  modalEnter: { stiffness: 300, damping: 25, mass: 1 },
+  /** Modal/Dialog exit - quick departure */
+  modalExit: { stiffness: 400, damping: 35, mass: 0.8 },
+  /** Sidebar slide - smooth glide */
+  sidebar: { stiffness: 200, damping: 28, mass: 1.2 },
+  /** Dropdown menu - snappy reveal */
+  dropdown: { stiffness: 400, damping: 30, mass: 0.8 },
+  /** Toast notification - attention-grabbing */
+  toast: { stiffness: 350, damping: 25, mass: 0.9 },
+  /** Tooltip - quick and subtle */
+  tooltip: { stiffness: 500, damping: 40, mass: 0.6 },
+  // ---- Gestures & Drag ----
+  /** Drag release - momentum with settle */
+  dragRelease: { stiffness: 150, damping: 20, mass: 1 },
+  /** Swipe action - decisive movement */
+  swipe: { stiffness: 250, damping: 22, mass: 0.9 },
+  /** Pull to refresh - elastic and responsive */
+  pullToRefresh: { stiffness: 180, damping: 18, mass: 1.2 },
+  /** Snap to position - magnetic feel */
+  snap: { stiffness: 400, damping: 35, mass: 0.8 },
+  /** Rubber band - iOS-style overscroll */
+  rubberBand: { stiffness: 300, damping: 15, mass: 0.8 },
+  // ---- Cards & Items ----
+  /** Card flip - dramatic reveal */
+  cardFlip: { stiffness: 150, damping: 18, mass: 1.5 },
+  /** Card hover lift - subtle elevation */
+  cardHover: { stiffness: 400, damping: 30, mass: 0.7 },
+  /** List item enter - staggered animation */
+  listItem: { stiffness: 300, damping: 28, mass: 0.9 },
+  /** Accordion expand - smooth reveal */
+  accordion: { stiffness: 200, damping: 25, mass: 1.1 },
+  // ---- Loading & Progress ----
+  /** Skeleton shimmer - continuous flow */
+  skeleton: { stiffness: 80, damping: 15, mass: 2 },
+  /** Progress bar - steady advancement */
+  progress: { stiffness: 150, damping: 25, mass: 1 },
+  /** Spinner rotation - smooth continuous */
+  spinner: { stiffness: 100, damping: 12, mass: 1.5 },
+  // ---- Emphasis & Attention ----
+  /** Pulse effect - gentle attention */
+  pulse: { stiffness: 120, damping: 10, mass: 1.2 },
+  /** Shake effect - error emphasis */
+  shake: { stiffness: 500, damping: 15, mass: 0.6 },
+  /** Bounce effect - playful emphasis */
+  bounceAttention: { stiffness: 400, damping: 10, mass: 0.7 },
+  /** Pop effect - sudden appearance */
+  pop: { stiffness: 500, damping: 20, mass: 0.6 },
+  /** Wiggle effect - playful motion */
+  wiggle: { stiffness: 300, damping: 8, mass: 0.8 },
+  // ---- Mobile-Specific ----
+  /** iOS spring - Apple-like feel */
+  ios: { stiffness: 300, damping: 20, mass: 1 },
+  /** Android spring - Material Design feel */
+  android: { stiffness: 350, damping: 25, mass: 0.9 },
+  /** Haptic feedback - quick micro-interaction */
+  haptic: { stiffness: 600, damping: 45, mass: 0.4 },
+  // ---- Natural Physics ----
+  /** Pendulum - gravity-like swing */
+  pendulum: { stiffness: 50, damping: 5, mass: 2 },
+  /** Jelly - soft and wobbly */
+  jelly: { stiffness: 150, damping: 8, mass: 1.5 },
+  /** Elastic - stretchy rubber */
+  elastic: { stiffness: 200, damping: 10, mass: 1.2 },
+  /** Heavy - weighted and deliberate */
+  heavy: { stiffness: 150, damping: 30, mass: 3 },
+  /** Light - airy and quick */
+  light: { stiffness: 400, damping: 25, mass: 0.5 },
+  /** Liquid - fluid motion */
+  liquid: { stiffness: 100, damping: 20, mass: 2 }
+};
+function getPhysicsPreset(name) {
+  return { ...physicsPresets[name] };
+}
+function createFeeling(feeling) {
+  switch (feeling) {
+    case "snappy":
+      return { stiffness: 400, damping: 30, mass: 0.8 };
+    case "smooth":
+      return { stiffness: 150, damping: 25, mass: 1.2 };
+    case "bouncy":
+      return { stiffness: 300, damping: 12, mass: 1 };
+    case "heavy":
+      return { stiffness: 100, damping: 30, mass: 2.5 };
+    case "light":
+      return { stiffness: 400, damping: 25, mass: 0.5 };
+    case "elastic":
+      return { stiffness: 200, damping: 10, mass: 1.2 };
+    default:
+      return { stiffness: 100, damping: 10, mass: 1 };
+  }
+}
+function adjustSpeed(preset, speed) {
+  const stiffness = (preset.stiffness ?? 100) * speed;
+  const damping = (preset.damping ?? 10) * Math.sqrt(speed);
+  return { ...preset, stiffness, damping };
+}
+function adjustBounce(preset, bounce) {
+  const minDamping = 5;
+  const maxDamping = 40;
+  const damping = maxDamping - bounce * (maxDamping - minDamping);
+  return { ...preset, damping: Math.max(minDamping, Math.min(maxDamping, damping)) };
+}
+function configFromDuration(ms) {
+  if (ms < 300) {
+    return { stiffness: 170, damping: 26 };
+  }
+  if (ms < 500) {
+    return { stiffness: 100, damping: 20 };
+  }
+  return { stiffness: 80, damping: 15 };
+}
+function configFromBounce(bounce) {
+  if (bounce <= 0) {
+    return { stiffness: 170, damping: 26 };
+  }
+  if (bounce <= 0.25) {
+    return { stiffness: 200, damping: 12 };
+  }
+  return { stiffness: 200, damping: 8 };
+}
+
+// src/core/physics.ts
+var FIXED_TIME_STEP = 1 / 60;
+function simulateSpring(position, velocity, target, config) {
+  const {
+    stiffness = 100,
+    damping = 10,
+    mass = 1,
+    restSpeed = 0.01,
+    restDelta = 0.01
+  } = config;
+  const displacement = target - position;
+  const absDisplacement = Math.abs(displacement);
+  const absVelocity = Math.abs(velocity);
+  if (absDisplacement <= restDelta && absVelocity <= restSpeed) {
+    return {
+      position: target,
+      // Snap to exact target
+      velocity: 0,
+      isRest: true
+    };
+  }
+  const dt = FIXED_TIME_STEP;
+  const springForce = stiffness * displacement;
+  const dampingForce = absVelocity > 1e-4 ? damping * velocity : 0;
+  const safeMass = mass === 0 ? 1e-3 : mass;
+  const acceleration = (springForce - dampingForce) / safeMass;
+  const newVelocity = velocity + acceleration * dt;
+  const newPosition = position + newVelocity * dt;
+  const newDisplacement = Math.abs(target - newPosition);
+  const isRest = newDisplacement <= restDelta && Math.abs(newVelocity) <= restSpeed;
+  return {
+    position: newPosition,
+    velocity: newVelocity,
+    isRest
+  };
+}
+function calculatePeriod(stiffness, mass) {
+  const safeStiffness = stiffness <= 0 ? 1e-3 : stiffness;
+  return 2 * Math.PI * Math.sqrt(mass / safeStiffness);
+}
+function calculateDampingRatio(damping, stiffness, mass) {
+  const safeStiffness = stiffness <= 0 ? 1e-3 : stiffness;
+  const safeMass = mass <= 0 ? 1e-3 : mass;
+  return damping / (2 * Math.sqrt(safeStiffness * safeMass));
+}
+function isUnderdamped(config) {
+  const { stiffness = 100, damping = 10, mass = 1 } = config;
+  const ratio = calculateDampingRatio(damping, stiffness, mass);
+  return ratio < 1;
+}
+function isCriticallyDamped(config) {
+  const { stiffness = 100, damping = 10, mass = 1 } = config;
+  const ratio = calculateDampingRatio(damping, stiffness, mass);
+  return Math.abs(ratio - 1) < 1e-3;
+}
+function isOverdamped(config) {
+  const { stiffness = 100, damping = 10, mass = 1 } = config;
+  const ratio = calculateDampingRatio(damping, stiffness, mass);
+  return ratio > 1;
+}
+
+// src/animation/loop.ts
+var AnimationState = /* @__PURE__ */ ((AnimationState2) => {
+  AnimationState2["Idle"] = "idle";
+  AnimationState2["Running"] = "running";
+  AnimationState2["Paused"] = "paused";
+  AnimationState2["Complete"] = "complete";
+  return AnimationState2;
+})(AnimationState || {});
+var MAX_DELTA_TIME = 64;
+var AnimationLoop = class {
+  constructor() {
+    this.animations = /* @__PURE__ */ new Set();
+    this.animationMap = /* @__PURE__ */ new WeakMap();
+    this.rafId = null;
+    this.isRunning = false;
+    this.lastTime = 0;
+    this.nextId = 1;
+    this.idMap = /* @__PURE__ */ new WeakMap();
+    this.frameListeners = /* @__PURE__ */ new Set();
+    // FinalizationRegistry for automatic cleanup notifications
+    // Feature detection for older browsers (Safari < 14.1, IE11)
+    this.registry = typeof FinalizationRegistry !== "undefined" ? new FinalizationRegistry((id) => {
+      this.cleanupCallbacks.forEach((cb) => cb(id));
+    }) : null;
+    this.cleanupCallbacks = /* @__PURE__ */ new Set();
+    /**
+     * Single animation frame - optimized single-pass update + cleanup
+     * Features:
+     * - WeakRef dereferencing with automatic cleanup of dead refs
+     * - Delta time clamping for frame-drop resilience
+     * - O(n) single-pass performance
+     * - Frame listener notifications
+     */
+    this.tick = () => {
+      const now = performance.now();
+      const rawDelta = now - this.lastTime;
+      const clampedDelta = Math.min(rawDelta, MAX_DELTA_TIME);
+      this.lastTime = now;
+      this.lastFrameDuration = clampedDelta;
+      for (const listener of this.frameListeners) {
+        try {
+          listener(clampedDelta);
+        } catch (e) {
+          console.error("[SpringKit] Frame listener error:", e);
+        }
+      }
+      const toRemove = [];
+      for (const ref of this.animations) {
+        const animation = ref.deref();
+        if (!animation) {
+          toRemove.push(ref);
+          continue;
+        }
+        animation.update(now);
+        if (animation.isComplete()) {
+          toRemove.push(ref);
+          this.animationMap.delete(animation);
+          this.idMap.delete(animation);
+        }
+      }
+      for (let i = 0; i < toRemove.length; i++) {
+        this.animations.delete(toRemove[i]);
+      }
+      if (this.animations.size > 0) {
+        this.rafId = requestAnimationFrame(this.tick);
+      } else {
+        this.stop();
+      }
+    };
+    this.lastFrameDuration = 16.67;
+  }
+  /**
+   * Add an animation to the loop
+   * Uses WeakRef to prevent memory leaks if animation is garbage collected
+   * @returns Unique ID for this animation
+   */
+  add(animation) {
+    const existingId = this.idMap.get(animation);
+    if (existingId !== void 0) return existingId;
+    if (this.animations.size > 0 && this.animations.size % 100 === 0) {
+      this.cleanupDeadRefs();
+    }
+    const id = this.nextId++;
+    const ref = new WeakRef(animation);
+    this.animations.add(ref);
+    this.animationMap.set(animation, ref);
+    this.idMap.set(animation, id);
+    this.registry?.register(animation, id);
+    this.start();
+    return id;
+  }
+  /**
+   * Clean up dead WeakRefs from the animations set
+   * Prevents memory bloat from accumulated dead references
+   */
+  cleanupDeadRefs() {
+    for (const ref of this.animations) {
+      if (ref.deref() === void 0) {
+        this.animations.delete(ref);
+      }
+    }
+  }
+  /**
+   * Remove an animation from the loop
+   */
+  remove(animation) {
+    const ref = this.animationMap.get(animation);
+    if (ref) {
+      this.animations.delete(ref);
+      this.animationMap.delete(animation);
+      this.idMap.delete(animation);
+    }
+    if (this.animations.size === 0) {
+      this.stop();
+    }
+  }
+  /**
+   * Register a callback for when animations are garbage collected
+   * Useful for debugging memory leaks
+   */
+  onCleanup(callback) {
+    this.cleanupCallbacks.add(callback);
+    return () => this.cleanupCallbacks.delete(callback);
+  }
+  /**
+   * Register a callback for each frame
+   * Receives delta time in milliseconds
+   */
+  onFrame(callback) {
+    this.frameListeners.add(callback);
+    return () => this.frameListeners.delete(callback);
+  }
+  /**
+   * Start the animation loop
+   */
+  start() {
+    if (this.isRunning) return;
+    this.isRunning = true;
+    this.lastTime = performance.now();
+    this.tick();
+  }
+  /**
+   * Stop the animation loop
+   */
+  stop() {
+    this.isRunning = false;
+    if (this.rafId !== null) {
+      cancelAnimationFrame(this.rafId);
+      this.rafId = null;
+    }
+  }
+  /**
+   * Get the number of active animations (including potentially dead refs)
+   */
+  get size() {
+    return this.animations.size;
+  }
+  /**
+   * Get count of actually alive animations (for debugging/testing)
+   */
+  getAliveCount() {
+    let count = 0;
+    for (const ref of this.animations) {
+      if (ref.deref()) count++;
+    }
+    return count;
+  }
+  // Default to ~60fps
+  /**
+   * Get current frame rate (based on actual frame duration)
+   */
+  getFPS() {
+    return Math.round(1e3 / this.lastFrameDuration);
+  }
+};
+var globalLoop = new AnimationLoop();
+
+// src/utils/math.ts
+function clamp(value, min, max) {
+  const actualMin = Math.min(min, max);
+  const actualMax = Math.max(min, max);
+  return Math.max(actualMin, Math.min(actualMax, value));
+}
+function lerp(a, b, t) {
+  return a + (b - a) * t;
+}
+function mapRange(value, inMin, inMax, outMin, outMax) {
+  const inputRange = inMax - inMin;
+  if (inputRange === 0) {
+    return outMin;
+  }
+  return (value - inMin) * (outMax - outMin) / inputRange + outMin;
+}
+function degToRad(degrees) {
+  return degrees * Math.PI / 180;
+}
+function radToDeg(radians) {
+  return radians * 180 / Math.PI;
+}
+
+// src/utils/warnings.ts
+var isDev = typeof process !== "undefined" && process.env?.NODE_ENV !== "production";
+var warnedMessages = /* @__PURE__ */ new Set();
+function warnOnce(message) {
+  if (!isDev || warnedMessages.has(message)) return;
+  warnedMessages.add(message);
+  console.warn(`[SpringKit] ${message}`);
+}
+function validateSpringConfig(config) {
+  if (!isDev) return;
+  const { stiffness = 100, damping = 10, mass = 1 } = config;
+  if (stiffness > 400 && damping < 10) {
+    warnOnce(
+      `High stiffness (${stiffness}) with low damping (${damping}) may cause excessive oscillation. Consider increasing damping to at least ${Math.round(stiffness / 20)} for smoother animation.`
+    );
+  }
+  if (stiffness < 20) {
+    warnOnce(
+      `Very low stiffness (${stiffness}) will result in sluggish animation. Consider using stiffness >= 50 for more responsive feel.`
+    );
+  }
+  if (damping > stiffness) {
+    warnOnce(
+      `Damping (${damping}) is higher than stiffness (${stiffness}), which removes the "springy" feel. Consider reducing damping for bouncier animation.`
+    );
+  }
+  if (mass <= 0) {
+    warnOnce(
+      `Mass must be positive. Got ${mass}. Using default mass of 1.`
+    );
+  }
+  if (mass > 10) {
+    warnOnce(
+      `High mass (${mass}) will make the animation very slow. Consider mass between 0.5 and 5 for typical use cases.`
+    );
+  }
+}
+function validateDragConfig(config) {
+  if (!isDev) return;
+  const { rubberBandFactor, bounds } = config;
+  if (rubberBandFactor !== void 0 && (rubberBandFactor < 0 || rubberBandFactor > 1)) {
+    warnOnce(
+      `rubberBandFactor should be between 0 and 1. Got ${rubberBandFactor}. Values outside this range may cause unexpected behavior.`
+    );
+  }
+  if (bounds) {
+    if (bounds.left !== void 0 && bounds.right !== void 0 && bounds.left > bounds.right) {
+      warnOnce(
+        `Drag bounds are inverted: left (${bounds.left}) > right (${bounds.right}). This may cause unexpected behavior.`
+      );
+    }
+    if (bounds.top !== void 0 && bounds.bottom !== void 0 && bounds.top > bounds.bottom) {
+      warnOnce(
+        `Drag bounds are inverted: top (${bounds.top}) > bottom (${bounds.bottom}). This may cause unexpected behavior.`
+      );
+    }
+  }
+}
+function validateDecayConfig(config) {
+  if (!isDev) return;
+  const { velocity, deceleration = 0.998 } = config;
+  if (velocity === 0) {
+    warnOnce(
+      `Decay animation started with zero velocity. The animation will complete immediately.`
+    );
+  }
+  if (deceleration <= 0 || deceleration >= 1) {
+    warnOnce(
+      `Deceleration should be between 0 and 1 (exclusive). Got ${deceleration}. Typical values are 0.99-0.999.`
+    );
+  }
+}
+function validateAnimationValue(value, context) {
+  if (typeof value !== "number" || Number.isNaN(value)) {
+    const message = `Invalid animation value in ${context}: expected number, got ${value}`;
+    if (isDev) {
+      console.error(`[SpringKit] ${message}`);
+    }
+    return 0;
+  }
+  if (!Number.isFinite(value)) {
+    const message = `Invalid animation value in ${context}: Infinity is not supported`;
+    if (isDev) {
+      console.error(`[SpringKit] ${message}`);
+    }
+    return 0;
+  }
+  return value;
+}
+function clearWarnings() {
+  warnedMessages.clear();
+}
+
+// src/core/spring.ts
+var SpringAnimationImpl = class {
+  constructor(from, to, config = {}) {
+    this.state = "idle" /* Idle */;
+    this.resolveComplete = null;
+    this.lastUpdateTime = 0;
+    validateSpringConfig(config);
+    this.from = validateAnimationValue(from, "spring.from");
+    this.to = validateAnimationValue(to, "spring.to");
+    this.clampedFrom = this.from;
+    this.clampedTo = this.to;
+    this.position = this.from;
+    this.velocity = config.velocity ?? 0;
+    this.target = this.to;
+    this.config = {
+      ...defaultConfig,
+      ...config,
+      stiffness: config.stiffness ?? defaultConfig.stiffness,
+      damping: config.damping ?? defaultConfig.damping,
+      mass: config.mass ?? defaultConfig.mass,
+      restSpeed: config.restSpeed ?? defaultConfig.restSpeed,
+      restDelta: config.restDelta ?? defaultConfig.restDelta
+    };
+    this.finished = new Promise((resolve) => {
+      this.resolveComplete = resolve;
+    });
+  }
+  start() {
+    if (this.state === "running" /* Running */) return this;
+    this.state = "running" /* Running */;
+    this.lastUpdateTime = 0;
+    this.config.onStart?.();
+    globalLoop.add(this);
+    return this;
+  }
+  stop() {
+    this.state = "idle" /* Idle */;
+    globalLoop.remove(this);
+  }
+  pause() {
+    if (this.state === "running" /* Running */) {
+      this.state = "paused" /* Paused */;
+      globalLoop.remove(this);
+    }
+  }
+  resume() {
+    if (this.state === "paused" /* Paused */) {
+      this.state = "running" /* Running */;
+      this.lastUpdateTime = 0;
+      globalLoop.add(this);
+    }
+  }
+  reverse() {
+    const temp = this.from;
+    this.from = this.to;
+    this.to = temp;
+    this.clampedFrom = this.from;
+    this.clampedTo = this.to;
+    this.target = this.to;
+    if (this.state === "running" /* Running */) {
+      this.velocity = -this.velocity;
+    }
+  }
+  set(to) {
+    const validTo = validateAnimationValue(to, "spring.set");
+    this.to = validTo;
+    this.clampedTo = validTo;
+    this.target = validTo;
+  }
+  setWithVelocity(to, velocity) {
+    const validTo = validateAnimationValue(to, "spring.setWithVelocity");
+    this.from = this.position;
+    this.clampedFrom = this.position;
+    this.to = validTo;
+    this.clampedTo = validTo;
+    this.target = validTo;
+    if (velocity !== void 0) {
+      this.velocity = validateAnimationValue(velocity, "spring.setWithVelocity.velocity");
+    }
+    if (this.state === "complete" /* Complete */) {
+      this.state = "idle" /* Idle */;
+    }
+    if (this.state !== "running" /* Running */) {
+      this.start();
+    }
+  }
+  update(now) {
+    if (this.state !== "running" /* Running */) return;
+    if (this.lastUpdateTime === 0) {
+      this.lastUpdateTime = now;
+    }
+    const elapsed = (now - this.lastUpdateTime) / 1e3;
+    this.lastUpdateTime = now;
+    const MAX_DELTA_TIME2 = 1 / 15;
+    const FIXED_TIME_STEP2 = 1 / 60;
+    const safeElapsed = Math.min(elapsed, MAX_DELTA_TIME2);
+    const steps = Math.max(1, Math.ceil(safeElapsed / FIXED_TIME_STEP2));
+    let currentPosition = this.position;
+    let currentVelocity = this.velocity;
+    let isRest = false;
+    for (let i = 0; i < steps && !isRest; i++) {
+      const result = simulateSpring(
+        currentPosition,
+        currentVelocity,
+        this.target,
+        this.config
+      );
+      currentPosition = result.position;
+      currentVelocity = result.velocity;
+      isRest = result.isRest;
+    }
+    this.position = currentPosition;
+    this.velocity = currentVelocity;
+    if (this.config.clamp) {
+      const min = Math.min(this.clampedFrom, this.clampedTo);
+      const max = Math.max(this.clampedFrom, this.clampedTo);
+      this.position = clamp(this.position, min, max);
+    }
+    this.config.onUpdate?.(this.position);
+    if (isRest) {
+      this.state = "complete" /* Complete */;
+      globalLoop.remove(this);
+      this.position = this.target;
+      this.velocity = 0;
+      this.config.onUpdate?.(this.position);
+      this.config.onComplete?.();
+      this.config.onRest?.();
+      this.resolveComplete?.();
+    }
+  }
+  isAnimating() {
+    return this.state === "running" /* Running */;
+  }
+  isPaused() {
+    return this.state === "paused" /* Paused */;
+  }
+  isComplete() {
+    return this.state === "complete" /* Complete */;
+  }
+  getValue() {
+    return this.position;
+  }
+  getVelocity() {
+    return this.velocity;
+  }
+  destroy() {
+    this.stop();
+    this.resolveComplete?.();
+    this.resolveComplete = null;
+    this.config.onUpdate = void 0;
+    this.config.onStart = void 0;
+    this.config.onComplete = void 0;
+    this.config.onRest = void 0;
+  }
+};
+function spring(from, to, config) {
+  return new SpringAnimationImpl(from, to, config);
+}
+
+// src/core/spring-value.ts
+var SpringValueImpl = class {
+  constructor(initial, config = {}) {
+    this.currentAnimation = null;
+    this.subscribers = /* @__PURE__ */ new Set();
+    this.resolveComplete = null;
+    this.destroyed = false;
+    this.isNotifying = false;
+    this.value = validateAnimationValue(initial, "createSpringValue.initial");
+    this.config = { ...defaultConfig, ...config };
+    this.finishedPromise = new Promise((resolve) => {
+      this.resolveComplete = resolve;
+    });
+  }
+  get() {
+    return this.value;
+  }
+  getVelocity() {
+    return this.currentAnimation?.getVelocity() ?? 0;
+  }
+  set(to, config = {}) {
+    if (this.destroyed) return;
+    const validTo = validateAnimationValue(to, "SpringValue.set");
+    if (this.currentAnimation) {
+      this.currentAnimation.destroy();
+      this.currentAnimation = null;
+      this.resolveComplete?.();
+    }
+    let animationResolver = null;
+    this.finishedPromise = new Promise((resolve) => {
+      animationResolver = resolve;
+      this.resolveComplete = resolve;
+    });
+    const mergedConfig = { ...this.config, ...config };
+    const originalOnUpdate = mergedConfig.onUpdate;
+    const originalOnComplete = mergedConfig.onComplete;
+    this.currentAnimation = spring(this.value, validTo, {
+      ...mergedConfig,
+      onUpdate: (value) => {
+        if (this.destroyed) return;
+        this.value = value;
+        this.notify();
+        originalOnUpdate?.(value);
+      },
+      onComplete: () => {
+        originalOnComplete?.();
+        animationResolver?.();
+      }
+    });
+    this.currentAnimation.start();
+  }
+  jump(to) {
+    if (this.destroyed) return;
+    if (this.isNotifying) return;
+    const validTo = validateAnimationValue(to, "SpringValue.jump");
+    if (this.currentAnimation) {
+      this.currentAnimation.destroy();
+      this.currentAnimation = null;
+    }
+    this.value = validTo;
+    this.notify();
+  }
+  stop() {
+    if (this.currentAnimation) {
+      this.currentAnimation.destroy();
+      this.currentAnimation = null;
+    }
+    if (this.resolveComplete) {
+      this.resolveComplete();
+    }
+  }
+  setConfig(config) {
+    this.config = { ...this.config, ...config };
+  }
+  subscribe(callback) {
+    this.subscribers.add(callback);
+    try {
+      callback(this.value);
+    } catch (e) {
+      console.error("[SpringKit] Subscriber error:", e);
+    }
+    return () => {
+      this.subscribers.delete(callback);
+    };
+  }
+  isAnimating() {
+    return this.currentAnimation?.isAnimating() ?? false;
+  }
+  get finished() {
+    return this.finishedPromise;
+  }
+  notify() {
+    if (this.isNotifying) return;
+    this.isNotifying = true;
+    for (const subscriber of this.subscribers) {
+      try {
+        subscriber(this.value);
+      } catch (e) {
+        console.error("[SpringKit] Subscriber error:", e);
+      }
+    }
+    this.isNotifying = false;
+  }
+  isDestroyed() {
+    return this.destroyed;
+  }
+  destroy() {
+    if (this.destroyed) return;
+    this.destroyed = true;
+    this.currentAnimation?.destroy();
+    this.currentAnimation = null;
+    this.resolveComplete?.();
+    this.resolveComplete = null;
+    this.subscribers.clear();
+  }
+};
+function createSpringValue(initial, config) {
+  return new SpringValueImpl(initial, config);
+}
+
+// src/core/spring-group.ts
+var SpringGroupImpl = class {
+  constructor(initialValues, config = {}) {
+    this.subscribers = /* @__PURE__ */ new Set();
+    this.resolveComplete = null;
+    this.notifyRafId = null;
+    this.notifyScheduled = false;
+    this.destroyed = false;
+    this.config = { ...defaultConfig, ...config };
+    this.values = /* @__PURE__ */ new Map();
+    for (const [key, value] of Object.entries(initialValues)) {
+      const springValue = createSpringValue(value, this.config);
+      springValue.subscribe(() => this.scheduleNotify());
+      this.values.set(key, springValue);
+    }
+    this.finishedPromise = Promise.resolve();
+    this.resetPromise();
+  }
+  resetPromise() {
+    this.finishedPromise = new Promise((resolve) => {
+      this.resolveComplete = resolve;
+    });
+  }
+  get() {
+    const result = {};
+    for (const [key, springValue] of this.values) {
+      result[key] = springValue.get();
+    }
+    return result;
+  }
+  getValue(key) {
+    return this.values.get(key)?.get() ?? 0;
+  }
+  set(values, config = {}) {
+    if (this.destroyed) return;
+    this.resetPromise();
+    const promises = [];
+    for (const [key, value] of Object.entries(values)) {
+      const springValue = this.values.get(key);
+      if (springValue && typeof value === "number") {
+        springValue.set(value, config);
+        promises.push(springValue.finished);
+      }
+    }
+    Promise.all(promises).then(() => {
+      if (this.resolveComplete && !this.destroyed) {
+        this.resolveComplete();
+      }
+    });
+  }
+  jump(values) {
+    if (this.destroyed) return;
+    for (const [key, value] of Object.entries(values)) {
+      const springValue = this.values.get(key);
+      if (springValue && typeof value === "number") {
+        springValue.jump(value);
+      }
+    }
+  }
+  stop() {
+    for (const springValue of this.values.values()) {
+      springValue.stop();
+    }
+    this.resolveComplete?.();
+  }
+  subscribe(callback) {
+    this.subscribers.add(callback);
+    try {
+      callback(this.get());
+    } catch (e) {
+      console.error("[SpringKit] SpringGroup subscriber error:", e);
+    }
+    return () => this.subscribers.delete(callback);
+  }
+  isAnimating() {
+    for (const springValue of this.values.values()) {
+      if (springValue.isAnimating()) return true;
+    }
+    return false;
+  }
+  get finished() {
+    return this.finishedPromise;
+  }
+  /**
+   * Schedule notification using microtask to prevent excessive updates.
+   * When animating multiple properties, this debounces notifications to once per frame
+   * instead of once per property update, while avoiding RAF cascade issues.
+   */
+  scheduleNotify() {
+    if (this.destroyed || this.notifyScheduled) return;
+    this.notifyScheduled = true;
+    queueMicrotask(() => {
+      this.notifyScheduled = false;
+      if (!this.destroyed) {
+        this.notify();
+      }
+    });
+  }
+  notify() {
+    const values = this.get();
+    for (const subscriber of this.subscribers) {
+      try {
+        subscriber(values);
+      } catch (e) {
+        console.error("[SpringKit] SpringGroup subscriber error:", e);
+      }
+    }
+  }
+  destroy() {
+    this.destroyed = true;
+    for (const springValue of this.values.values()) {
+      springValue.destroy();
+    }
+    this.resolveComplete?.();
+    this.resolveComplete = null;
+    this.subscribers.clear();
+  }
+  isDestroyed() {
+    return this.destroyed;
+  }
+};
+function createSpringGroup(initialValues, config) {
+  return new SpringGroupImpl(initialValues, config);
+}
+
+// src/core/variants.ts
+function resolveVariant(variant, custom) {
+  if (!variant) {
+    return { values: {}, transition: {} };
+  }
+  const resolved = typeof variant === "function" ? variant(custom) : variant;
+  const { transition = {}, ...values } = resolved;
+  return { values, transition };
+}
+function getVariant(variants, name, custom) {
+  if (!variants || !name) {
+    return { values: {}, transition: {} };
+  }
+  return resolveVariant(variants[name], custom);
+}
+function mergeVariants(...variants) {
+  const merged = {};
+  for (const variant of variants) {
+    if (variant) {
+      Object.assign(merged, variant);
+      if (variant.transition) {
+        merged.transition = { ...merged.transition, ...variant.transition };
+      }
+    }
+  }
+  return merged;
+}
+function isTransformProperty(key) {
+  return [
+    "x",
+    "y",
+    "z",
+    "scale",
+    "scaleX",
+    "scaleY",
+    "scaleZ",
+    "rotate",
+    "rotateX",
+    "rotateY",
+    "rotateZ",
+    "skew",
+    "skewX",
+    "skewY",
+    "perspective",
+    "transformOrigin"
+  ].includes(key);
+}
+function isAnimatable(value) {
+  return typeof value === "number" || typeof value === "string";
+}
+function parseValueWithUnit(value) {
+  if (typeof value === "number") {
+    return { value, unit: "" };
+  }
+  const match = value.match(/^(-?[\d.]+)(.*)$/);
+  if (match && match[1]) {
+    return { value: parseFloat(match[1]), unit: match[2] || "" };
+  }
+  return { value: 0, unit: "" };
+}
+function buildTransformString(values) {
+  const transforms = [];
+  if (values.x !== void 0 || values.y !== void 0) {
+    const x = values.x ?? 0;
+    const y = values.y ?? 0;
+    transforms.push(`translate(${x}px, ${y}px)`);
+  }
+  if (values.scale !== void 0) {
+    transforms.push(`scale(${values.scale})`);
+  } else {
+    if (values.scaleX !== void 0) {
+      transforms.push(`scaleX(${values.scaleX})`);
+    }
+    if (values.scaleY !== void 0) {
+      transforms.push(`scaleY(${values.scaleY})`);
+    }
+  }
+  if (values.rotate !== void 0) {
+    transforms.push(`rotate(${values.rotate}deg)`);
+  }
+  if (values.rotateX !== void 0) {
+    transforms.push(`rotateX(${values.rotateX}deg)`);
+  }
+  if (values.rotateY !== void 0) {
+    transforms.push(`rotateY(${values.rotateY}deg)`);
+  }
+  if (values.rotateZ !== void 0) {
+    transforms.push(`rotateZ(${values.rotateZ}deg)`);
+  }
+  if (values.skewX !== void 0) {
+    transforms.push(`skewX(${values.skewX}deg)`);
+  }
+  if (values.skewY !== void 0) {
+    transforms.push(`skewY(${values.skewY}deg)`);
+  }
+  return transforms.join(" ");
+}
+function applyValuesToElement(element, values) {
+  const transform = buildTransformString(values);
+  if (transform) {
+    element.style.transform = transform;
+  }
+  if (values.opacity !== void 0) {
+    element.style.opacity = String(values.opacity);
+  }
+  if (values.backgroundColor !== void 0) {
+    element.style.backgroundColor = values.backgroundColor;
+  }
+  if (values.borderRadius !== void 0) {
+    element.style.borderRadius = typeof values.borderRadius === "number" ? `${values.borderRadius}px` : values.borderRadius;
+  }
+  if (values.borderColor !== void 0) {
+    element.style.borderColor = values.borderColor;
+  }
+  if (values.boxShadow !== void 0) {
+    element.style.boxShadow = values.boxShadow;
+  }
+  if (values.color !== void 0) {
+    element.style.color = values.color;
+  }
+  if (values.width !== void 0) {
+    element.style.width = typeof values.width === "number" ? `${values.width}px` : values.width;
+  }
+  if (values.height !== void 0) {
+    element.style.height = typeof values.height === "number" ? `${values.height}px` : values.height;
+  }
+}
+function calculateStaggerDelays(count, options) {
+  const { staggerChildren = 0, staggerDirection = 1, delayChildren = 0 } = options;
+  const delays = [];
+  for (let i = 0; i < count; i++) {
+    const index = staggerDirection === -1 ? count - 1 - i : i;
+    delays.push(delayChildren + index * staggerChildren);
+  }
+  return delays;
+}
+function createOrchestration(parentAnim, childrenAnims, options = {}) {
+  const { when = false, delay = 0 } = options;
+  const delays = calculateStaggerDelays(childrenAnims.length, options);
+  const parent = async () => {
+    if (delay > 0) {
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+    await parentAnim();
+  };
+  const children = async () => {
+    await Promise.all(
+      childrenAnims.map(
+        (anim, i) => new Promise((resolve) => {
+          setTimeout(async () => {
+            await anim();
+            resolve();
+          }, delays[i]);
+        })
+      )
+    );
+  };
+  const execute = async () => {
+    switch (when) {
+      case "beforeChildren":
+        await parent();
+        await children();
+        break;
+      case "afterChildren":
+        await children();
+        await parent();
+        break;
+      default:
+        await Promise.all([parent(), children()]);
+    }
+  };
+  return { parent, children, execute };
+}
+var variantPresets = {
+  /** Fade in from invisible */
+  fadeIn: {
+    initial: { opacity: 0 },
+    animate: { opacity: 1 },
+    exit: { opacity: 0 }
+  },
+  /** Fade in and slide up */
+  fadeInUp: {
+    initial: { opacity: 0, y: 20 },
+    animate: { opacity: 1, y: 0 },
+    exit: { opacity: 0, y: -20 }
+  },
+  /** Fade in and slide down */
+  fadeInDown: {
+    initial: { opacity: 0, y: -20 },
+    animate: { opacity: 1, y: 0 },
+    exit: { opacity: 0, y: 20 }
+  },
+  /** Fade in and slide from left */
+  fadeInLeft: {
+    initial: { opacity: 0, x: -20 },
+    animate: { opacity: 1, x: 0 },
+    exit: { opacity: 0, x: 20 }
+  },
+  /** Fade in and slide from right */
+  fadeInRight: {
+    initial: { opacity: 0, x: 20 },
+    animate: { opacity: 1, x: 0 },
+    exit: { opacity: 0, x: -20 }
+  },
+  /** Scale up from small */
+  scaleIn: {
+    initial: { opacity: 0, scale: 0.8 },
+    animate: { opacity: 1, scale: 1 },
+    exit: { opacity: 0, scale: 0.8 }
+  },
+  /** Pop in with overshoot */
+  popIn: {
+    initial: { opacity: 0, scale: 0.5 },
+    animate: {
+      opacity: 1,
+      scale: 1,
+      transition: { spring: { stiffness: 400, damping: 15 } }
+    },
+    exit: { opacity: 0, scale: 0.5 }
+  },
+  /** Slide in from bottom (percentage-based) */
+  slideUp: {
+    initial: { y: 100, opacity: 0 },
+    animate: { y: 0, opacity: 1 },
+    exit: { y: 100, opacity: 0 }
+  },
+  /** Slide in from top */
+  slideDown: {
+    initial: { y: -100, opacity: 0 },
+    animate: { y: 0, opacity: 1 },
+    exit: { y: -100, opacity: 0 }
+  },
+  /** Slide in from left */
+  slideLeft: {
+    initial: { x: -100, opacity: 0 },
+    animate: { x: 0, opacity: 1 },
+    exit: { x: -100, opacity: 0 }
+  },
+  /** Slide in from right */
+  slideRight: {
+    initial: { x: 100, opacity: 0 },
+    animate: { x: 0, opacity: 1 },
+    exit: { x: 100, opacity: 0 }
+  },
+  /** Container with staggered children */
+  staggerContainer: {
+    initial: {},
+    animate: {
+      transition: {
+        staggerChildren: 0.1,
+        delayChildren: 0.1
+      }
+    },
+    exit: {
+      transition: {
+        staggerChildren: 0.05,
+        staggerDirection: -1
+      }
+    }
+  },
+  /** Item for staggered lists */
+  staggerItem: {
+    initial: { opacity: 0, y: 20 },
+    animate: { opacity: 1, y: 0 },
+    exit: { opacity: 0, y: -20 }
+  }
+};
+function createVariantPreset(initial, animate2, exit) {
+  return {
+    initial,
+    animate: animate2,
+    exit: exit || initial
+  };
+}
+function isVariants(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value) && Object.values(value).every(
+    (v) => typeof v === "object" || typeof v === "function"
+  );
+}
+function isVariant(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+// src/animation/sequence.ts
+async function sequence(animations) {
+  for (const createAnimation of animations) {
+    const anim = createAnimation();
+    await anim.finished;
+  }
+}
+async function parallel(animations) {
+  const promises = animations.map((createAnimation) => {
+    const anim = createAnimation();
+    return anim.finished;
+  });
+  await Promise.all(promises);
+}
+async function stagger(items, animate2, options = {}) {
+  const { delay = 0, from = "first" } = options;
+  let startIndex = 0;
+  if (from === "last") startIndex = items.length - 1;
+  else if (from === "center") startIndex = Math.floor(items.length / 2);
+  else if (typeof from === "number") startIndex = from;
+  const indices = [];
+  const used = /* @__PURE__ */ new Set();
+  indices.push(startIndex);
+  used.add(startIndex);
+  for (let offset = 1; offset < items.length; offset++) {
+    const left = startIndex - offset;
+    const right = startIndex + offset;
+    if (right < items.length && !used.has(right)) {
+      indices.push(right);
+      used.add(right);
+    }
+    if (left >= 0 && !used.has(left)) {
+      indices.push(left);
+      used.add(left);
+    }
+  }
+  const getDelay = typeof delay === "function" ? delay : (_i) => delay;
+  const animations = [];
+  const timeoutIds = [];
+  for (let i = 0; i < indices.length; i++) {
+    const index = indices[i];
+    const anim = animate2(items[index], index);
+    animations.push(anim);
+    const delayMs = getDelay(i);
+    if (delayMs > 0) {
+      const timeoutId = setTimeout(() => {
+        anim.start();
+      }, delayMs);
+      timeoutIds.push(timeoutId);
+    } else {
+      anim.start();
+    }
+  }
+  try {
+    await Promise.all(animations.map((a) => a.finished));
+  } finally {
+    timeoutIds.forEach(clearTimeout);
+  }
+}
+
+// src/animation/trail.ts
+var TrailImpl = class {
+  constructor(count, config = {}) {
+    this.subscribers = /* @__PURE__ */ new Set();
+    this.frameCount = 0;
+    this.pendingUpdates = /* @__PURE__ */ new Map();
+    // Track timeout IDs for cleanup to prevent memory leaks
+    this.pendingTimeouts = /* @__PURE__ */ new Set();
+    this.destroyed = false;
+    const { followDelay = 2, ...springConfig } = config;
+    this.followDelay = followDelay;
+    this.leader = createSpringValue(0, springConfig);
+    this.springs = [];
+    for (let i = 0; i < count; i++) {
+      const spring2 = createSpringValue(0, springConfig);
+      this.springs.push(spring2);
+    }
+    this.leader.subscribe(() => {
+      this.frameCount++;
+      this.scheduleFollowerUpdates();
+    });
+  }
+  scheduleFollowerUpdates() {
+    const targetValue = this.leader.get();
+    for (let i = 0; i < this.springs.length; i++) {
+      const delayFrames = (i + 1) * this.followDelay;
+      const targetFrame = this.frameCount + delayFrames;
+      this.pendingUpdates.set(i, targetFrame);
+      this.scheduleFollowerUpdate(i, targetValue, targetFrame, delayFrames);
+    }
+  }
+  scheduleFollowerUpdate(index, targetValue, targetFrame, _delayFrames) {
+    const startFrame = this.frameCount;
+    const framesToWait = targetFrame - startFrame;
+    if (framesToWait <= 0) {
+      this.springs[index].set(targetValue);
+    } else {
+      const delayMs = Math.max(framesToWait * 16, 0);
+      const timeoutId = setTimeout(() => {
+        this.pendingTimeouts.delete(timeoutId);
+        if (this.destroyed) return;
+        const currentTarget = this.pendingUpdates.get(index);
+        if (currentTarget === targetFrame) {
+          this.springs[index].set(targetValue);
+        }
+      }, delayMs);
+      this.pendingTimeouts.add(timeoutId);
+    }
+  }
+  set(value) {
+    this.leader.set(value);
+  }
+  jump(value) {
+    this.leader.jump(value);
+    for (const spring2 of this.springs) {
+      spring2.jump(value);
+    }
+  }
+  getValues() {
+    return this.springs.map((s) => s.get());
+  }
+  subscribe(callback) {
+    this.subscribers.add(callback);
+    const unsubscribers = [];
+    for (const spring2 of this.springs) {
+      unsubscribers.push(
+        spring2.subscribe(() => {
+          this.notify();
+        })
+      );
+    }
+    callback(this.getValues());
+    return () => {
+      this.subscribers.delete(callback);
+      for (const unsubscribe of unsubscribers) {
+        unsubscribe();
+      }
+    };
+  }
+  notify() {
+    const values = this.getValues();
+    for (const subscriber of this.subscribers) {
+      subscriber(values);
+    }
+  }
+  destroy() {
+    this.destroyed = true;
+    for (const timeoutId of this.pendingTimeouts) {
+      clearTimeout(timeoutId);
+    }
+    this.pendingTimeouts.clear();
+    this.leader.destroy();
+    for (const spring2 of this.springs) {
+      spring2.destroy();
+    }
+    this.subscribers.clear();
+    this.pendingUpdates.clear();
+  }
+};
+function createTrail(count, config) {
+  return new TrailImpl(count, config);
+}
+
+// src/animation/decay.ts
+var DecayAnimationImpl = class {
+  constructor(config) {
+    this.state = "idle" /* Idle */;
+    this.rafId = null;
+    this.resolveComplete = null;
+    validateDecayConfig(config);
+    this.value = 0;
+    this.velocity = validateAnimationValue(config.velocity, "decay.velocity");
+    const rawDecel = config.deceleration ?? 0.998;
+    this.deceleration = validateAnimationValue(rawDecel, "decay.deceleration");
+    if (this.deceleration <= 0 || this.deceleration >= 1) {
+      this.deceleration = 0.998;
+    }
+    this.clampRange = config.clamp;
+    this.state = "idle" /* Idle */;
+    this.config = config;
+    this.finished = new Promise((resolve) => {
+      this.resolveComplete = resolve;
+    });
+  }
+  start() {
+    if (this.state === "running" /* Running */) return this;
+    this.state = "running" /* Running */;
+    globalLoop.add(this);
+    return this;
+  }
+  stop() {
+    this.state = "idle" /* Idle */;
+    globalLoop.remove(this);
+  }
+  update(_now) {
+    if (this.state !== "running" /* Running */) return;
+    this.velocity *= this.deceleration;
+    this.value += this.velocity;
+    if (this.clampRange) {
+      const [min, max] = this.clampRange;
+      this.value = clamp(this.value, min, max);
+      if (this.value <= min && this.velocity < 0 || this.value >= max && this.velocity > 0) {
+        this.velocity = 0;
+      }
+    }
+    this.config.onUpdate?.(this.value);
+    if (Math.abs(this.velocity) < 0.01) {
+      this.state = "complete" /* Complete */;
+      globalLoop.remove(this);
+      this.config.onComplete?.();
+      this.resolveComplete?.();
+    }
+  }
+  isComplete() {
+    return this.state === "complete" /* Complete */;
+  }
+  destroy() {
+    this.stop();
+    this.resolveComplete?.();
+    this.resolveComplete = null;
+    this.config.onUpdate = void 0;
+    this.config.onComplete = void 0;
+  }
+};
+function decay(config) {
+  return new DecayAnimationImpl(config);
+}
+
+// src/animation/keyframes.ts
+function keyframes(values, options = {}) {
+  const {
+    config = {},
+    times,
+    onKeyframe,
+    onComplete,
+    onUpdate
+  } = options;
+  const normalizedKeyframes = values.map((v, i) => {
+    if (typeof v === "number") {
+      return {
+        value: v,
+        at: times?.[i]
+      };
+    }
+    return { ...v, at: v.at ?? times?.[i] };
+  });
+  const keyframeCount = normalizedKeyframes.length;
+  normalizedKeyframes.forEach((kf, i) => {
+    if (kf.at === void 0) {
+      kf.at = keyframeCount > 1 ? i / (keyframeCount - 1) : 0;
+    }
+  });
+  normalizedKeyframes.sort((a, b) => (a.at ?? 0) - (b.at ?? 0));
+  let currentIndex = 0;
+  let isPlaying = false;
+  let isPaused = false;
+  let spring2 = null;
+  let currentValue = normalizedKeyframes[0]?.value ?? 0;
+  let destroyed = false;
+  let pendingRafId = null;
+  let pendingTimeoutId = null;
+  const createSpring = () => {
+    if (spring2) {
+      spring2.destroy();
+    }
+    const currentKf = normalizedKeyframes[currentIndex];
+    const springConfig = currentKf?.config ?? config;
+    spring2 = createSpringValue(currentValue, springConfig);
+    spring2.subscribe((value) => {
+      currentValue = value;
+      onUpdate?.(value);
+    });
+  };
+  const animateToNext = async () => {
+    if (destroyed || isPaused) return false;
+    if (currentIndex >= normalizedKeyframes.length - 1) return false;
+    currentIndex++;
+    const targetKf = normalizedKeyframes[currentIndex];
+    if (!targetKf) return false;
+    if (targetKf.config) {
+      createSpring();
+    }
+    onKeyframe?.(currentIndex);
+    if (spring2) {
+      spring2.set(targetKf.value);
+      await new Promise((resolve) => {
+        const checkComplete = () => {
+          pendingRafId = null;
+          if (destroyed || isPaused) {
+            resolve();
+            return;
+          }
+          if (spring2 && !spring2.isAnimating()) {
+            resolve();
+          } else {
+            pendingRafId = requestAnimationFrame(checkComplete);
+          }
+        };
+        pendingTimeoutId = setTimeout(() => {
+          pendingTimeoutId = null;
+          if (!destroyed) {
+            checkComplete();
+          } else {
+            resolve();
+          }
+        }, 16);
+      });
+    }
+    return true;
+  };
+  const animation = {
+    play: async () => {
+      if (destroyed) return;
+      if (isPlaying) return;
+      isPlaying = true;
+      isPaused = false;
+      if (currentIndex >= normalizedKeyframes.length - 1) {
+        currentIndex = 0;
+        currentValue = normalizedKeyframes[0]?.value ?? 0;
+      }
+      createSpring();
+      onKeyframe?.(0);
+      while (await animateToNext()) {
+      }
+      if (!isPaused && !destroyed) {
+        isPlaying = false;
+        onComplete?.();
+      }
+    },
+    pause: () => {
+      isPaused = true;
+      isPlaying = false;
+      if (spring2) {
+        spring2.stop();
+      }
+    },
+    resume: () => {
+      if (!isPaused || destroyed) return;
+      isPaused = false;
+      isPlaying = true;
+      const continueAnimation = async () => {
+        while (await animateToNext()) {
+        }
+        if (!isPaused && !destroyed) {
+          isPlaying = false;
+          onComplete?.();
+        }
+      };
+      continueAnimation();
+    },
+    stop: () => {
+      isPaused = false;
+      isPlaying = false;
+      currentIndex = 0;
+      currentValue = normalizedKeyframes[0]?.value ?? 0;
+      if (spring2) {
+        spring2.jump(currentValue);
+      }
+    },
+    get: () => currentValue,
+    getCurrentKeyframe: () => currentIndex,
+    isPlaying: () => isPlaying,
+    jumpTo: (index) => {
+      if (index < 0 || index >= normalizedKeyframes.length) return;
+      currentIndex = index;
+      const targetValue = normalizedKeyframes[index]?.value ?? 0;
+      currentValue = targetValue;
+      if (spring2) {
+        spring2.jump(targetValue);
+      }
+      onUpdate?.(targetValue);
+      onKeyframe?.(index);
+    },
+    destroy: () => {
+      destroyed = true;
+      isPlaying = false;
+      isPaused = false;
+      if (pendingRafId !== null) {
+        cancelAnimationFrame(pendingRafId);
+        pendingRafId = null;
+      }
+      if (pendingTimeoutId !== null) {
+        clearTimeout(pendingTimeoutId);
+        pendingTimeoutId = null;
+      }
+      if (spring2) {
+        spring2.destroy();
+        spring2 = null;
+      }
+    }
+  };
+  return animation;
+}
+function parseKeyframeArray(values, times) {
+  return values.map((value, index) => ({
+    value,
+    at: times?.[index]
+  }));
+}
+function isKeyframeArray(value) {
+  return Array.isArray(value) && value.every((v) => typeof v === "number");
+}
+
+// src/animation/animate.ts
+var transformProperties = /* @__PURE__ */ new Set([
+  "x",
+  "y",
+  "z",
+  "scale",
+  "scaleX",
+  "scaleY",
+  "scaleZ",
+  "rotate",
+  "rotateX",
+  "rotateY",
+  "rotateZ",
+  "skew",
+  "skewX",
+  "skewY"
+]);
+var pxProperties = /* @__PURE__ */ new Set([
+  "x",
+  "y",
+  "z",
+  "width",
+  "height",
+  "top",
+  "right",
+  "bottom",
+  "left",
+  "padding",
+  "paddingTop",
+  "paddingRight",
+  "paddingBottom",
+  "paddingLeft",
+  "margin",
+  "marginTop",
+  "marginRight",
+  "marginBottom",
+  "marginLeft",
+  "borderWidth",
+  "borderRadius",
+  "fontSize",
+  "letterSpacing",
+  "lineHeight"
+]);
+function buildTransform(values) {
+  const parts = [];
+  const x = values.get("x");
+  const y = values.get("y");
+  const z = values.get("z");
+  if (x !== void 0 || y !== void 0 || z !== void 0) {
+    parts.push(`translate3d(${x ?? 0}px, ${y ?? 0}px, ${z ?? 0}px)`);
+  }
+  const scale = values.get("scale");
+  const scaleX = values.get("scaleX");
+  const scaleY = values.get("scaleY");
+  if (scale !== void 0) {
+    parts.push(`scale(${scale})`);
+  } else if (scaleX !== void 0 || scaleY !== void 0) {
+    parts.push(`scale(${scaleX ?? 1}, ${scaleY ?? 1})`);
+  }
+  const rotate = values.get("rotate") ?? values.get("rotateZ");
+  const rotateX = values.get("rotateX");
+  const rotateY = values.get("rotateY");
+  if (rotateX !== void 0) parts.push(`rotateX(${rotateX}deg)`);
+  if (rotateY !== void 0) parts.push(`rotateY(${rotateY}deg)`);
+  if (rotate !== void 0) parts.push(`rotate(${rotate}deg)`);
+  const skewX = values.get("skewX");
+  const skewY = values.get("skewY");
+  if (skewX !== void 0 || skewY !== void 0) {
+    parts.push(`skew(${skewX ?? 0}deg, ${skewY ?? 0}deg)`);
+  }
+  return parts.join(" ");
+}
+function applyStylesToElement(element, values) {
+  const el = element;
+  const transformValues = /* @__PURE__ */ new Map();
+  const styleValues = {};
+  values.forEach((value, property) => {
+    if (transformProperties.has(property)) {
+      transformValues.set(property, value);
+    } else if (property === "opacity") {
+      styleValues.opacity = String(value);
+    } else if (pxProperties.has(property)) {
+      styleValues[property] = `${value}px`;
+    } else {
+      styleValues[property] = String(value);
+    }
+  });
+  if (transformValues.size > 0) {
+    el.style.transform = buildTransform(transformValues);
+  }
+  Object.entries(styleValues).forEach(([prop, val]) => {
+    el.style.setProperty(prop, val);
+  });
+}
+function parseCurrentValue(element, property) {
+  const el = element;
+  const computed = getComputedStyle(el);
+  if (property === "opacity") {
+    return parseFloat(computed.opacity) || 1;
+  }
+  if (transformProperties.has(property)) {
+    const transform = computed.transform;
+    if (transform === "none") {
+      if (property === "scale" || property === "scaleX" || property === "scaleY") {
+        return 1;
+      }
+      return 0;
+    }
+    if (property === "scale" || property === "scaleX" || property === "scaleY") {
+      return 1;
+    }
+    return 0;
+  }
+  const value = computed.getPropertyValue(property);
+  return parseFloat(value) || 0;
+}
+function animate(elementOrSelector, target, options = {}) {
+  const { delay = 0, onUpdate, onComplete, ...springConfig } = options;
+  const element = typeof elementOrSelector === "string" ? document.querySelector(elementOrSelector) : elementOrSelector;
+  if (!element) {
+    console.warn("animate: Element not found");
+    return createNoopControls();
+  }
+  const springs = /* @__PURE__ */ new Map();
+  const currentValues = /* @__PURE__ */ new Map();
+  let isRunning = true;
+  let isPaused = false;
+  let resolveFinished;
+  const rafIds = /* @__PURE__ */ new Set();
+  const timeoutIds = /* @__PURE__ */ new Set();
+  let delayTimeoutId = null;
+  const finished = new Promise((resolve, _reject) => {
+    resolveFinished = resolve;
+  });
+  const startAnimation = () => {
+    const entries = Object.entries(target);
+    let completedCount = 0;
+    const totalAnimations = entries.length;
+    entries.forEach(([property, value]) => {
+      const values = Array.isArray(value) ? value : [value];
+      const startValue = parseCurrentValue(element, property);
+      const spring2 = createSpringValue(startValue, {
+        stiffness: springConfig.stiffness ?? 100,
+        damping: springConfig.damping ?? 10,
+        mass: springConfig.mass ?? 1
+      });
+      springs.set(property, spring2);
+      currentValues.set(property, startValue);
+      spring2.subscribe((v) => {
+        if (!isRunning || isPaused) return;
+        currentValues.set(property, v);
+        applyStylesToElement(element, currentValues);
+        if (onUpdate) {
+          const valuesObj = {};
+          currentValues.forEach((val, key) => {
+            valuesObj[key] = val;
+          });
+          onUpdate(valuesObj);
+        }
+      });
+      const animateKeyframes = async () => {
+        for (const targetValue of values) {
+          if (!isRunning) break;
+          const numValue = typeof targetValue === "string" ? parseFloat(targetValue) || 0 : targetValue;
+          await new Promise((resolve) => {
+            spring2.set(numValue);
+            let checkId = null;
+            const checkDone = () => {
+              if (checkId !== null) {
+                rafIds.delete(checkId);
+                timeoutIds.delete(checkId);
+              }
+              if (!isRunning || !spring2.isAnimating()) {
+                resolve();
+              } else if (!isPaused) {
+                checkId = requestAnimationFrame(checkDone);
+                rafIds.add(checkId);
+              } else {
+                const timeoutId = setTimeout(() => {
+                  timeoutIds.delete(timeoutId);
+                  checkDone();
+                }, 100);
+                checkId = timeoutId;
+                timeoutIds.add(timeoutId);
+              }
+            };
+            checkId = requestAnimationFrame(checkDone);
+            rafIds.add(checkId);
+          });
+        }
+        completedCount++;
+        if (completedCount === totalAnimations && isRunning) {
+          isRunning = false;
+          try {
+            onComplete?.();
+          } catch {
+          }
+          resolveFinished();
+        }
+      };
+      animateKeyframes();
+    });
+  };
+  if (delay > 0) {
+    delayTimeoutId = setTimeout(startAnimation, delay);
+  } else {
+    startAnimation();
+  }
+  const cleanup = () => {
+    rafIds.forEach((id) => {
+      cancelAnimationFrame(id);
+    });
+    rafIds.clear();
+    timeoutIds.forEach((id) => {
+      clearTimeout(id);
+    });
+    timeoutIds.clear();
+    if (delayTimeoutId !== null) {
+      clearTimeout(delayTimeoutId);
+      delayTimeoutId = null;
+    }
+  };
+  return {
+    stop: () => {
+      isRunning = false;
+      cleanup();
+      springs.forEach((spring2) => spring2.stop());
+      resolveFinished();
+    },
+    pause: () => {
+      isPaused = true;
+    },
+    resume: () => {
+      isPaused = false;
+    },
+    getProgress: () => {
+      let totalProgress = 0;
+      let count = 0;
+      springs.forEach((spring2) => {
+        totalProgress += spring2.isAnimating() ? 0.5 : 1;
+        count++;
+      });
+      return count > 0 ? totalProgress / count : 1;
+    },
+    isAnimating: () => isRunning && !isPaused,
+    finished
+  };
+}
+function createNoopControls() {
+  return {
+    stop: () => {
+    },
+    pause: () => {
+    },
+    resume: () => {
+    },
+    getProgress: () => 1,
+    isAnimating: () => false,
+    finished: Promise.resolve()
+  };
+}
+function animateAll(selector, target, options = {}) {
+  const { stagger: stagger2 = 0, ...animateOptions } = options;
+  const elements = document.querySelectorAll(selector);
+  return Array.from(elements).map((element, index) => {
+    return animate(element, target, {
+      ...animateOptions,
+      delay: (animateOptions.delay ?? 0) + stagger2 * index
+    });
+  });
+}
+
+// src/interpolation/interpolate.ts
+var defaultInterpolateOptions = {
+  clamp: false
+};
+var InterpolationImpl = class {
+  constructor(source, input, output, options = {}) {
+    this.source = source;
+    this.input = input;
+    this.output = output;
+    this.options = { ...defaultInterpolateOptions, ...options };
+  }
+  get() {
+    const value = typeof this.source === "function" ? this.source() : this.source.get();
+    if (!Number.isFinite(value)) {
+      return this.output[0] ?? 0;
+    }
+    return this.interpolate(value);
+  }
+  interpolate(value) {
+    const { input, output } = this;
+    const { extrapolate, extrapolateLeft, extrapolateRight, clamp: clamp2 } = this.options;
+    if (input.length === 1) {
+      return output[0];
+    }
+    if (value < input[0]) {
+      const mode = this.getExtrapolationMode(extrapolateLeft, extrapolate);
+      if (mode === "clamp") {
+        value = input[0];
+      } else if (mode === "identity") {
+        return value;
+      }
+    } else if (value > input[input.length - 1]) {
+      const mode = this.getExtrapolationMode(extrapolateRight, extrapolate);
+      if (mode === "clamp") {
+        value = input[input.length - 1];
+      } else if (mode === "identity") {
+        return value;
+      }
+    }
+    let i = 1;
+    while (i < input.length - 1 && value > input[i]) {
+      i++;
+    }
+    const denominator = input[i] - input[i - 1];
+    const ratio = denominator === 0 ? 0 : (value - input[i - 1]) / denominator;
+    const result = output[i - 1] + ratio * (output[i] - output[i - 1]);
+    if (clamp2) {
+      const min = Math.min(...output);
+      const max = Math.max(...output);
+      return Math.max(min, Math.min(max, result));
+    }
+    return result;
+  }
+  getExtrapolationMode(specificMode, fallbackMode) {
+    if (specificMode !== void 0) {
+      return specificMode;
+    }
+    if (fallbackMode !== void 0) {
+      return fallbackMode;
+    }
+    return "extend";
+  }
+};
+function interpolate(value, input, output, options) {
+  return new InterpolationImpl(value, input, output, options);
+}
+
+// src/interpolation/color.ts
+var MAX_COLOR_CACHE_SIZE = 1e3;
+var colorCache = /* @__PURE__ */ new Map();
+var ColorInterpolationImpl = class {
+  constructor(source, input, colorStrings, options = {}) {
+    this.source = source;
+    this.input = input;
+    this.colors = colorStrings.map((c) => this.parseColorCached(c));
+    this.options = options;
+  }
+  /**
+   * Parse color with caching for performance
+   * Avoids repeated regex operations for the same color strings
+   * Implements LRU eviction to prevent memory bloat
+   */
+  parseColorCached(color) {
+    const cached = colorCache.get(color);
+    if (cached) {
+      colorCache.delete(color);
+      colorCache.set(color, cached);
+      return cached;
+    }
+    const result = this.parseColorInternal(color);
+    if (colorCache.size >= MAX_COLOR_CACHE_SIZE) {
+      const firstKey = colorCache.keys().next().value;
+      if (firstKey !== void 0) {
+        colorCache.delete(firstKey);
+      }
+    }
+    colorCache.set(color, result);
+    return result;
+  }
+  get() {
+    let value = typeof this.source === "function" ? this.source() : this.source.get();
+    const { extrapolate, extrapolateLeft, extrapolateRight } = this.options;
+    if (this.input.length === 1) {
+      const [r2, g2, b2] = this.colors[0];
+      return `rgb(${r2}, ${g2}, ${b2})`;
+    }
+    if (value < this.input[0]) {
+      const mode = extrapolateLeft ?? extrapolate ?? "extend";
+      if (mode === "clamp") {
+        value = this.input[0];
+      } else if (mode === "identity") {
+        value = this.input[0];
+      }
+    } else if (value > this.input[this.input.length - 1]) {
+      const mode = extrapolateRight ?? extrapolate ?? "extend";
+      if (mode === "clamp") {
+        value = this.input[this.input.length - 1];
+      } else if (mode === "identity") {
+        value = this.input[this.input.length - 1];
+      }
+    }
+    let i = 1;
+    while (i < this.input.length - 1 && value > this.input[i]) {
+      i++;
+    }
+    const inputRange = this.input[i] - this.input[i - 1];
+    const ratio = inputRange !== 0 ? (value - this.input[i - 1]) / inputRange : 0;
+    const r = this.lerp(this.colors[i - 1][0], this.colors[i][0], ratio);
+    const g = this.lerp(this.colors[i - 1][1], this.colors[i][1], ratio);
+    const b = this.lerp(this.colors[i - 1][2], this.colors[i][2], ratio);
+    return `rgb(${Math.round(r)}, ${Math.round(g)}, ${Math.round(b)})`;
+  }
+  parseColorInternal(color) {
+    const hexMatch = color.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+    if (hexMatch) {
+      const hex = hexMatch[1];
+      if (hex.length === 3) {
+        return [
+          parseInt(hex.charAt(0) + hex.charAt(0), 16),
+          parseInt(hex.charAt(1) + hex.charAt(1), 16),
+          parseInt(hex.charAt(2) + hex.charAt(2), 16)
+        ];
+      }
+      return [
+        parseInt(hex.slice(0, 2), 16),
+        parseInt(hex.slice(2, 4), 16),
+        parseInt(hex.slice(4, 6), 16)
+      ];
+    }
+    const rgbMatch = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/i);
+    if (rgbMatch) {
+      return [
+        parseInt(rgbMatch[1], 10),
+        parseInt(rgbMatch[2], 10),
+        parseInt(rgbMatch[3], 10)
+      ];
+    }
+    const rgbaMatch = color.match(/rgba\((\d+),\s*(\d+),\s*(\d+),\s*[\d.]+\)/i);
+    if (rgbaMatch) {
+      return [
+        parseInt(rgbaMatch[1], 10),
+        parseInt(rgbaMatch[2], 10),
+        parseInt(rgbaMatch[3], 10)
+      ];
+    }
+    const hslMatch = color.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/i);
+    if (hslMatch) {
+      return this.hslToRgb(
+        parseInt(hslMatch[1], 10),
+        parseInt(hslMatch[2], 10),
+        parseInt(hslMatch[3], 10)
+      );
+    }
+    return [0, 0, 0];
+  }
+  hslToRgb(h, s, l) {
+    h = (h % 360 + 360) % 360;
+    s = Math.max(0, Math.min(100, s)) / 100;
+    l = Math.max(0, Math.min(100, l)) / 100;
+    if (s === 0) {
+      const gray = Math.round(l * 255);
+      return [gray, gray, gray];
+    }
+    const hue2rgb = (p2, q2, t) => {
+      if (t < 0) t += 1;
+      if (t > 1) t -= 1;
+      if (t < 1 / 6) return p2 + (q2 - p2) * 6 * t;
+      if (t < 1 / 2) return q2;
+      if (t < 2 / 3) return p2 + (q2 - p2) * (2 / 3 - t) * 6;
+      return p2;
+    };
+    const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+    const p = 2 * l - q;
+    return [
+      Math.round(hue2rgb(p, q, h / 360 + 1 / 3) * 255),
+      Math.round(hue2rgb(p, q, h / 360) * 255),
+      Math.round(hue2rgb(p, q, h / 360 - 1 / 3) * 255)
+    ];
+  }
+  lerp(a, b, t) {
+    return a + (b - a) * t;
+  }
+};
+function interpolateColor(value, input, colors, options) {
+  return new ColorInterpolationImpl(value, input, colors, options);
+}
+
+// src/gesture/drag.ts
+var defaultDragConfig = {
+  axis: "both",
+  rubberBand: false,
+  rubberBandFactor: 0.5,
+  elasticBounce: 0.3,
+  momentum: true,
+  momentumDecay: 0.95,
+  stiffness: 200,
+  damping: 20,
+  mass: 1,
+  restSpeed: 0.01,
+  restDelta: 0.01,
+  clamp: false
+};
+var DragSpringImpl = class {
+  constructor(element, config = {}) {
+    this.enabled = true;
+    this.position = { x: 0, y: 0 };
+    this._isDragging = false;
+    this.startPosition = { x: 0, y: 0 };
+    this.pointerStart = { x: 0, y: 0 };
+    this.lastPosition = { x: 0, y: 0 };
+    this.lastTime = 0;
+    this.velocity = { x: 0, y: 0 };
+    this.currentSnap = null;
+    this.snapTimeoutId = null;
+    this.snapGeneration = 0;
+    this.destroyed = false;
+    this.onPointerDown = (e) => {
+      if (!this.enabled || e.button !== 0) return;
+      this._isDragging = true;
+      this.startPosition = { ...this.position };
+      this.pointerStart = { x: e.clientX, y: e.clientY };
+      this.lastPosition = { x: e.clientX, y: e.clientY };
+      this.lastTime = performance.now();
+      this.velocity = { x: 0, y: 0 };
+      this.element.setPointerCapture(e.pointerId);
+      this.element.addEventListener("pointermove", this.onPointerMove);
+      this.element.addEventListener("pointerup", this.onPointerUp);
+      this.element.addEventListener("pointercancel", this.onPointerUp);
+      if (this.config.onDragStart) {
+        this.config.onDragStart(e);
+      }
+    };
+    this.onPointerMove = (e) => {
+      const now = performance.now();
+      const dt = now - this.lastTime;
+      const safeDt = Math.min(Math.max(dt, 16), 100);
+      const instantVelocity = {
+        x: (e.clientX - this.lastPosition.x) / safeDt,
+        y: (e.clientY - this.lastPosition.y) / safeDt
+      };
+      const smoothingFactor = 0.5;
+      this.velocity = {
+        x: this.velocity.x * (1 - smoothingFactor) + instantVelocity.x * smoothingFactor,
+        y: this.velocity.y * (1 - smoothingFactor) + instantVelocity.y * smoothingFactor
+      };
+      this.lastPosition = { x: e.clientX, y: e.clientY };
+      this.lastTime = now;
+      let newX = this.startPosition.x + (e.clientX - this.pointerStart.x);
+      let newY = this.startPosition.y + (e.clientY - this.pointerStart.y);
+      if (this.config.bounds) {
+        newX = this.applyBounds(
+          newX,
+          this.config.bounds.left ?? -Infinity,
+          this.config.bounds.right ?? Infinity,
+          "x"
+        );
+        newY = this.applyBounds(
+          newY,
+          this.config.bounds.top ?? -Infinity,
+          this.config.bounds.bottom ?? Infinity,
+          "y"
+        );
+      }
+      if (this.config.axis === "x") {
+        newY = 0;
+      } else if (this.config.axis === "y") {
+        newX = 0;
+      }
+      this.position = { x: newX, y: newY };
+      if (this.config.onDrag) {
+        this.config.onDrag(newX, newY, e);
+      }
+      if (this.config.onUpdate) {
+        this.config.onUpdate(newX, newY);
+      }
+    };
+    this.onPointerUp = (e) => {
+      this._isDragging = false;
+      if (this.element && document.contains(this.element)) {
+        try {
+          this.element.releasePointerCapture(e.pointerId);
+        } catch {
+        }
+        this.element.removeEventListener("pointermove", this.onPointerMove);
+        this.element.removeEventListener("pointerup", this.onPointerUp);
+        this.element.removeEventListener("pointercancel", this.onPointerUp);
+      }
+      if (this.config.snap?.snapOnRelease !== false) {
+        const snapPoint = this.findNearestSnapPoint();
+        if (snapPoint) {
+          this.snapTo(snapPoint);
+          if (this.config.onDragEnd) {
+            this.config.onDragEnd(this.position.x, this.position.y, this.velocity);
+          }
+          return;
+        }
+      }
+      this.release(this.velocity.x * 16, this.velocity.y * 16);
+      if (this.config.onDragEnd) {
+        this.config.onDragEnd(this.position.x, this.position.y, this.velocity);
+      }
+    };
+    this.element = element;
+    this.config = {
+      ...defaultDragConfig,
+      ...config,
+      // Deep clone bounds if provided
+      bounds: config.bounds ? { ...config.bounds } : void 0
+    };
+    const springConfig = {
+      stiffness: this.config.stiffness,
+      damping: this.config.damping,
+      mass: this.config.mass,
+      restSpeed: this.config.restSpeed,
+      restDelta: this.config.restDelta,
+      clamp: this.config.clamp
+    };
+    this.springX = createSpringValue(0, springConfig);
+    this.springY = createSpringValue(0, springConfig);
+    this.springX.subscribe(() => {
+      if (!this._isDragging) {
+        this.position.x = this.springX.get();
+        if (this.config.onUpdate) {
+          this.config.onUpdate(this.position.x, this.position.y);
+        }
+      }
+    });
+    this.springY.subscribe(() => {
+      if (!this._isDragging) {
+        this.position.y = this.springY.get();
+        if (this.config.onUpdate) {
+          this.config.onUpdate(this.position.x, this.position.y);
+        }
+      }
+    });
+    this.setupPointerEvents();
+  }
+  setupPointerEvents() {
+    this.element.addEventListener("pointerdown", this.onPointerDown);
+  }
+  getElasticFactor(edge) {
+    const dragElastic = this.config.dragElastic;
+    if (dragElastic === void 0) {
+      if (this.config.rubberBand) {
+        return this.config.rubberBandFactor ?? 0.5;
+      }
+      return 0;
+    }
+    if (typeof dragElastic === "boolean") {
+      return dragElastic ? 0.5 : 0;
+    }
+    if (typeof dragElastic === "number") {
+      return clamp(dragElastic, 0, 1);
+    }
+    return clamp(dragElastic[edge] ?? 0.5, 0, 1);
+  }
+  applyBounds(value, min, max, axis = "x") {
+    if (!isFinite(min) && !isFinite(max)) return value;
+    const actualMin = isFinite(min) ? min : -Infinity;
+    const actualMax = isFinite(max) ? max : Infinity;
+    const hasElastic = this.config.dragElastic !== void 0 || this.config.rubberBand;
+    if (hasElastic) {
+      if (value < actualMin) {
+        const elasticFactor = this.getElasticFactor(axis === "x" ? "left" : "top");
+        return actualMin - (actualMin - value) * elasticFactor;
+      }
+      if (value > actualMax) {
+        const elasticFactor = this.getElasticFactor(axis === "x" ? "right" : "bottom");
+        return actualMax + (value - actualMax) * elasticFactor;
+      }
+    }
+    return clamp(value, actualMin, actualMax);
+  }
+  findNearestSnapPoint() {
+    const snap = this.config.snap;
+    if (!snap) return null;
+    if (snap.grid) {
+      const gridX = Math.round(this.position.x / snap.grid.x) * snap.grid.x;
+      const gridY = Math.round(this.position.y / snap.grid.y) * snap.grid.y;
+      return { x: gridX, y: gridY };
+    }
+    if (snap.points && snap.points.length > 0) {
+      const velocityMagnitude = Math.sqrt(this.velocity.x ** 2 + this.velocity.y ** 2);
+      const threshold = snap.velocityThreshold ?? 0.5;
+      if (velocityMagnitude > threshold) return null;
+      let nearestPoint = null;
+      let nearestDistance = Infinity;
+      for (const point of snap.points) {
+        const dx = this.position.x - point.x;
+        const dy = this.position.y - point.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        const radius = point.radius ?? 50;
+        if (distance < radius && distance < nearestDistance) {
+          nearestDistance = distance;
+          nearestPoint = point;
+        }
+      }
+      return nearestPoint;
+    }
+    return null;
+  }
+  getEffectiveBounds() {
+    const bounds = {
+      left: this.config.bounds?.left ?? this.config.constraints?.bounds?.left ?? -Infinity,
+      right: this.config.bounds?.right ?? this.config.constraints?.bounds?.right ?? Infinity,
+      top: this.config.bounds?.top ?? this.config.constraints?.bounds?.top ?? -Infinity,
+      bottom: this.config.bounds?.bottom ?? this.config.constraints?.bounds?.bottom ?? Infinity
+    };
+    const constraints = this.config.constraints;
+    if (constraints?.constrainToParent && this.element.parentElement) {
+      const parent = this.element.parentElement;
+      const parentRect = parent.getBoundingClientRect();
+      const elementRect = this.element.getBoundingClientRect();
+      const padding = this.normalizePadding(constraints.constraintPadding);
+      bounds.left = Math.max(bounds.left, padding.left);
+      bounds.right = Math.min(bounds.right, parentRect.width - elementRect.width - padding.right);
+      bounds.top = Math.max(bounds.top, padding.top);
+      bounds.bottom = Math.min(bounds.bottom, parentRect.height - elementRect.height - padding.bottom);
+    }
+    if (constraints?.constrainToElement) {
+      const constraintRect = constraints.constrainToElement.getBoundingClientRect();
+      const elementRect = this.element.getBoundingClientRect();
+      const parentRect = this.element.parentElement?.getBoundingClientRect() ?? { left: 0, top: 0 };
+      const padding = this.normalizePadding(constraints.constraintPadding);
+      const offsetX = constraintRect.left - parentRect.left;
+      const offsetY = constraintRect.top - parentRect.top;
+      bounds.left = Math.max(bounds.left, offsetX + padding.left);
+      bounds.right = Math.min(bounds.right, offsetX + constraintRect.width - elementRect.width - padding.right);
+      bounds.top = Math.max(bounds.top, offsetY + padding.top);
+      bounds.bottom = Math.min(bounds.bottom, offsetY + constraintRect.height - elementRect.height - padding.bottom);
+    }
+    return bounds;
+  }
+  normalizePadding(padding) {
+    if (typeof padding === "number") {
+      return { top: padding, right: padding, bottom: padding, left: padding };
+    }
+    return {
+      top: padding?.top ?? 0,
+      right: padding?.right ?? 0,
+      bottom: padding?.bottom ?? 0,
+      left: padding?.left ?? 0
+    };
+  }
+  enable() {
+    this.enabled = true;
+  }
+  disable() {
+    this.enabled = false;
+    if (this._isDragging) {
+      this._isDragging = false;
+    }
+  }
+  isEnabled() {
+    return this.enabled;
+  }
+  isDragging() {
+    return this._isDragging;
+  }
+  reset() {
+    this.springX.jump(0);
+    this.springY.jump(0);
+    this.position = { x: 0, y: 0 };
+    this.velocity = { x: 0, y: 0 };
+    this.currentSnap = null;
+    if (this.config.onUpdate) {
+      this.config.onUpdate(0, 0);
+    }
+  }
+  getPosition() {
+    return { ...this.position };
+  }
+  getVelocity() {
+    return { ...this.velocity };
+  }
+  setPosition(x, y) {
+    if (this.destroyed) return;
+    const safeX = Number.isFinite(x) ? x : this.position.x;
+    const safeY = Number.isFinite(y) ? y : this.position.y;
+    this.position = { x: safeX, y: safeY };
+    this.springX.jump(safeX);
+    this.springY.jump(safeY);
+  }
+  jumpTo(x, y) {
+    if (this.destroyed) return;
+    const safeX = Number.isFinite(x) ? x : this.position.x;
+    const safeY = Number.isFinite(y) ? y : this.position.y;
+    this.position = { x: safeX, y: safeY };
+    this.springX.jump(safeX);
+    this.springY.jump(safeY);
+    if (this.config.onUpdate) {
+      this.config.onUpdate(safeX, safeY);
+    }
+  }
+  animateTo(x, y) {
+    if (this.destroyed) return;
+    const safeX = Number.isFinite(x) ? x : this.position.x;
+    const safeY = Number.isFinite(y) ? y : this.position.y;
+    this.springX.set(safeX);
+    this.springY.set(safeY);
+  }
+  release(velocityX, velocityY) {
+    const bounds = this.getEffectiveBounds();
+    const { left, right, top, bottom } = bounds;
+    let targetX = this.position.x;
+    let targetY = this.position.y;
+    if (this.config.momentum) {
+      const rawDecay = this.config.momentumDecay ?? 0.95;
+      const decay2 = Math.max(0, Math.min(0.99, rawDecay));
+      const decayFactor = decay2 < 1 ? 1 / (1 - decay2) : 100;
+      const momentumX = velocityX * decayFactor * 0.1;
+      const momentumY = velocityY * decayFactor * 0.1;
+      targetX += momentumX;
+      targetY += momentumY;
+    }
+    if (this.config.modifyTarget) {
+      const modified = this.config.modifyTarget({ x: targetX, y: targetY });
+      targetX = modified.x;
+      targetY = modified.y;
+    }
+    targetX = clamp(targetX, left, right);
+    targetY = clamp(targetY, top, bottom);
+    if (this.config.onBoundsHit) {
+      if (this.position.x < left) this.config.onBoundsHit("left");
+      if (this.position.x > right) this.config.onBoundsHit("right");
+      if (this.position.y < top) this.config.onBoundsHit("top");
+      if (this.position.y > bottom) this.config.onBoundsHit("bottom");
+    }
+    if (targetX !== this.position.x || this.position.x < left || this.position.x > right) {
+      this.springX.set(targetX, { velocity: velocityX });
+    }
+    if (targetY !== this.position.y || this.position.y < top || this.position.y > bottom) {
+      this.springY.set(targetY, { velocity: velocityY });
+    }
+  }
+  snapToNearest() {
+    const snapPoint = this.findNearestSnapPoint();
+    if (snapPoint) {
+      this.snapTo(snapPoint);
+    }
+  }
+  snapTo(point) {
+    this.currentSnap = point;
+    if (this.config.onSnapStart) {
+      this.config.onSnapStart(point);
+    }
+    this.springX.set(point.x);
+    this.springY.set(point.y);
+    if (this.snapTimeoutId !== null) {
+      clearTimeout(this.snapTimeoutId);
+    }
+    const generation = ++this.snapGeneration;
+    this.snapTimeoutId = setTimeout(() => {
+      this.snapTimeoutId = null;
+      if (!this.destroyed && generation === this.snapGeneration && this.currentSnap === point && this.config.onSnapComplete) {
+        this.config.onSnapComplete(point);
+      }
+    }, 500);
+  }
+  setConstraints(constraints) {
+    this.config.constraints = constraints;
+  }
+  setSnap(snap) {
+    this.config.snap = snap;
+  }
+  destroy() {
+    this.destroyed = true;
+    if (this.snapTimeoutId !== null) {
+      clearTimeout(this.snapTimeoutId);
+      this.snapTimeoutId = null;
+    }
+    this.element.removeEventListener("pointerdown", this.onPointerDown);
+    this.element.removeEventListener("pointermove", this.onPointerMove);
+    this.element.removeEventListener("pointerup", this.onPointerUp);
+    this.element.removeEventListener("pointercancel", this.onPointerUp);
+    this.springX.destroy();
+    this.springY.destroy();
+  }
+};
+function createDragSpring(element, config) {
+  return new DragSpringImpl(element, config);
+}
+
+// src/gesture/scroll.ts
+var defaultScrollConfig = {
+  direction: "vertical",
+  momentum: false,
+  momentumDecay: 0.95,
+  bounce: false,
+  stiffness: 100,
+  damping: 10,
+  mass: 1,
+  restSpeed: 0.01,
+  restDelta: 0.01,
+  clamp: false
+};
+var ScrollSpringImpl = class {
+  constructor(container, config = {}) {
+    this.scroll = { x: 0, y: 0 };
+    this.target = { x: 0, y: 0 };
+    this.isScrolling = false;
+    this.isEnabled = true;
+    this.pendingRafId = null;
+    this.destroyed = false;
+    this.onWheel = (e) => {
+      if (!this.isEnabled) return;
+      if (!this.isScrolling) {
+        this.isScrolling = true;
+        this.config.onScrollStart?.();
+      }
+      let deltaX = e.deltaX;
+      let deltaY = e.deltaY;
+      if (this.config.direction === "horizontal") {
+        deltaY = 0;
+      } else if (this.config.direction === "vertical") {
+        deltaX = 0;
+      }
+      if (this.config.bounce) {
+        const maxScrollX = this.container.scrollWidth - this.container.clientWidth;
+        const maxScrollY = this.container.scrollHeight - this.container.clientHeight;
+        this.target.x += deltaX;
+        this.target.y += deltaY;
+        if (this.target.x < 0) {
+          this.target.x = -Math.sqrt(Math.abs(this.target.x)) * 10;
+        } else if (this.target.x > maxScrollX) {
+          this.target.x = maxScrollX + Math.sqrt(Math.abs(this.target.x - maxScrollX)) * 10;
+        }
+        if (this.target.y < 0) {
+          this.target.y = -Math.sqrt(Math.abs(this.target.y)) * 10;
+        } else if (this.target.y > maxScrollY) {
+          this.target.y = maxScrollY + Math.sqrt(Math.abs(this.target.y - maxScrollY)) * 10;
+        }
+        e.preventDefault();
+      } else {
+        this.target.x += deltaX;
+        this.target.y += deltaY;
+        const maxScrollX = this.container.scrollWidth - this.container.clientWidth;
+        const maxScrollY = this.container.scrollHeight - this.container.clientHeight;
+        this.target.x = Math.max(0, Math.min(this.target.x, maxScrollX));
+        this.target.y = Math.max(0, Math.min(this.target.y, maxScrollY));
+      }
+      this.startScrollLoop();
+    };
+    this.container = container;
+    this.config = { ...defaultScrollConfig, ...config };
+    const springConfig = {
+      stiffness: this.config.stiffness,
+      damping: this.config.damping,
+      mass: this.config.mass,
+      restSpeed: this.config.restSpeed,
+      restDelta: this.config.restDelta,
+      clamp: this.config.clamp
+    };
+    this.springX = createSpringValue(0, springConfig);
+    this.springY = createSpringValue(0, springConfig);
+    this.springX.subscribe(() => {
+      this.scroll.x = this.springX.get();
+      this.config.onScroll?.(this.scroll.x, this.scroll.y);
+    });
+    this.springY.subscribe(() => {
+      this.scroll.y = this.springY.get();
+      this.config.onScroll?.(this.scroll.x, this.scroll.y);
+    });
+    this.setupScrollEvents();
+  }
+  setupScrollEvents() {
+    this.container.addEventListener("wheel", this.onWheel, { passive: false });
+  }
+  startScrollLoop() {
+    this.springX.set(this.target.x);
+    this.springY.set(this.target.y);
+    const checkEnd = () => {
+      this.pendingRafId = null;
+      if (this.destroyed) return;
+      const settled = Math.abs(this.scroll.x - this.target.x) < 0.1 && Math.abs(this.scroll.y - this.target.y) < 0.1 && !this.springX.isAnimating() && !this.springY.isAnimating();
+      if (settled && this.isScrolling) {
+        this.isScrolling = false;
+        this.config.onScrollEnd?.();
+      } else if (this.isScrolling) {
+        this.pendingRafId = requestAnimationFrame(checkEnd);
+      }
+    };
+    checkEnd();
+  }
+  getScroll() {
+    return { ...this.scroll };
+  }
+  scrollTo(x, y) {
+    this.target = { x, y };
+    this.springX.set(x);
+    this.springY.set(y);
+  }
+  scrollToElement(element, offset = 0) {
+    const containerRect = this.container.getBoundingClientRect();
+    const elementRect = element.getBoundingClientRect();
+    const x = elementRect.left - containerRect.left + this.scroll.x + offset;
+    const y = elementRect.top - containerRect.top + this.scroll.y + offset;
+    this.scrollTo(x, y);
+  }
+  enable() {
+    this.isEnabled = true;
+  }
+  disable() {
+    this.isEnabled = false;
+    if (this.pendingRafId !== null) {
+      cancelAnimationFrame(this.pendingRafId);
+      this.pendingRafId = null;
+    }
+    if (this.isScrolling) {
+      this.isScrolling = false;
+      this.config.onScrollEnd?.();
+    }
+  }
+  destroy() {
+    this.destroyed = true;
+    if (this.pendingRafId !== null) {
+      cancelAnimationFrame(this.pendingRafId);
+      this.pendingRafId = null;
+    }
+    this.container.removeEventListener("wheel", this.onWheel);
+    this.springX.destroy();
+    this.springY.destroy();
+  }
+};
+function createScrollSpring(container, config) {
+  return new ScrollSpringImpl(container, config);
+}
+
+// src/gesture/advanced.ts
+function getDistance(p1, p2) {
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+function getAngle(p1, p2) {
+  return Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI;
+}
+function getCenter(p1, p2) {
+  return {
+    x: (p1.x + p2.x) / 2,
+    y: (p1.y + p2.y) / 2
+  };
+}
+function rubberBand(value, min, max, factor) {
+  if (value < min) {
+    return min - Math.pow(min - value, factor);
+  }
+  if (value > max) {
+    return max + Math.pow(value - max, factor);
+  }
+  return value;
+}
+function createPinchGesture(element, config = {}) {
+  const {
+    minScale = 0.1,
+    maxScale = 10,
+    rubberBand: enableRubberBand = true,
+    rubberBandFactor = 0.5,
+    spring: spring2 = { stiffness: 200, damping: 20 },
+    onPinch,
+    onPinchStart,
+    onPinchEnd
+  } = config;
+  let enabled = true;
+  let active = false;
+  let initialDistance = 0;
+  let initialScale = 1;
+  let currentScale = 1;
+  let lastScale = 1;
+  let velocity = 0;
+  let startTime = 0;
+  let lastTime = 0;
+  const touches = /* @__PURE__ */ new Map();
+  let scaleSpring = null;
+  const createState = (event, first = false, last = false) => {
+    const touchArray = Array.from(touches.values());
+    const p1 = touchArray[0] ?? { x: 0, y: 0 };
+    const p2 = touchArray[1] ?? { x: 0, y: 0 };
+    const origin = touchArray.length >= 2 ? getCenter(p1, p2) : { x: 0, y: 0 };
+    return {
+      active,
+      first,
+      last,
+      event,
+      elapsedTime: performance.now() - startTime,
+      cancelled: false,
+      scale: currentScale,
+      velocity,
+      distance: touchArray.length >= 2 ? getDistance(p1, p2) : 0,
+      initialDistance,
+      origin,
+      movement: currentScale - initialScale,
+      offset: currentScale - 1
+    };
+  };
+  const handleTouchStart = (e) => {
+    if (!enabled) return;
+    for (const touch of Array.from(e.changedTouches)) {
+      touches.set(touch.identifier, { x: touch.clientX, y: touch.clientY });
+    }
+    if (touches.size === 2) {
+      const touchArray = Array.from(touches.values());
+      const p1 = touchArray[0];
+      const p2 = touchArray[1];
+      initialDistance = getDistance(p1, p2);
+      initialScale = currentScale;
+      startTime = performance.now();
+      lastTime = startTime;
+      active = true;
+      scaleSpring?.destroy();
+      scaleSpring = null;
+      onPinchStart?.(createState(e, true, false));
+    }
+  };
+  const handleTouchMove = (e) => {
+    if (!enabled || !active) return;
+    for (const touch of Array.from(e.changedTouches)) {
+      if (touches.has(touch.identifier)) {
+        touches.set(touch.identifier, { x: touch.clientX, y: touch.clientY });
+      }
+    }
+    if (touches.size >= 2) {
+      const touchArray = Array.from(touches.values());
+      const p1 = touchArray[0];
+      const p2 = touchArray[1];
+      const currentDistance = getDistance(p1, p2);
+      const now = performance.now();
+      const dt = now - lastTime;
+      let newScale = initialScale * (currentDistance / initialDistance);
+      if (enableRubberBand) {
+        newScale = rubberBand(newScale, minScale, maxScale, rubberBandFactor);
+      } else {
+        newScale = clamp(newScale, minScale, maxScale);
+      }
+      lastScale = currentScale;
+      currentScale = newScale;
+      velocity = dt > 0 ? (currentScale - lastScale) / dt * 1e3 : 0;
+      lastTime = now;
+      onPinch?.(createState(e, false, false));
+      e.preventDefault();
+    }
+  };
+  const handleTouchEnd = (e) => {
+    for (const touch of Array.from(e.changedTouches)) {
+      touches.delete(touch.identifier);
+    }
+    if (active && touches.size < 2) {
+      active = false;
+      if (currentScale < minScale || currentScale > maxScale) {
+        const targetScale = clamp(currentScale, minScale, maxScale);
+        scaleSpring = createSpringValue(currentScale, {
+          stiffness: spring2.stiffness,
+          damping: spring2.damping
+        });
+        scaleSpring.subscribe(() => {
+          currentScale = scaleSpring.get();
+          onPinch?.(createState(e, false, false));
+        });
+        scaleSpring.set(targetScale);
+      }
+      onPinchEnd?.(createState(e, false, true));
+    }
+  };
+  element.addEventListener("touchstart", handleTouchStart, { passive: false });
+  element.addEventListener("touchmove", handleTouchMove, { passive: false });
+  element.addEventListener("touchend", handleTouchEnd);
+  element.addEventListener("touchcancel", handleTouchEnd);
+  return {
+    enable: () => {
+      enabled = true;
+    },
+    disable: () => {
+      enabled = false;
+      scaleSpring?.destroy();
+      scaleSpring = null;
+    },
+    isEnabled: () => enabled,
+    destroy: () => {
+      element.removeEventListener("touchstart", handleTouchStart);
+      element.removeEventListener("touchmove", handleTouchMove);
+      element.removeEventListener("touchend", handleTouchEnd);
+      element.removeEventListener("touchcancel", handleTouchEnd);
+      scaleSpring?.destroy();
+      scaleSpring = null;
+      touches.clear();
+    }
+  };
+}
+function createRotateGesture(element, config = {}) {
+  const {
+    enabled: initialEnabled = true,
+    threshold = 0,
+    onRotate,
+    onRotateStart,
+    onRotateEnd
+  } = config;
+  let enabled = initialEnabled;
+  let active = false;
+  let initialAngle = 0;
+  let currentAngle = 0;
+  let lastAngle = 0;
+  let velocity = 0;
+  let startTime = 0;
+  let lastTime = 0;
+  let angleOffset = 0;
+  const touches = /* @__PURE__ */ new Map();
+  const createState = (event, first = false, last = false) => {
+    const touchArray = Array.from(touches.values());
+    const p1 = touchArray[0] ?? { x: 0, y: 0 };
+    const p2 = touchArray[1] ?? { x: 0, y: 0 };
+    const origin = touchArray.length >= 2 ? getCenter(p1, p2) : { x: 0, y: 0 };
+    return {
+      active,
+      first,
+      last,
+      event,
+      elapsedTime: performance.now() - startTime,
+      cancelled: false,
+      angle: currentAngle,
+      velocity,
+      initialAngle,
+      origin,
+      movement: currentAngle - initialAngle,
+      offset: angleOffset
+    };
+  };
+  const handleTouchStart = (e) => {
+    if (!enabled) return;
+    for (const touch of Array.from(e.changedTouches)) {
+      touches.set(touch.identifier, { x: touch.clientX, y: touch.clientY });
+    }
+    if (touches.size === 2) {
+      const touchArray = Array.from(touches.values());
+      const p1 = touchArray[0];
+      const p2 = touchArray[1];
+      initialAngle = getAngle(p1, p2);
+      startTime = performance.now();
+      lastTime = startTime;
+      lastAngle = currentAngle;
+      active = true;
+      onRotateStart?.(createState(e, true, false));
+    }
+  };
+  const handleTouchMove = (e) => {
+    if (!enabled || !active) return;
+    for (const touch of Array.from(e.changedTouches)) {
+      if (touches.has(touch.identifier)) {
+        touches.set(touch.identifier, { x: touch.clientX, y: touch.clientY });
+      }
+    }
+    if (touches.size >= 2) {
+      const touchArray = Array.from(touches.values());
+      const p1 = touchArray[0];
+      const p2 = touchArray[1];
+      const newAngle = getAngle(p1, p2);
+      const now = performance.now();
+      const dt = now - lastTime;
+      let angleDelta = newAngle - initialAngle;
+      if (angleDelta > 180) angleDelta -= 360;
+      if (angleDelta < -180) angleDelta += 360;
+      if (Math.abs(angleDelta) >= threshold) {
+        currentAngle = angleOffset + angleDelta;
+        velocity = dt > 0 ? (currentAngle - lastAngle) / dt * 1e3 : 0;
+        lastAngle = currentAngle;
+        lastTime = now;
+        onRotate?.(createState(e, false, false));
+      }
+      e.preventDefault();
+    }
+  };
+  const handleTouchEnd = (e) => {
+    for (const touch of Array.from(e.changedTouches)) {
+      touches.delete(touch.identifier);
+    }
+    if (active && touches.size < 2) {
+      active = false;
+      angleOffset = currentAngle;
+      onRotateEnd?.(createState(e, false, true));
+    }
+  };
+  element.addEventListener("touchstart", handleTouchStart, { passive: false });
+  element.addEventListener("touchmove", handleTouchMove, { passive: false });
+  element.addEventListener("touchend", handleTouchEnd);
+  element.addEventListener("touchcancel", handleTouchEnd);
+  return {
+    enable: () => {
+      enabled = true;
+    },
+    disable: () => {
+      enabled = false;
+    },
+    isEnabled: () => enabled,
+    destroy: () => {
+      element.removeEventListener("touchstart", handleTouchStart);
+      element.removeEventListener("touchmove", handleTouchMove);
+      element.removeEventListener("touchend", handleTouchEnd);
+      element.removeEventListener("touchcancel", handleTouchEnd);
+      touches.clear();
+    }
+  };
+}
+function createSwipeGesture(element, config = {}) {
+  const {
+    velocityThreshold = 0.5,
+    distanceThreshold = 50,
+    maxDuration = 300,
+    axis = "both",
+    onSwipe,
+    onSwipeStart,
+    onSwipeEnd
+  } = config;
+  let enabled = true;
+  let active = false;
+  let startPoint = { x: 0, y: 0 };
+  let lastPoint = { x: 0, y: 0 };
+  let startTime = 0;
+  let lastTime = 0;
+  let pointerId = null;
+  const createState = (event, first = false, last = false, direction = null) => {
+    const now = performance.now();
+    const duration = now - startTime;
+    const dt = now - lastTime;
+    const movement = {
+      x: event.clientX - startPoint.x,
+      y: event.clientY - startPoint.y
+    };
+    const velocity = {
+      x: dt > 0 ? (event.clientX - lastPoint.x) / dt : 0,
+      y: dt > 0 ? (event.clientY - lastPoint.y) / dt : 0
+    };
+    return {
+      active,
+      first,
+      last,
+      event,
+      elapsedTime: duration,
+      cancelled: false,
+      direction,
+      velocity,
+      distance: movement,
+      movement,
+      duration
+    };
+  };
+  const detectDirection = (movement, velocity) => {
+    const absX = Math.abs(movement.x);
+    const absY = Math.abs(movement.y);
+    const velX = Math.abs(velocity.x);
+    const velY = Math.abs(velocity.y);
+    const meetsDistanceX = absX >= distanceThreshold;
+    const meetsDistanceY = absY >= distanceThreshold;
+    const meetsVelocityX = velX >= velocityThreshold;
+    const meetsVelocityY = velY >= velocityThreshold;
+    if (axis === "x" || axis === "both" && absX > absY) {
+      if (meetsDistanceX || meetsVelocityX) {
+        return movement.x > 0 ? "right" : "left";
+      }
+    }
+    if (axis === "y" || axis === "both" && absY > absX) {
+      if (meetsDistanceY || meetsVelocityY) {
+        return movement.y > 0 ? "down" : "up";
+      }
+    }
+    return null;
+  };
+  const handlePointerDown = (e) => {
+    if (!enabled || pointerId !== null) return;
+    pointerId = e.pointerId;
+    startPoint = { x: e.clientX, y: e.clientY };
+    lastPoint = { ...startPoint };
+    startTime = performance.now();
+    lastTime = startTime;
+    active = true;
+    element.setPointerCapture(e.pointerId);
+    onSwipeStart?.(createState(e, true, false));
+  };
+  const handlePointerMove = (e) => {
+    if (!enabled || !active || e.pointerId !== pointerId) return;
+    const now = performance.now();
+    lastPoint = { x: e.clientX, y: e.clientY };
+    lastTime = now;
+  };
+  const handlePointerUp = (e) => {
+    if (!active || e.pointerId !== pointerId) return;
+    active = false;
+    pointerId = null;
+    const duration = performance.now() - startTime;
+    if (duration <= maxDuration) {
+      const movement = {
+        x: e.clientX - startPoint.x,
+        y: e.clientY - startPoint.y
+      };
+      const dt = performance.now() - lastTime;
+      const velocity = {
+        x: dt > 0 ? (e.clientX - lastPoint.x) / dt : 0,
+        y: dt > 0 ? (e.clientY - lastPoint.y) / dt : 0
+      };
+      const direction = detectDirection(movement, velocity);
+      const state = createState(e, false, true, direction);
+      if (direction) {
+        onSwipe?.(state);
+      }
+      onSwipeEnd?.(state);
+    } else {
+      onSwipeEnd?.(createState(e, false, true, null));
+    }
+    try {
+      element.releasePointerCapture(e.pointerId);
+    } catch {
+    }
+  };
+  element.addEventListener("pointerdown", handlePointerDown);
+  element.addEventListener("pointermove", handlePointerMove);
+  element.addEventListener("pointerup", handlePointerUp);
+  element.addEventListener("pointercancel", handlePointerUp);
+  return {
+    enable: () => {
+      enabled = true;
+    },
+    disable: () => {
+      enabled = false;
+    },
+    isEnabled: () => enabled,
+    destroy: () => {
+      element.removeEventListener("pointerdown", handlePointerDown);
+      element.removeEventListener("pointermove", handlePointerMove);
+      element.removeEventListener("pointerup", handlePointerUp);
+      element.removeEventListener("pointercancel", handlePointerUp);
+    }
+  };
+}
+function createLongPressGesture(element, config = {}) {
+  const {
+    threshold = 500,
+    movementTolerance = 10,
+    onLongPress,
+    onPressStart,
+    onPressEnd
+  } = config;
+  let enabled = true;
+  let active = false;
+  let triggered = false;
+  let startPoint = { x: 0, y: 0 };
+  let startTime = 0;
+  let timerId = null;
+  let pointerId = null;
+  const createState = (event, first = false, last = false) => ({
+    active,
+    first,
+    last,
+    event,
+    elapsedTime: performance.now() - startTime,
+    cancelled: false,
+    position: startPoint,
+    duration: performance.now() - startTime,
+    triggered
+  });
+  const handlePointerDown = (e) => {
+    if (!enabled || pointerId !== null) return;
+    pointerId = e.pointerId;
+    startPoint = { x: e.clientX, y: e.clientY };
+    startTime = performance.now();
+    active = true;
+    triggered = false;
+    element.setPointerCapture(e.pointerId);
+    onPressStart?.(createState(e, true, false));
+    timerId = setTimeout(() => {
+      if (active && !triggered) {
+        triggered = true;
+        onLongPress?.(createState(e, false, false));
+      }
+    }, threshold);
+  };
+  const handlePointerMove = (e) => {
+    if (!active || e.pointerId !== pointerId) return;
+    const dx = e.clientX - startPoint.x;
+    const dy = e.clientY - startPoint.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    if (distance > movementTolerance) {
+      if (timerId) {
+        clearTimeout(timerId);
+        timerId = null;
+      }
+    }
+  };
+  const handlePointerUp = (e) => {
+    if (!active || e.pointerId !== pointerId) return;
+    active = false;
+    pointerId = null;
+    if (timerId) {
+      clearTimeout(timerId);
+      timerId = null;
+    }
+    onPressEnd?.(createState(e, false, true));
+    try {
+      element.releasePointerCapture(e.pointerId);
+    } catch {
+    }
+  };
+  element.addEventListener("pointerdown", handlePointerDown);
+  element.addEventListener("pointermove", handlePointerMove);
+  element.addEventListener("pointerup", handlePointerUp);
+  element.addEventListener("pointercancel", handlePointerUp);
+  return {
+    enable: () => {
+      enabled = true;
+    },
+    disable: () => {
+      enabled = false;
+      if (timerId) {
+        clearTimeout(timerId);
+        timerId = null;
+      }
+    },
+    isEnabled: () => enabled,
+    destroy: () => {
+      if (timerId) clearTimeout(timerId);
+      element.removeEventListener("pointerdown", handlePointerDown);
+      element.removeEventListener("pointermove", handlePointerMove);
+      element.removeEventListener("pointerup", handlePointerUp);
+      element.removeEventListener("pointercancel", handlePointerUp);
+    }
+  };
+}
+function createGestures(element, config) {
+  const controllers = [];
+  if (config.pinch) {
+    controllers.push(createPinchGesture(element, config.pinch));
+  }
+  if (config.rotate) {
+    controllers.push(createRotateGesture(element, config.rotate));
+  }
+  if (config.swipe) {
+    controllers.push(createSwipeGesture(element, config.swipe));
+  }
+  if (config.longPress) {
+    controllers.push(createLongPressGesture(element, config.longPress));
+  }
+  return {
+    enable: () => controllers.forEach((c) => c.enable()),
+    disable: () => controllers.forEach((c) => c.disable()),
+    isEnabled: () => controllers.every((c) => c.isEnabled()),
+    destroy: () => controllers.forEach((c) => c.destroy())
+  };
+}
+
+// src/utils/color.ts
+function parseColor(color) {
+  const hexMatch = color.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i);
+  if (hexMatch) {
+    return hexToRgb(color);
+  }
+  const rgbMatch = color.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/i);
+  if (rgbMatch) {
+    return {
+      r: parseInt(rgbMatch[1], 10),
+      g: parseInt(rgbMatch[2], 10),
+      b: parseInt(rgbMatch[3], 10)
+    };
+  }
+  const rgbaMatch = color.match(/rgba\((\d+),\s*(\d+),\s*(\d+),\s*[\d.]+\)/i);
+  if (rgbaMatch) {
+    return {
+      r: parseInt(rgbaMatch[1], 10),
+      g: parseInt(rgbaMatch[2], 10),
+      b: parseInt(rgbaMatch[3], 10)
+    };
+  }
+  const hslMatch = color.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/i);
+  if (hslMatch) {
+    return hslToRgb(
+      parseInt(hslMatch[1], 10),
+      parseInt(hslMatch[2], 10),
+      parseInt(hslMatch[3], 10)
+    );
+  }
+  return { r: 0, g: 0, b: 0 };
+}
+function rgbToHex(r, g, b) {
+  const toHex = (n) => {
+    const clamped = Math.round(Math.max(0, Math.min(255, n)));
+    return clamped.toString(16).padStart(2, "0");
+  };
+  return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+function hexToRgb(hex) {
+  const cleanHex = hex.replace("#", "");
+  if (cleanHex.length === 3) {
+    return {
+      r: parseInt(cleanHex.charAt(0) + cleanHex.charAt(0), 16),
+      g: parseInt(cleanHex.charAt(1) + cleanHex.charAt(1), 16),
+      b: parseInt(cleanHex.charAt(2) + cleanHex.charAt(2), 16)
+    };
+  }
+  return {
+    r: parseInt(cleanHex.slice(0, 2), 16),
+    g: parseInt(cleanHex.slice(2, 4), 16),
+    b: parseInt(cleanHex.slice(4, 6), 16)
+  };
+}
+function hslToRgb(h, s, l) {
+  h = (h % 360 + 360) % 360;
+  s = Math.max(0, Math.min(100, s)) / 100;
+  l = Math.max(0, Math.min(100, l)) / 100;
+  if (s === 0) {
+    const gray = Math.round(l * 255);
+    return { r: gray, g: gray, b: gray };
+  }
+  const hue2rgb = (p2, q2, t) => {
+    if (t < 0) t += 1;
+    if (t > 1) t -= 1;
+    if (t < 1 / 6) return p2 + (q2 - p2) * 6 * t;
+    if (t < 1 / 2) return q2;
+    if (t < 2 / 3) return p2 + (q2 - p2) * (2 / 3 - t) * 6;
+    return p2;
+  };
+  const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+  const p = 2 * l - q;
+  return {
+    r: Math.round(hue2rgb(p, q, h / 360 + 1 / 3) * 255),
+    g: Math.round(hue2rgb(p, q, h / 360) * 255),
+    b: Math.round(hue2rgb(p, q, h / 360 - 1 / 3) * 255)
+  };
+}
+function rgbToHsl(r, g, b) {
+  r = Math.max(0, Math.min(255, r)) / 255;
+  g = Math.max(0, Math.min(255, g)) / 255;
+  b = Math.max(0, Math.min(255, b)) / 255;
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+  let h = 0;
+  let s = 0;
+  if (delta !== 0) {
+    s = (max + min) / 2 > 0.5 ? delta / (2 - max - min) : delta / (max + min);
+    if (max === r) {
+      h = ((g - b) / delta + (g < b ? 6 : 0)) / 6;
+    } else if (max === g) {
+      h = ((b - r) / delta + 2) / 6;
+    } else {
+      h = ((r - g) / delta + 4) / 6;
+    }
+  }
+  return {
+    h: Math.round(h * 360),
+    s: Math.round(s * 100),
+    l: Math.round((max + min) / 2 * 100)
+  };
+}
+
+// src/scroll/scroll-linked.ts
+function lerpColor(colorA, colorB, t) {
+  const a = parseColor(colorA);
+  const b = parseColor(colorB);
+  return rgbToHex(
+    Math.round(lerp(a.r, b.r, t)),
+    Math.round(lerp(a.g, b.g, t)),
+    Math.round(lerp(a.b, b.b, t))
+  );
+}
+function createScrollProgress(element, options = {}) {
+  const { offset = ["start", "end"], smooth = 0 } = options;
+  let progress = 0;
+  let smoothedProgress = 0;
+  let lastScrollY = 0;
+  let lastTime = performance.now();
+  let velocity = 0;
+  let direction = 0;
+  let rafId = null;
+  let destroyed = false;
+  const subscribers = /* @__PURE__ */ new Set();
+  const calculateProgress = () => {
+    const scrollY = window.scrollY;
+    const windowHeight = window.innerHeight;
+    const now = performance.now();
+    const dt = Math.max(now - lastTime, 1);
+    velocity = (scrollY - lastScrollY) / dt * 1e3;
+    direction = scrollY > lastScrollY ? 1 : scrollY < lastScrollY ? -1 : 0;
+    lastScrollY = scrollY;
+    lastTime = now;
+    let newProgress;
+    let isInView = true;
+    let visibleRatio = 1;
+    if (element) {
+      const rect = element.getBoundingClientRect();
+      const elementTop = rect.top + scrollY;
+      const elementHeight = rect.height;
+      const startPoint = offset[0] === "start" ? elementTop : offset[0] === "center" ? elementTop + elementHeight / 2 : elementTop + elementHeight;
+      const endPoint = offset[1] === "start" ? windowHeight : offset[1] === "center" ? windowHeight / 2 : 0;
+      const scrollStart = startPoint - windowHeight;
+      const scrollEnd = startPoint - endPoint;
+      const scrollRange = scrollEnd - scrollStart;
+      newProgress = scrollRange !== 0 ? clamp((scrollY - scrollStart) / scrollRange, 0, 1) : scrollY >= scrollEnd ? 1 : 0;
+      isInView = rect.top < windowHeight && rect.bottom > 0;
+      visibleRatio = isInView ? clamp((Math.min(rect.bottom, windowHeight) - Math.max(rect.top, 0)) / rect.height, 0, 1) : 0;
+    } else {
+      const documentHeight = document.documentElement.scrollHeight - windowHeight;
+      newProgress = documentHeight > 0 ? clamp(scrollY / documentHeight, 0, 1) : 0;
+    }
+    if (smooth > 0) {
+      smoothedProgress = lerp(smoothedProgress, newProgress, 1 - smooth);
+      progress = smoothedProgress;
+    } else {
+      progress = newProgress;
+    }
+    return {
+      progress,
+      scrollY,
+      velocity,
+      direction,
+      isInView,
+      visibleRatio
+    };
+  };
+  const notify = (info) => {
+    subscribers.forEach((cb) => {
+      try {
+        cb(info);
+      } catch (e) {
+        console.error("[SpringKit] ScrollProgress subscriber error:", e);
+      }
+    });
+  };
+  const onScroll = () => {
+    if (rafId || destroyed) return;
+    rafId = requestAnimationFrame(() => {
+      rafId = null;
+      if (destroyed) return;
+      const info = calculateProgress();
+      notify(info);
+    });
+  };
+  const initialInfo = calculateProgress();
+  window.addEventListener("scroll", onScroll, { passive: true });
+  window.addEventListener("resize", onScroll, { passive: true });
+  return {
+    get: () => progress,
+    getInfo: () => calculateProgress(),
+    subscribe: (callback) => {
+      subscribers.add(callback);
+      callback(initialInfo);
+      return () => subscribers.delete(callback);
+    },
+    destroy: () => {
+      if (destroyed) return;
+      destroyed = true;
+      if (rafId) cancelAnimationFrame(rafId);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+      subscribers.clear();
+    }
+  };
+}
+function createParallax(element, config = {}) {
+  const {
+    speed = 0.5,
+    direction = "vertical",
+    easing = (t) => t,
+    rootMargin = "0px"
+  } = config;
+  let offset = 0;
+  let isInView = false;
+  let observer = null;
+  let pendingRafId = null;
+  let destroyed = false;
+  const update = () => {
+    if (!isInView) return;
+    const rect = element.getBoundingClientRect();
+    const windowHeight = window.innerHeight;
+    const elementCenter = rect.top + rect.height / 2;
+    const viewportCenter = windowHeight / 2;
+    const distanceFromCenter = elementCenter - viewportCenter;
+    const normalizedDistance = distanceFromCenter / windowHeight;
+    const easedDistance = easing(Math.abs(normalizedDistance)) * Math.sign(normalizedDistance);
+    offset = easedDistance * speed * 100;
+    if (direction === "vertical") {
+      element.style.transform = `translate3d(0, ${offset}px, 0)`;
+    } else {
+      element.style.transform = `translate3d(${offset}px, 0, 0)`;
+    }
+  };
+  observer = new IntersectionObserver(
+    (entries) => {
+      const entry = entries[0];
+      if (entry) {
+        isInView = entry.isIntersecting;
+        if (isInView) update();
+      }
+    },
+    { rootMargin }
+  );
+  observer.observe(element);
+  const onScroll = () => {
+    if (destroyed) return;
+    if (isInView && pendingRafId === null) {
+      pendingRafId = requestAnimationFrame(() => {
+        pendingRafId = null;
+        if (!destroyed) update();
+      });
+    }
+  };
+  window.addEventListener("scroll", onScroll, { passive: true });
+  return {
+    getOffset: () => offset,
+    update,
+    destroy: () => {
+      destroyed = true;
+      if (pendingRafId !== null) {
+        cancelAnimationFrame(pendingRafId);
+        pendingRafId = null;
+      }
+      observer?.disconnect();
+      window.removeEventListener("scroll", onScroll);
+      element.style.transform = "";
+    }
+  };
+}
+function createScrollTrigger(element, config = {}) {
+  const {
+    start = "top",
+    end = "bottom",
+    startOffset = 0,
+    endOffset = 0,
+    onEnter,
+    onLeave,
+    onProgress,
+    once = false,
+    scrub = false
+  } = config;
+  let isActive = false;
+  let progress = 0;
+  let hasEntered = false;
+  let smoothedProgress = 0;
+  let rafId = null;
+  const getPosition = (pos, rect) => {
+    if (typeof pos === "number") return pos;
+    switch (pos) {
+      case "top":
+        return rect.top;
+      case "center":
+        return rect.top + rect.height / 2;
+      case "bottom":
+        return rect.bottom;
+    }
+  };
+  const calculateProgress = () => {
+    const rect = element.getBoundingClientRect();
+    const windowHeight = window.innerHeight;
+    const startPos = getPosition(start, rect) + startOffset;
+    const endPos = getPosition(end, rect) + endOffset;
+    const triggerStart = windowHeight;
+    const triggerEnd = 0;
+    const triggerRange = triggerStart - triggerEnd;
+    const startProgress = triggerRange !== 0 ? (triggerStart - startPos) / triggerRange : 0;
+    const endProgress = triggerRange !== 0 ? (triggerStart - endPos) / triggerRange : 1;
+    const progressRange = endProgress - startProgress;
+    const rawProgress = progressRange !== 0 ? clamp((startProgress - 0) / progressRange, 0, 1) : startProgress >= 0 ? 1 : 0;
+    if (typeof scrub === "number" && scrub > 0) {
+      smoothedProgress = lerp(smoothedProgress, rawProgress, 1 - scrub);
+      progress = smoothedProgress;
+    } else {
+      progress = rawProgress;
+    }
+    const isInView = rect.top < windowHeight && rect.bottom > 0;
+    return {
+      progress,
+      scrollY: window.scrollY,
+      velocity: 0,
+      direction: 0,
+      isInView,
+      visibleRatio: isInView ? clamp((Math.min(rect.bottom, windowHeight) - Math.max(rect.top, 0)) / rect.height, 0, 1) : 0
+    };
+  };
+  const onScroll = () => {
+    if (rafId) return;
+    rafId = requestAnimationFrame(() => {
+      rafId = null;
+      const info = calculateProgress();
+      const wasActive = isActive;
+      isActive = info.progress > 0 && info.progress < 1;
+      if (!wasActive && isActive && (!once || !hasEntered)) {
+        hasEntered = true;
+        try {
+          onEnter?.(info);
+        } catch (e) {
+          console.error("[SpringKit] ScrollTrigger onEnter error:", e);
+        }
+      }
+      if (wasActive && !isActive) {
+        try {
+          onLeave?.(info);
+        } catch (e) {
+          console.error("[SpringKit] ScrollTrigger onLeave error:", e);
+        }
+      }
+      if (isActive || scrub) {
+        try {
+          onProgress?.(info);
+        } catch (e) {
+          console.error("[SpringKit] ScrollTrigger onProgress error:", e);
+        }
+      }
+    });
+  };
+  window.addEventListener("scroll", onScroll, { passive: true });
+  window.addEventListener("resize", onScroll, { passive: true });
+  onScroll();
+  return {
+    isActive: () => isActive,
+    getProgress: () => progress,
+    refresh: () => {
+      calculateProgress();
+    },
+    destroy: () => {
+      if (rafId) cancelAnimationFrame(rafId);
+      window.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+    }
+  };
+}
+function createScrollLinkedValue(scrollProgress, config) {
+  const { inputRange, outputRange, clamp: shouldClamp = true, easing } = config;
+  if (inputRange.length !== outputRange.length) {
+    throw new Error("inputRange and outputRange must have the same length");
+  }
+  const firstOutput = outputRange[0];
+  const isColorOutput = typeof firstOutput === "string" && (firstOutput.startsWith("#") || firstOutput.startsWith("rgb") || firstOutput.startsWith("hsl"));
+  let currentValue = firstOutput ?? 0;
+  const subscribers = /* @__PURE__ */ new Set();
+  const interpolate2 = (progress) => {
+    let p = progress;
+    if (easing) p = easing(p);
+    const firstInput = inputRange[0] ?? 0;
+    const lastInput = inputRange[inputRange.length - 1] ?? 1;
+    if (shouldClamp) p = clamp(p, firstInput, lastInput);
+    let segmentIndex = 0;
+    for (let i = 0; i < inputRange.length - 1; i++) {
+      const curr = inputRange[i] ?? 0;
+      const next = inputRange[i + 1] ?? 1;
+      if (p >= curr && p <= next) {
+        segmentIndex = i;
+        break;
+      }
+      if (p > next) {
+        segmentIndex = i + 1;
+      }
+    }
+    const segmentStart = inputRange[segmentIndex] ?? 0;
+    const segmentEnd = inputRange[segmentIndex + 1] ?? segmentStart;
+    const segmentProgress = segmentEnd !== segmentStart ? (p - segmentStart) / (segmentEnd - segmentStart) : 0;
+    const startValue = outputRange[segmentIndex] ?? 0;
+    const endValue = outputRange[segmentIndex + 1] ?? startValue;
+    if (isColorOutput && typeof startValue === "string" && typeof endValue === "string") {
+      return lerpColor(startValue, endValue, segmentProgress);
+    }
+    return lerp(startValue, endValue, segmentProgress);
+  };
+  const unsubscribe = scrollProgress.subscribe((info) => {
+    currentValue = interpolate2(info.progress);
+    subscribers.forEach((cb) => cb(currentValue));
+  });
+  return {
+    get: () => currentValue,
+    subscribe: (callback) => {
+      subscribers.add(callback);
+      callback(currentValue);
+      return () => subscribers.delete(callback);
+    },
+    destroy: () => {
+      unsubscribe();
+      subscribers.clear();
+    }
+  };
+}
+var scrollEasings = {
+  linear: (t) => t,
+  easeIn: (t) => t * t,
+  easeOut: (t) => t * (2 - t),
+  easeInOut: (t) => t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t,
+  easeInCubic: (t) => t * t * t,
+  easeOutCubic: (t) => --t * t * t + 1,
+  easeInOutCubic: (t) => t < 0.5 ? 4 * t * t * t : (t - 1) * (2 * t - 2) * (2 * t - 2) + 1,
+  easeInQuart: (t) => t * t * t * t,
+  easeOutQuart: (t) => 1 - --t * t * t * t,
+  easeInOutQuart: (t) => t < 0.5 ? 8 * t * t * t * t : 1 - 8 * --t * t * t * t
+};
+
+// src/animation/timeline.ts
+var timelineIdCounter = 0;
+function createTimeline(config = {}) {
+  const timelineInstanceId = ++timelineIdCounter;
+  let segmentIdCounter = 0;
+  const {
+    defaults = {},
+    autoplay = false,
+    repeat = 0,
+    yoyo = false,
+    repeatDelay = 0,
+    onStart,
+    onUpdate,
+    onComplete,
+    onRepeat
+  } = config;
+  const segments = [];
+  const labels = /* @__PURE__ */ new Map();
+  const callbacks = /* @__PURE__ */ new Map();
+  const pauses = /* @__PURE__ */ new Map();
+  let currentTime = 0;
+  let totalDuration = 0;
+  let isPlaying = false;
+  let isReversed = false;
+  let isPaused = false;
+  let repeatCount = 0;
+  let rafId = null;
+  let repeatDelayTimeoutId = null;
+  let lastFrameTime = 0;
+  let hasStarted = false;
+  let insertTime = 0;
+  const parsePosition = (position) => {
+    if (position === void 0) {
+      return insertTime;
+    }
+    if (typeof position === "number") {
+      return position;
+    }
+    if (position === "<") {
+      const lastSegment = segments[segments.length - 1];
+      if (!lastSegment) {
+        console.warn('[SpringKit] Timeline: "<" position used with no previous segments');
+        return 0;
+      }
+      return lastSegment.startTime;
+    }
+    if (position === ">") {
+      return insertTime;
+    }
+    if (position.startsWith("+=")) {
+      return insertTime + parseFloat(position.slice(2));
+    }
+    if (position.startsWith("-=")) {
+      return insertTime - parseFloat(position.slice(2));
+    }
+    if (labels.has(position)) {
+      return labels.get(position);
+    }
+    const labelMatch = position.match(/^([a-zA-Z_]\w*)([+-]=?\d*\.?\d+)?$/);
+    if (labelMatch) {
+      const labelName = labelMatch[1];
+      const offset = labelMatch[2];
+      if (!labelName) {
+        console.warn(`[SpringKit] Timeline: Invalid label reference in position "${position}"`);
+        return insertTime;
+      }
+      const labelTime = labels.get(labelName) ?? 0;
+      if (offset) {
+        const offsetValue = parseFloat(offset.replace("=", ""));
+        return labelTime + offsetValue;
+      }
+      return labelTime;
+    }
+    return insertTime;
+  };
+  const resolveTarget = (target) => {
+    if (typeof target === "string") {
+      return document.querySelector(target);
+    }
+    if (target instanceof HTMLElement) {
+      return target;
+    }
+    return null;
+  };
+  const extractNumericProps = (props) => {
+    const result = {};
+    for (const [key, value] of Object.entries(props)) {
+      if (typeof value === "number" && !["duration", "delay"].includes(key)) {
+        result[key] = value;
+      }
+    }
+    return result;
+  };
+  const applyPropsToElement = (element, props) => {
+    const transforms = [];
+    const cssProps = {};
+    for (const [key, value] of Object.entries(props)) {
+      switch (key) {
+        case "x":
+          transforms.push(`translateX(${value}px)`);
+          break;
+        case "y":
+          transforms.push(`translateY(${value}px)`);
+          break;
+        case "z":
+          transforms.push(`translateZ(${value}px)`);
+          break;
+        case "scale":
+          transforms.push(`scale(${value})`);
+          break;
+        case "scaleX":
+          transforms.push(`scaleX(${value})`);
+          break;
+        case "scaleY":
+          transforms.push(`scaleY(${value})`);
+          break;
+        case "rotate":
+        case "rotation":
+          transforms.push(`rotate(${value}deg)`);
+          break;
+        case "rotateX":
+          transforms.push(`rotateX(${value}deg)`);
+          break;
+        case "rotateY":
+          transforms.push(`rotateY(${value}deg)`);
+          break;
+        case "rotateZ":
+          transforms.push(`rotateZ(${value}deg)`);
+          break;
+        case "skewX":
+          transforms.push(`skewX(${value}deg)`);
+          break;
+        case "skewY":
+          transforms.push(`skewY(${value}deg)`);
+          break;
+        case "opacity":
+          cssProps.opacity = String(value);
+          break;
+        default:
+          cssProps[key] = typeof value === "number" ? `${value}px` : String(value);
+      }
+    }
+    if (transforms.length > 0) {
+      element.style.transform = transforms.join(" ");
+    }
+    for (const [prop, val] of Object.entries(cssProps)) {
+      element.style[prop] = val;
+    }
+  };
+  const getCurrentElementValues = (element, props) => {
+    const current = {};
+    const computed = getComputedStyle(element);
+    for (const key of Object.keys(props)) {
+      switch (key) {
+        case "opacity":
+          current[key] = parseFloat(computed.opacity) || 1;
+          break;
+        case "x":
+        case "y":
+        case "z":
+        case "scale":
+        case "scaleX":
+        case "scaleY":
+        case "rotate":
+        case "rotation":
+        case "rotateX":
+        case "rotateY":
+        case "rotateZ":
+        case "skewX":
+        case "skewY":
+          current[key] = key.startsWith("scale") ? 1 : 0;
+          break;
+        default:
+          current[key] = parseFloat(computed.getPropertyValue(key)) || 0;
+      }
+    }
+    return current;
+  };
+  const MAX_DELTA_TIME2 = 64;
+  const tick = (timestamp) => {
+    if (!isPlaying || isPaused) return;
+    const rawDelta = lastFrameTime ? timestamp - lastFrameTime : 0;
+    const deltaTime = Math.min(rawDelta, MAX_DELTA_TIME2) / 1e3;
+    lastFrameTime = timestamp;
+    currentTime += isReversed ? -deltaTime : deltaTime;
+    currentTime = clamp(currentTime, 0, totalDuration);
+    const callbacksAtTime = callbacks.get(Math.floor(currentTime * 1e3));
+    if (callbacksAtTime) {
+      callbacksAtTime.forEach((cb) => {
+        try {
+          cb();
+        } catch (e) {
+          console.error("[SpringKit] Timeline callback error:", e);
+        }
+      });
+    }
+    const pauseCallback = pauses.get(Math.floor(currentTime * 1e3));
+    if (pauseCallback !== void 0) {
+      isPaused = true;
+      try {
+        pauseCallback?.();
+      } catch (e) {
+        console.error("[SpringKit] Timeline pause callback error:", e);
+      }
+      return;
+    }
+    for (const segment of segments) {
+      const segmentDuration = segment.endTime - segment.startTime;
+      const segmentProgress = segmentDuration > 0 ? clamp((currentTime - segment.startTime) / segmentDuration, 0, 1) : currentTime >= segment.endTime ? 1 : 0;
+      const shouldBeActive = currentTime >= segment.startTime && currentTime <= segment.endTime;
+      if (shouldBeActive && !segment.isActive) {
+        segment.isActive = true;
+        segment.props.onStart?.();
+      }
+      if (segment.isActive && segment.spring) {
+        segment.props.onUpdate?.(segmentProgress);
+      }
+      if (shouldBeActive && segmentProgress >= 1 && !segment.isComplete) {
+        segment.isComplete = true;
+        segment.props.onComplete?.();
+      }
+    }
+    onUpdate?.(totalDuration > 0 ? currentTime / totalDuration : 1);
+    if (isReversed && currentTime <= 0 || !isReversed && currentTime >= totalDuration) {
+      if (repeat === -1 || repeatCount < repeat) {
+        repeatCount++;
+        onRepeat?.(repeatCount);
+        if (yoyo) {
+          isReversed = !isReversed;
+        } else {
+          currentTime = 0;
+          segments.forEach((s) => {
+            s.isActive = false;
+            s.isComplete = false;
+          });
+        }
+        if (repeatDelay > 0) {
+          repeatDelayTimeoutId = setTimeout(() => {
+            repeatDelayTimeoutId = null;
+            rafId = requestAnimationFrame(tick);
+          }, repeatDelay * 1e3);
+          return;
+        }
+      } else {
+        isPlaying = false;
+        onComplete?.();
+        return;
+      }
+    }
+    rafId = requestAnimationFrame(tick);
+  };
+  const timeline = {
+    to(target, props, position) {
+      const startTime = parsePosition(position) + (props.delay || 0);
+      const duration = props.duration || 0.5;
+      const endTime = startTime + duration;
+      const element = resolveTarget(target);
+      const numericProps = extractNumericProps(props);
+      const segment = {
+        id: `segment_${timelineInstanceId}_${segmentIdCounter++}`,
+        target,
+        props,
+        startTime,
+        endTime,
+        spring: null,
+        isActive: false,
+        isComplete: false
+      };
+      if (element && Object.keys(numericProps).length > 0) {
+        const currentValues = getCurrentElementValues(element, numericProps);
+        const springConfig = { ...defaults, ...props.spring };
+        segment.spring = createSpringGroup(currentValues, springConfig);
+        segment.spring.subscribe((values) => {
+          applyPropsToElement(element, values);
+        });
+        const originalOnStart = segment.props.onStart;
+        segment.props.onStart = () => {
+          segment.spring?.set(numericProps);
+          originalOnStart?.();
+        };
+      }
+      segments.push(segment);
+      insertTime = endTime;
+      totalDuration = Math.max(totalDuration, endTime);
+      return timeline;
+    },
+    from(target, props, position) {
+      const startTime = parsePosition(position) + (props.delay || 0);
+      const duration = props.duration || 0.5;
+      const endTime = startTime + duration;
+      const element = resolveTarget(target);
+      const numericProps = extractNumericProps(props);
+      const segment = {
+        id: `segment_${timelineInstanceId}_${segmentIdCounter++}`,
+        target,
+        props,
+        startTime,
+        endTime,
+        spring: null,
+        isActive: false,
+        isComplete: false
+      };
+      if (element && Object.keys(numericProps).length > 0) {
+        const targetValues = getCurrentElementValues(element, numericProps);
+        const springConfig = { ...defaults, ...props.spring };
+        segment.spring = createSpringGroup(numericProps, springConfig);
+        applyPropsToElement(element, numericProps);
+        segment.spring.subscribe((values) => {
+          applyPropsToElement(element, values);
+        });
+        const originalOnStart = segment.props.onStart;
+        segment.props.onStart = () => {
+          segment.spring?.set(targetValues);
+          originalOnStart?.();
+        };
+      }
+      segments.push(segment);
+      insertTime = endTime;
+      totalDuration = Math.max(totalDuration, endTime);
+      return timeline;
+    },
+    fromTo(target, fromProps, toProps, position) {
+      const startTime = parsePosition(position) + (toProps.delay || 0);
+      const duration = toProps.duration || 0.5;
+      const endTime = startTime + duration;
+      const element = resolveTarget(target);
+      const fromNumeric = extractNumericProps(fromProps);
+      const toNumeric = extractNumericProps(toProps);
+      const segment = {
+        id: `segment_${timelineInstanceId}_${segmentIdCounter++}`,
+        target,
+        props: toProps,
+        startTime,
+        endTime,
+        spring: null,
+        isActive: false,
+        isComplete: false
+      };
+      if (element && Object.keys(toNumeric).length > 0) {
+        const springConfig = { ...defaults, ...toProps.spring };
+        segment.spring = createSpringGroup(fromNumeric, springConfig);
+        applyPropsToElement(element, fromNumeric);
+        segment.spring.subscribe((values) => {
+          applyPropsToElement(element, values);
+        });
+        const originalOnStart = segment.props.onStart;
+        segment.props.onStart = () => {
+          segment.spring?.set(toNumeric);
+          originalOnStart?.();
+        };
+      }
+      segments.push(segment);
+      insertTime = endTime;
+      totalDuration = Math.max(totalDuration, endTime);
+      return timeline;
+    },
+    addLabel(label, position) {
+      const time = parsePosition(position);
+      labels.set(label, time);
+      return timeline;
+    },
+    call(callback, position) {
+      const time = Math.floor(parsePosition(position) * 1e3);
+      if (!callbacks.has(time)) {
+        callbacks.set(time, []);
+      }
+      callbacks.get(time).push(callback);
+      return timeline;
+    },
+    set(target, props, position) {
+      const element = resolveTarget(target);
+      if (element) {
+        const time = parsePosition(position);
+        this.call(() => {
+          applyPropsToElement(element, extractNumericProps(props));
+        }, time);
+      }
+      return timeline;
+    },
+    addPause(position, callback) {
+      const time = Math.floor(parsePosition(position) * 1e3);
+      pauses.set(time, callback);
+      return timeline;
+    },
+    play() {
+      if (!hasStarted) {
+        hasStarted = true;
+        onStart?.();
+      }
+      isPlaying = true;
+      isPaused = false;
+      lastFrameTime = 0;
+      rafId = requestAnimationFrame(tick);
+      return timeline;
+    },
+    pause() {
+      isPaused = true;
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      return timeline;
+    },
+    resume() {
+      if (isPaused) {
+        isPaused = false;
+        lastFrameTime = 0;
+        rafId = requestAnimationFrame(tick);
+      }
+      return timeline;
+    },
+    reverse() {
+      isReversed = !isReversed;
+      return timeline;
+    },
+    restart() {
+      currentTime = isReversed ? totalDuration : 0;
+      repeatCount = 0;
+      hasStarted = false;
+      segments.forEach((s) => {
+        s.isActive = false;
+        s.isComplete = false;
+      });
+      return this.play();
+    },
+    seek(position) {
+      if (typeof position === "string") {
+        currentTime = labels.get(position) ?? 0;
+      } else {
+        currentTime = clamp(position, 0, totalDuration);
+      }
+      return timeline;
+    },
+    kill() {
+      isPlaying = false;
+      if (rafId) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      if (repeatDelayTimeoutId) {
+        clearTimeout(repeatDelayTimeoutId);
+        repeatDelayTimeoutId = null;
+      }
+      segments.forEach((s) => s.spring?.destroy());
+      segments.length = 0;
+      labels.clear();
+      callbacks.clear();
+      pauses.clear();
+    },
+    time: () => currentTime,
+    duration: () => totalDuration,
+    progress: () => totalDuration > 0 ? currentTime / totalDuration : 0,
+    isPlaying: () => isPlaying && !isPaused,
+    isReversed: () => isReversed,
+    getById(id) {
+      return segments.find((s) => s.id === id);
+    }
+  };
+  if (autoplay) {
+    timeline.play();
+  }
+  return timeline;
+}
+function tween(target, props) {
+  return createTimeline().to(target, props).play();
+}
+function allTo(targets, props) {
+  const tl = createTimeline();
+  targets.forEach((target, i) => {
+    tl.to(target, props, i === 0 ? 0 : "<");
+  });
+  return tl.play();
+}
+
+// src/svg/morph.ts
+function parsePath(d) {
+  const commands = [];
+  const regex = /([MLCQAZHVST])([^MLCQAZHVST]*)/gi;
+  const matches = d.matchAll(regex);
+  for (const matchItem of matches) {
+    const typeChar = matchItem[1];
+    const valuesStr = matchItem[2];
+    if (!typeChar || valuesStr === void 0) continue;
+    const type = typeChar.toUpperCase();
+    const values = valuesStr.trim().split(/[\s,]+/).filter((v) => v !== "").map(parseFloat).filter((v) => !isNaN(v));
+    commands.push({ type, values });
+  }
+  return commands;
+}
+function toAbsolute(commands) {
+  return commands.map((cmd) => {
+    const { type, values } = cmd;
+    const absValues = [...values];
+    switch (type) {
+      case "M":
+        values[0] ?? 0;
+        values[1] ?? 0;
+        break;
+      case "L":
+        values[0] ?? 0;
+        values[1] ?? 0;
+        break;
+      case "H":
+        absValues[0] = values[0] ?? 0;
+        values[0] ?? 0;
+        break;
+      case "V":
+        absValues[0] = values[0] ?? 0;
+        values[0] ?? 0;
+        break;
+      case "C":
+        values[4] ?? 0;
+        values[5] ?? 0;
+        break;
+      case "Q":
+        values[2] ?? 0;
+        values[3] ?? 0;
+        break;
+      case "A":
+        values[5] ?? 0;
+        values[6] ?? 0;
+        break;
+      case "S":
+        values[2] ?? 0;
+        values[3] ?? 0;
+        break;
+      case "T":
+        values[0] ?? 0;
+        values[1] ?? 0;
+        break;
+    }
+    return { type, values: absValues };
+  });
+}
+function hasSvgPathSupport() {
+  if (typeof document === "undefined") return false;
+  try {
+    const svgNS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(svgNS, "svg");
+    const path = document.createElementNS(svgNS, "path");
+    path.setAttribute("d", "M0,0 L10,10");
+    svg.appendChild(path);
+    document.body.appendChild(svg);
+    const hasSupport = typeof path.getTotalLength === "function";
+    let works = false;
+    if (hasSupport) {
+      try {
+        path.getTotalLength();
+        works = true;
+      } catch {
+        works = false;
+      }
+    }
+    document.body.removeChild(svg);
+    return works;
+  } catch {
+    return false;
+  }
+}
+function samplePathFallback(commands, samples) {
+  const points = [];
+  for (const cmd of commands) {
+    if (cmd.type === "M" || cmd.type === "L") {
+      points.push({ x: cmd.values[0] ?? 0, y: cmd.values[1] ?? 0 });
+    } else if (cmd.type === "C") {
+      points.push({
+        x: cmd.values[4] ?? 0,
+        y: cmd.values[5] ?? 0,
+        cp1x: cmd.values[0] ?? 0,
+        cp1y: cmd.values[1] ?? 0,
+        cp2x: cmd.values[2] ?? 0,
+        cp2y: cmd.values[3] ?? 0
+      });
+    } else if (cmd.type === "Q") {
+      points.push({
+        x: cmd.values[2] ?? 0,
+        y: cmd.values[3] ?? 0,
+        cp1x: cmd.values[0] ?? 0,
+        cp1y: cmd.values[1] ?? 0
+      });
+    } else if (cmd.type === "A") {
+      points.push({ x: cmd.values[5] ?? 0, y: cmd.values[6] ?? 0 });
+    } else if (cmd.type === "H") {
+      const lastPoint = points[points.length - 1];
+      points.push({ x: cmd.values[0] ?? 0, y: lastPoint?.y ?? 0 });
+    } else if (cmd.type === "V") {
+      const lastPoint = points[points.length - 1];
+      points.push({ x: lastPoint?.x ?? 0, y: cmd.values[0] ?? 0 });
+    }
+  }
+  if (points.length > 0 && points.length < samples) {
+    const interpolated = [];
+    const step = (points.length - 1) / (samples - 1);
+    for (let i = 0; i < samples; i++) {
+      const t = i * step;
+      const index = Math.floor(t);
+      const frac = t - index;
+      if (index >= points.length - 1) {
+        interpolated.push(points[points.length - 1]);
+      } else {
+        const p1 = points[index];
+        const p2 = points[index + 1];
+        interpolated.push({
+          x: lerp(p1.x, p2.x, frac),
+          y: lerp(p1.y, p2.y, frac)
+        });
+      }
+    }
+    return interpolated;
+  }
+  return points;
+}
+function samplePath(commands, samples) {
+  if (!hasSvgPathSupport()) {
+    return samplePathFallback(commands, samples);
+  }
+  const points = [];
+  const svgNS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(svgNS, "svg");
+  const path = document.createElementNS(svgNS, "path");
+  let d = "";
+  for (const cmd of commands) {
+    d += cmd.type + cmd.values.join(" ");
+  }
+  path.setAttribute("d", d);
+  svg.appendChild(path);
+  document.body.appendChild(svg);
+  try {
+    const totalLength = path.getTotalLength();
+    const step = totalLength / (samples - 1);
+    for (let i = 0; i < samples; i++) {
+      const point = path.getPointAtLength(i * step);
+      points.push({ x: point.x, y: point.y });
+    }
+  } finally {
+    document.body.removeChild(svg);
+  }
+  return points;
+}
+function interpolatePoint(p1, p2, t) {
+  return {
+    x: lerp(p1.x, p2.x, t),
+    y: lerp(p1.y, p2.y, t)
+  };
+}
+function pointsToPath(points) {
+  if (points.length === 0) return "";
+  const firstPoint = points[0];
+  let d = `M ${firstPoint.x} ${firstPoint.y}`;
+  for (let i = 1; i < points.length; i++) {
+    const point = points[i];
+    d += ` L ${point.x} ${point.y}`;
+  }
+  return d;
+}
+function createMorph(initialPath, config = {}) {
+  const {
+    spring: springConfig = { stiffness: 120, damping: 14 },
+    samples = 100,
+    onProgress,
+    onComplete
+  } = config;
+  let currentPath = initialPath;
+  let fromPoints = [];
+  let toPoints = [];
+  let currentPoints = [];
+  const subscribers = /* @__PURE__ */ new Set();
+  const initialCommands = parsePath(initialPath);
+  fromPoints = samplePath(toAbsolute(initialCommands), samples);
+  currentPoints = [...fromPoints];
+  toPoints = [...fromPoints];
+  const progressSpring = createSpringValue(0, springConfig);
+  progressSpring.subscribe(() => {
+    const progress = progressSpring.get();
+    onProgress?.(progress);
+    currentPoints = fromPoints.map(
+      (from, i) => interpolatePoint(from, toPoints[i] ?? from, progress)
+    );
+    currentPath = pointsToPath(currentPoints);
+    subscribers.forEach((cb) => {
+      try {
+        cb(currentPath);
+      } catch (e) {
+        console.error("[SpringKit] Morph subscriber error:", e);
+      }
+    });
+    if (progress >= 0.999) {
+      onComplete?.();
+    }
+  });
+  return {
+    getPath: () => currentPath,
+    getProgress: () => progressSpring.get(),
+    morphTo(path) {
+      const targetCommands = parsePath(path);
+      const targetPoints = samplePath(toAbsolute(targetCommands), samples);
+      fromPoints = [...currentPoints];
+      toPoints = targetPoints;
+      while (fromPoints.length < toPoints.length) {
+        fromPoints.push(fromPoints[fromPoints.length - 1] || { x: 0, y: 0 });
+      }
+      while (toPoints.length < fromPoints.length) {
+        toPoints.push(toPoints[toPoints.length - 1] || { x: 0, y: 0 });
+      }
+      progressSpring.jump(0);
+      progressSpring.set(1);
+    },
+    setProgress(progress) {
+      const p = clamp(progress, 0, 1);
+      progressSpring.jump(p);
+      currentPoints = fromPoints.map(
+        (from, i) => interpolatePoint(from, toPoints[i] ?? from, p)
+      );
+      currentPath = pointsToPath(currentPoints);
+      subscribers.forEach((cb) => {
+        try {
+          cb(currentPath);
+        } catch (e) {
+          console.error("[SpringKit] Morph subscriber error:", e);
+        }
+      });
+    },
+    subscribe(callback) {
+      subscribers.add(callback);
+      try {
+        callback(currentPath);
+      } catch (e) {
+        console.error("[SpringKit] Morph subscriber error:", e);
+      }
+      return () => subscribers.delete(callback);
+    },
+    destroy() {
+      progressSpring.destroy();
+      subscribers.clear();
+    }
+  };
+}
+function createMorphSequence(paths, config = {}) {
+  if (paths.length === 0) {
+    throw new Error("At least one path is required");
+  }
+  let currentIndex = 0;
+  const firstPath = paths[0];
+  const morph = createMorph(firstPath, config);
+  return {
+    getPath: () => morph.getPath(),
+    getCurrentIndex: () => currentIndex,
+    morphToIndex(index) {
+      const targetIndex = clamp(index, 0, paths.length - 1);
+      if (targetIndex !== currentIndex) {
+        currentIndex = targetIndex;
+        const targetPath = paths[targetIndex];
+        morph.morphTo(targetPath);
+      }
+    },
+    morphToNext() {
+      this.morphToIndex((currentIndex + 1) % paths.length);
+    },
+    morphToPrevious() {
+      this.morphToIndex((currentIndex - 1 + paths.length) % paths.length);
+    },
+    subscribe: (callback) => morph.subscribe(callback),
+    destroy: () => morph.destroy()
+  };
+}
+var shapes = {
+  /**
+   * Generate circle path
+   */
+  circle(cx, cy, r) {
+    return `M ${cx - r} ${cy}
+            A ${r} ${r} 0 1 1 ${cx + r} ${cy}
+            A ${r} ${r} 0 1 1 ${cx - r} ${cy}`;
+  },
+  /**
+   * Generate rectangle path
+   */
+  rect(x, y, width, height, rx = 0) {
+    if (rx === 0) {
+      return `M ${x} ${y}
+              L ${x + width} ${y}
+              L ${x + width} ${y + height}
+              L ${x} ${y + height}
+              Z`;
+    }
+    return `M ${x + rx} ${y}
+            L ${x + width - rx} ${y}
+            Q ${x + width} ${y} ${x + width} ${y + rx}
+            L ${x + width} ${y + height - rx}
+            Q ${x + width} ${y + height} ${x + width - rx} ${y + height}
+            L ${x + rx} ${y + height}
+            Q ${x} ${y + height} ${x} ${y + height - rx}
+            L ${x} ${y + rx}
+            Q ${x} ${y} ${x + rx} ${y}
+            Z`;
+  },
+  /**
+   * Generate polygon path
+   */
+  polygon(cx, cy, r, sides) {
+    const points = [];
+    for (let i = 0; i < sides; i++) {
+      const angle = i / sides * Math.PI * 2 - Math.PI / 2;
+      const x = cx + r * Math.cos(angle);
+      const y = cy + r * Math.sin(angle);
+      points.push(`${i === 0 ? "M" : "L"} ${x} ${y}`);
+    }
+    return points.join(" ") + " Z";
+  },
+  /**
+   * Generate star path
+   */
+  star(cx, cy, outerR, innerR, points) {
+    const path = [];
+    const step = Math.PI / points;
+    for (let i = 0; i < points * 2; i++) {
+      const r = i % 2 === 0 ? outerR : innerR;
+      const angle = i * step - Math.PI / 2;
+      const x = cx + r * Math.cos(angle);
+      const y = cy + r * Math.sin(angle);
+      path.push(`${i === 0 ? "M" : "L"} ${x} ${y}`);
+    }
+    return path.join(" ") + " Z";
+  },
+  /**
+   * Generate heart path
+   */
+  heart(cx, cy, size) {
+    const d = size / 4;
+    return `M ${cx} ${cy + d}
+            C ${cx} ${cy} ${cx - 2 * d} ${cy} ${cx - 2 * d} ${cy - d}
+            C ${cx - 2 * d} ${cy - 2 * d} ${cx} ${cy - 2 * d} ${cx} ${cy - d}
+            C ${cx} ${cy - 2 * d} ${cx + 2 * d} ${cy - 2 * d} ${cx + 2 * d} ${cy - d}
+            C ${cx + 2 * d} ${cy} ${cx} ${cy} ${cx} ${cy + d}
+            Z`;
+  },
+  /**
+   * Generate arrow path
+   */
+  arrow(x, y, width, height, direction = "right") {
+    const hw = width / 2;
+    const hh = height / 2;
+    switch (direction) {
+      case "right":
+        return `M ${x} ${y - hh} L ${x + width} ${y} L ${x} ${y + hh} Z`;
+      case "left":
+        return `M ${x + width} ${y - hh} L ${x} ${y} L ${x + width} ${y + hh} Z`;
+      case "up":
+        return `M ${x - hw} ${y + height} L ${x} ${y} L ${x + hw} ${y + height} Z`;
+      case "down":
+        return `M ${x - hw} ${y} L ${x} ${y + height} L ${x + hw} ${y} Z`;
+    }
+  }
+};
+
+// src/layout/shared.ts
+function measureElement(element) {
+  const rect = element.getBoundingClientRect();
+  const styles = getComputedStyle(element);
+  return {
+    x: rect.left + window.scrollX,
+    y: rect.top + window.scrollY,
+    width: rect.width,
+    height: rect.height,
+    opacity: parseFloat(styles.opacity) || 1,
+    borderRadius: parseFloat(styles.borderRadius) || 0,
+    scaleX: 1,
+    scaleY: 1
+  };
+}
+function applyTransform(element, from, to, current) {
+  const dx = current.x !== void 0 ? from.x - to.x + (current.x - from.x) : 0;
+  const dy = current.y !== void 0 ? from.y - to.y + (current.y - from.y) : 0;
+  const scaleX = current.width !== void 0 && to.width !== 0 ? current.width / to.width : 1;
+  const scaleY = current.height !== void 0 && to.height !== 0 ? current.height / to.height : 1;
+  element.style.transform = `translate(${dx}px, ${dy}px) scale(${scaleX}, ${scaleY})`;
+  element.style.transformOrigin = "top left";
+  if (current.opacity !== void 0) {
+    element.style.opacity = String(current.opacity);
+  }
+  if (current.borderRadius !== void 0) {
+    const compensatedRadius = current.borderRadius / Math.max(scaleX, scaleY);
+    element.style.borderRadius = `${compensatedRadius}px`;
+  }
+}
+function resetTransform(element) {
+  element.style.transform = "";
+  element.style.transformOrigin = "";
+  element.style.opacity = "";
+  element.style.borderRadius = "";
+}
+function createLayoutGroup(config = {}) {
+  const {
+    spring: defaultSpring = { stiffness: 300, damping: 30 },
+    onAnimationStart,
+    onAnimationComplete,
+    crossfade = false,
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    transition: _transition = {}
+  } = config;
+  const elements = /* @__PURE__ */ new Map();
+  const previousMeasurements = /* @__PURE__ */ new Map();
+  const register = (id, element) => {
+    if (!elements.has(id)) {
+      elements.set(id, []);
+    }
+    const existing = elements.get(id);
+    const alreadyRegistered = existing.some((e) => e.element === element);
+    if (!alreadyRegistered) {
+      const measurement = measureElement(element);
+      existing.push({
+        id,
+        element,
+        measurement,
+        spring: null,
+        isAnimating: false,
+        pendingRafId: null
+      });
+      if (!previousMeasurements.has(id)) {
+        previousMeasurements.set(id, measurement);
+      }
+    }
+  };
+  const unregister = (id, element) => {
+    const group = elements.get(id);
+    if (!group) return;
+    const index = group.findIndex((e) => e.element === element);
+    if (index !== -1) {
+      const entry = group[index];
+      previousMeasurements.set(id, measureElement(element));
+      if (entry.pendingRafId !== null) {
+        cancelAnimationFrame(entry.pendingRafId);
+        entry.pendingRafId = null;
+      }
+      entry.spring?.destroy();
+      group.splice(index, 1);
+      if (group.length === 0) {
+        elements.delete(id);
+      }
+    }
+  };
+  const animateElement = (entry, from, to) => {
+    entry.spring?.destroy();
+    const initialValues = {
+      x: from.x,
+      y: from.y,
+      width: from.width,
+      height: from.height
+    };
+    if (crossfade) {
+      initialValues.opacity = from.opacity ?? 1;
+    }
+    if (from.borderRadius !== void 0) {
+      initialValues.borderRadius = from.borderRadius;
+    }
+    entry.spring = createSpringGroup(initialValues, defaultSpring);
+    entry.isAnimating = true;
+    onAnimationStart?.(entry.id);
+    entry.spring.subscribe((values) => {
+      applyTransform(entry.element, from, to, values);
+    });
+    const targetValues = {
+      x: to.x,
+      y: to.y,
+      width: to.width,
+      height: to.height
+    };
+    if (crossfade) {
+      targetValues.opacity = to.opacity ?? 1;
+    }
+    if (to.borderRadius !== void 0) {
+      targetValues.borderRadius = to.borderRadius;
+    }
+    entry.spring.set(targetValues);
+    const checkComplete = () => {
+      entry.pendingRafId = null;
+      if (entry.spring && !entry.spring.isAnimating()) {
+        entry.isAnimating = false;
+        resetTransform(entry.element);
+        onAnimationComplete?.(entry.id);
+      } else if (entry.isAnimating) {
+        entry.pendingRafId = requestAnimationFrame(checkComplete);
+      }
+    };
+    entry.pendingRafId = requestAnimationFrame(checkComplete);
+  };
+  const update = () => {
+    for (const [id, group] of elements) {
+      for (const entry of group) {
+        const previousMeasurement = previousMeasurements.get(id);
+        const currentMeasurement = measureElement(entry.element);
+        if (previousMeasurement) {
+          const hasChanged = previousMeasurement.x !== currentMeasurement.x || previousMeasurement.y !== currentMeasurement.y || previousMeasurement.width !== currentMeasurement.width || previousMeasurement.height !== currentMeasurement.height;
+          if (hasChanged) {
+            animateElement(entry, previousMeasurement, currentMeasurement);
+          }
+        }
+        entry.measurement = currentMeasurement;
+        previousMeasurements.set(id, currentMeasurement);
+      }
+    }
+  };
+  const forceUpdate = () => {
+    for (const [id, group] of elements) {
+      for (const entry of group) {
+        entry.measurement = measureElement(entry.element);
+        previousMeasurements.set(id, entry.measurement);
+      }
+    }
+  };
+  const destroy = () => {
+    for (const group of elements.values()) {
+      for (const entry of group) {
+        if (entry.pendingRafId !== null) {
+          cancelAnimationFrame(entry.pendingRafId);
+          entry.pendingRafId = null;
+        }
+        entry.spring?.destroy();
+        resetTransform(entry.element);
+      }
+    }
+    elements.clear();
+    previousMeasurements.clear();
+  };
+  return {
+    register,
+    unregister,
+    update,
+    forceUpdate,
+    destroy
+  };
+}
+var groupIdCounter = 0;
+function createSharedLayoutContext() {
+  const groups = /* @__PURE__ */ new Map();
+  return {
+    createGroup(id) {
+      const groupId = id ?? `layout-group-${groupIdCounter++}`;
+      const group = createLayoutGroup();
+      groups.set(groupId, group);
+      return group;
+    },
+    getGroup(id) {
+      return groups.get(id);
+    },
+    updateAll() {
+      for (const group of groups.values()) {
+        group.update();
+      }
+    },
+    destroy() {
+      for (const group of groups.values()) {
+        group.destroy();
+      }
+      groups.clear();
+    }
+  };
+}
+function createAutoLayout(config = {}) {
+  const {
+    root = typeof document !== "undefined" ? document.body : null,
+    attribute = "data-layout-id",
+    debounce: debounceTime = 0,
+    ...layoutConfig
+  } = config;
+  if (!root) {
+    return {
+      update: () => {
+      },
+      forceUpdate: () => {
+      },
+      destroy: () => {
+      }
+    };
+  }
+  const group = createLayoutGroup(layoutConfig);
+  let observer = null;
+  let resizeObserver = null;
+  let debounceTimer = null;
+  const scanAndRegister = () => {
+    const elements = root.querySelectorAll(`[${attribute}]`);
+    elements.forEach((el) => {
+      const id = el.getAttribute(attribute);
+      if (id && el instanceof HTMLElement) {
+        group.register(id, el);
+      }
+    });
+  };
+  const debouncedUpdate = () => {
+    if (debounceTimer) {
+      clearTimeout(debounceTimer);
+    }
+    if (debounceTime > 0) {
+      debounceTimer = setTimeout(() => {
+        scanAndRegister();
+        group.update();
+      }, debounceTime);
+    } else {
+      scanAndRegister();
+      group.update();
+    }
+  };
+  scanAndRegister();
+  observer = new MutationObserver((mutations) => {
+    let shouldUpdate = false;
+    for (const mutation of mutations) {
+      if (mutation.type === "childList") {
+        mutation.addedNodes.forEach((node) => {
+          if (node instanceof HTMLElement) {
+            if (node.hasAttribute(attribute)) {
+              shouldUpdate = true;
+            }
+            if (node.querySelector(`[${attribute}]`)) {
+              shouldUpdate = true;
+            }
+          }
+        });
+        mutation.removedNodes.forEach((node) => {
+          if (node instanceof HTMLElement) {
+            const id = node.getAttribute(attribute);
+            if (id) {
+              group.unregister(id, node);
+            }
+          }
+        });
+      }
+      if (mutation.type === "attributes" && mutation.attributeName === attribute) {
+        shouldUpdate = true;
+      }
+    }
+    if (shouldUpdate) {
+      debouncedUpdate();
+    }
+  });
+  observer.observe(root, {
+    childList: true,
+    subtree: true,
+    attributes: true,
+    attributeFilter: [attribute]
+  });
+  resizeObserver = new ResizeObserver(() => {
+    debouncedUpdate();
+  });
+  resizeObserver.observe(root);
+  return {
+    update: () => {
+      scanAndRegister();
+      group.update();
+    },
+    forceUpdate: () => {
+      scanAndRegister();
+      group.forceUpdate();
+    },
+    destroy: () => {
+      if (debounceTimer) {
+        clearTimeout(debounceTimer);
+      }
+      observer?.disconnect();
+      resizeObserver?.disconnect();
+      group.destroy();
+    }
+  };
+}
+
+// src/animation/stagger-patterns.ts
+function seededRandom(seed) {
+  let state = seed;
+  return () => {
+    state = state * 1103515245 + 12345 & 2147483647;
+    return state / 2147483647;
+  };
+}
+function gridDistance(index, columns, rows, origin) {
+  const col = index % columns;
+  const row = Math.floor(index / columns);
+  let originCol;
+  let originRow;
+  switch (origin) {
+    case "top-left":
+      originCol = 0;
+      originRow = 0;
+      break;
+    case "top-right":
+      originCol = columns - 1;
+      originRow = 0;
+      break;
+    case "bottom-left":
+      originCol = 0;
+      originRow = rows - 1;
+      break;
+    case "bottom-right":
+      originCol = columns - 1;
+      originRow = rows - 1;
+      break;
+    case "center":
+    default:
+      originCol = (columns - 1) / 2;
+      originRow = (rows - 1) / 2;
+      break;
+  }
+  const dx = col - originCol;
+  const dy = row - originRow;
+  return Math.sqrt(dx * dx + dy * dy);
+}
+function linearStagger(config) {
+  const { count, delay = 0.1, easing = (t) => t } = config;
+  const delays = [];
+  for (let i = 0; i < count; i++) {
+    const t = count > 1 ? i / (count - 1) : 0;
+    delays.push(easing(t) * delay * (count - 1));
+  }
+  return delays;
+}
+function reverseStagger(config) {
+  return linearStagger(config).reverse();
+}
+function centerStagger(config) {
+  const { count, delay = 0.1, easing = (t) => t } = config;
+  const delays = [];
+  const center = (count - 1) / 2;
+  for (let i = 0; i < count; i++) {
+    const distanceFromCenter = Math.abs(i - center);
+    const maxDistance = center;
+    const t = maxDistance > 0 ? distanceFromCenter / maxDistance : 0;
+    delays.push(easing(t) * delay * maxDistance);
+  }
+  return delays;
+}
+function edgeStagger(config) {
+  const { count, delay = 0.1, easing = (t) => t } = config;
+  const delays = [];
+  const center = (count - 1) / 2;
+  const maxDelay = delay * center;
+  for (let i = 0; i < count; i++) {
+    const distanceFromCenter = Math.abs(i - center);
+    const maxDistance = center;
+    const t = maxDistance > 0 ? 1 - distanceFromCenter / maxDistance : 0;
+    delays.push(easing(t) * maxDelay);
+  }
+  return delays;
+}
+function gridStagger(config) {
+  const {
+    count,
+    columns,
+    origin = "top-left",
+    direction = "diagonal",
+    delay = 0.1,
+    easing = (t) => t
+  } = config;
+  const rows = Math.ceil(count / columns);
+  const delays = [];
+  for (let i = 0; i < count; i++) {
+    const col = i % columns;
+    const row = Math.floor(i / columns);
+    let t;
+    switch (direction) {
+      case "row":
+        t = row / Math.max(rows - 1, 1);
+        break;
+      case "column":
+        t = col / Math.max(columns - 1, 1);
+        break;
+      case "diagonal":
+        t = (col + row) / (columns + rows - 2);
+        break;
+      case "radial":
+      default: {
+        const maxDistance = gridDistance(
+          origin === "center" ? 0 : count - 1,
+          columns,
+          rows,
+          origin === "center" ? "top-left" : origin
+        );
+        const distance = gridDistance(i, columns, rows, origin);
+        t = maxDistance > 0 ? distance / maxDistance : 0;
+        break;
+      }
+    }
+    delays.push(easing(clamp(t, 0, 1)) * delay * Math.max(columns, rows));
+  }
+  return delays;
+}
+function waveStagger(config) {
+  const {
+    count,
+    direction = "horizontal",
+    frequency = 1,
+    amplitude = 0.5,
+    delay = 0.1,
+    easing = (t) => t
+  } = config;
+  const delays = [];
+  for (let i = 0; i < count; i++) {
+    const t = count > 1 ? i / (count - 1) : 0;
+    let d = t;
+    const waveOffset = Math.sin(t * Math.PI * 2 * frequency) * amplitude;
+    switch (direction) {
+      case "horizontal":
+        d = t + waveOffset * 0.5;
+        break;
+      case "vertical":
+        d = t + Math.abs(waveOffset);
+        break;
+      case "diagonal":
+        d = t + waveOffset;
+        break;
+    }
+    delays.push(easing(clamp(d, 0, 1.5)) * delay * (count - 1));
+  }
+  return delays;
+}
+function spiralStagger(config) {
+  const {
+    count,
+    columns,
+    direction = "clockwise",
+    startFrom = "edge",
+    delay = 0.1,
+    easing = (t) => t
+  } = config;
+  const rows = Math.ceil(count / columns);
+  const spiral = [];
+  const visited = /* @__PURE__ */ new Set();
+  let top = 0;
+  let bottom = rows - 1;
+  let left = 0;
+  let right = columns - 1;
+  while (top <= bottom && left <= right) {
+    for (let col = left; col <= right; col++) {
+      const idx = top * columns + col;
+      if (idx < count && !visited.has(`${top},${col}`)) {
+        spiral.push(idx);
+        visited.add(`${top},${col}`);
+      }
+    }
+    top++;
+    for (let row = top; row <= bottom; row++) {
+      const idx = row * columns + right;
+      if (idx < count && !visited.has(`${row},${right}`)) {
+        spiral.push(idx);
+        visited.add(`${row},${right}`);
+      }
+    }
+    right--;
+    if (top <= bottom) {
+      for (let col = right; col >= left; col--) {
+        const idx = bottom * columns + col;
+        if (idx < count && !visited.has(`${bottom},${col}`)) {
+          spiral.push(idx);
+          visited.add(`${bottom},${col}`);
+        }
+      }
+      bottom--;
+    }
+    if (left <= right) {
+      for (let row = bottom; row >= top; row--) {
+        const idx = row * columns + left;
+        if (idx < count && !visited.has(`${row},${left}`)) {
+          spiral.push(idx);
+          visited.add(`${row},${left}`);
+        }
+      }
+      left++;
+    }
+  }
+  if (startFrom === "center") {
+    spiral.reverse();
+  }
+  if (direction === "counter-clockwise") {
+    spiral.reverse();
+  }
+  const delays = new Array(count).fill(0);
+  const maxDelay = delay * (spiral.length - 1);
+  spiral.forEach((originalIndex, spiralPosition) => {
+    const t = spiral.length > 1 ? spiralPosition / (spiral.length - 1) : 0;
+    delays[originalIndex] = easing(t) * maxDelay;
+  });
+  return delays;
+}
+function randomStagger(config) {
+  const {
+    count,
+    seed = Date.now(),
+    delay = 0.1,
+    minMultiplier = 0,
+    maxMultiplier = 1,
+    easing = (t) => t
+  } = config;
+  const random = seededRandom(seed);
+  const delays = [];
+  const maxDelay = delay * (count - 1);
+  for (let i = 0; i < count; i++) {
+    const r = random();
+    const multiplier = minMultiplier + r * (maxMultiplier - minMultiplier);
+    delays.push(easing(multiplier) * maxDelay);
+  }
+  return delays;
+}
+function customStagger(config, fn) {
+  const { count, delay = 0.1 } = config;
+  const delays = [];
+  const maxDelay = delay * (count - 1);
+  for (let i = 0; i < count; i++) {
+    const t = fn(i, count);
+    delays.push(clamp(t, 0, 1) * maxDelay);
+  }
+  return delays;
+}
+function applyStagger(options, delays) {
+  return options.map((opt, i) => ({
+    ...opt,
+    delay: (opt.delay ?? 0) + (delays[i] ?? 0)
+  }));
+}
+var staggerPresets = {
+  /** Quick cascade from first to last */
+  cascade: (count) => linearStagger({ count, delay: 0.05 }),
+  /** Slow reveal from first to last */
+  reveal: (count) => linearStagger({ count, delay: 0.15 }),
+  /** Pop from center outward */
+  pop: (count) => centerStagger({ count, delay: 0.08 }),
+  /** Ripple from edges to center */
+  ripple: (count) => edgeStagger({ count, delay: 0.08 }),
+  /** Random scatter effect */
+  scatter: (count) => randomStagger({ count, delay: 0.1, seed: 42 }),
+  /** Grid diagonal wave */
+  gridWave: (count, columns) => gridStagger({ count, columns, direction: "diagonal", delay: 0.05 }),
+  /** Grid radial from center */
+  gridRadial: (count, columns) => gridStagger({ count, columns, origin: "center", direction: "radial", delay: 0.05 }),
+  /** Spiral inward */
+  spiralIn: (count, columns) => spiralStagger({ count, columns, startFrom: "edge", delay: 0.05 }),
+  /** Spiral outward */
+  spiralOut: (count, columns) => spiralStagger({ count, columns, startFrom: "center", delay: 0.05 })
+};
+
+// src/core/MotionValue.ts
+var MotionValue = class {
+  constructor(initialValue, options = {}) {
+    this._velocity = 0;
+    this._subscribers = /* @__PURE__ */ new Set();
+    this._eventListeners = /* @__PURE__ */ new Map();
+    this._springValue = null;
+    this._isAnimating = false;
+    this._destroyed = false;
+    this._checkEndRafId = null;
+    this._value = initialValue;
+    this._springConfig = options.spring ?? { stiffness: 100, damping: 15 };
+    if (typeof initialValue === "number") {
+      this._springValue = createSpringValue(initialValue, {
+        ...this._springConfig,
+        onUpdate: (v) => {
+          if (this._destroyed) return;
+          this._value = v;
+          this._velocity = this._springValue?.getVelocity() ?? 0;
+          this._notify();
+        }
+      });
+    }
+  }
+  /**
+   * Get current value synchronously
+   */
+  get() {
+    return this._value;
+  }
+  /**
+   * Get current velocity (for numeric values)
+   */
+  getVelocity() {
+    return this._velocity;
+  }
+  /**
+   * Check if currently animating
+   */
+  isAnimating() {
+    return this._isAnimating;
+  }
+  /**
+   * Check if this MotionValue has been destroyed
+   */
+  isDestroyed() {
+    return this._destroyed;
+  }
+  /**
+   * Set value with spring animation
+   */
+  set(newValue, animate2 = true) {
+    if (this._destroyed) return;
+    if (this._checkEndRafId !== null) {
+      cancelAnimationFrame(this._checkEndRafId);
+      this._checkEndRafId = null;
+    }
+    if (typeof newValue === "number" && this._springValue && animate2) {
+      this._isAnimating = true;
+      this._emit("animationStart");
+      this._springValue.set(newValue);
+      const targetValue = newValue;
+      const checkEnd = () => {
+        if (this._destroyed) {
+          this._checkEndRafId = null;
+          return;
+        }
+        const velocity = Math.abs(this._springValue?.getVelocity() ?? 0);
+        const currentValue = this._springValue?.get() ?? 0;
+        const isAtRest = velocity < 0.01;
+        const isNearTarget = Math.abs(currentValue - targetValue) < 0.01;
+        if (isAtRest || isNearTarget) {
+          this._isAnimating = false;
+          this._checkEndRafId = null;
+          this._emit("animationEnd");
+        } else if (this._isAnimating) {
+          this._checkEndRafId = requestAnimationFrame(checkEnd);
+        } else {
+          this._checkEndRafId = null;
+        }
+      };
+      this._checkEndRafId = requestAnimationFrame(checkEnd);
+    } else {
+      this._value = newValue;
+      this._velocity = 0;
+      this._notify();
+    }
+  }
+  /**
+   * Instantly set value without animation
+   */
+  jump(newValue) {
+    if (this._destroyed) return;
+    this._value = newValue;
+    this._velocity = 0;
+    if (typeof newValue === "number" && this._springValue) {
+      this._springValue.jump(newValue);
+    }
+    this._isAnimating = false;
+    this._notify();
+  }
+  /**
+   * Stop any running animation at current position
+   */
+  stop() {
+    if (this._checkEndRafId !== null) {
+      cancelAnimationFrame(this._checkEndRafId);
+      this._checkEndRafId = null;
+    }
+    if (this._springValue) {
+      this._springValue.stop();
+    }
+    this._isAnimating = false;
+    this._emit("animationEnd");
+  }
+  /**
+   * Subscribe to value changes
+   * Returns unsubscribe function
+   */
+  subscribe(callback) {
+    this._subscribers.add(callback);
+    callback(this._value);
+    return () => {
+      this._subscribers.delete(callback);
+    };
+  }
+  /**
+   * Add event listener
+   */
+  on(event, callback) {
+    if (!this._eventListeners.has(event)) {
+      this._eventListeners.set(event, /* @__PURE__ */ new Set());
+    }
+    this._eventListeners.get(event).add(callback);
+    return () => {
+      this._eventListeners.get(event)?.delete(callback);
+    };
+  }
+  /**
+   * Update spring configuration
+   * Takes effect immediately on ongoing animations
+   */
+  setConfig(config) {
+    this._springConfig = { ...this._springConfig, ...config };
+    if (this._springValue) {
+      this._springValue.setConfig(config);
+    }
+  }
+  /**
+   * Destroy and cleanup
+   */
+  destroy() {
+    this._destroyed = true;
+    if (this._checkEndRafId !== null) {
+      cancelAnimationFrame(this._checkEndRafId);
+      this._checkEndRafId = null;
+    }
+    this._subscribers.clear();
+    this._eventListeners.clear();
+    if (this._springValue) {
+      this._springValue.destroy();
+      this._springValue = null;
+    }
+  }
+  _notify() {
+    this._subscribers.forEach((callback) => {
+      try {
+        callback(this._value);
+      } catch (e) {
+        console.error("MotionValue subscriber error:", e);
+      }
+    });
+    this._emit("change");
+  }
+  _emit(event) {
+    this._eventListeners.get(event)?.forEach((callback) => {
+      try {
+        callback();
+      } catch (e) {
+        console.error(`MotionValue ${event} listener error:`, e);
+      }
+    });
+  }
+};
+function createMotionValue(initialValue, options) {
+  return new MotionValue(initialValue, options);
+}
+function transformValue(source, transform) {
+  const derived = new MotionValue(transform(source.get()));
+  const unsubscribe = source.subscribe((value) => {
+    derived.jump(transform(value));
+  });
+  const originalDestroy = derived.destroy.bind(derived);
+  derived.destroy = () => {
+    unsubscribe();
+    originalDestroy();
+  };
+  return derived;
+}
+function mapRange2(source, inputRange, outputRange, options = {}) {
+  const [inMin, inMax] = inputRange;
+  const [outMin, outMax] = outputRange;
+  const inputDelta = inMax - inMin;
+  return transformValue(source, (value) => {
+    if (inputDelta === 0) {
+      return outMin;
+    }
+    let normalized = (value - inMin) / inputDelta;
+    if (options.clamp) {
+      normalized = Math.max(0, Math.min(1, normalized));
+    }
+    return outMin + normalized * (outMax - outMin);
+  });
+}
+
+// src/svg/path.ts
+function createPathAnimation(element, options = {}) {
+  const {
+    config = {},
+    autoPlay = false,
+    onUpdate,
+    onComplete
+  } = options;
+  const totalLength = element.getTotalLength?.() ?? 0;
+  element.style.strokeDasharray = String(totalLength);
+  element.style.strokeDashoffset = String(totalLength);
+  let currentValue = 0;
+  let destroyed = false;
+  let pendingRafId = null;
+  let pendingTimeoutId = null;
+  const spring2 = createSpringValue(0, config);
+  const unsubscribe = spring2.subscribe((value) => {
+    if (destroyed) return;
+    currentValue = value;
+    const offset = totalLength * (1 - value);
+    element.style.strokeDashoffset = String(offset);
+    onUpdate?.(value);
+  });
+  const waitForRest = () => {
+    return new Promise((resolve) => {
+      const check = () => {
+        pendingRafId = null;
+        if (destroyed || !spring2.isAnimating()) {
+          resolve();
+        } else {
+          pendingRafId = requestAnimationFrame(check);
+        }
+      };
+      pendingTimeoutId = setTimeout(() => {
+        pendingTimeoutId = null;
+        check();
+      }, 16);
+    });
+  };
+  const animation = {
+    play: async (target = 1) => {
+      if (destroyed) return;
+      spring2.set(target);
+      await waitForRest();
+      onComplete?.();
+    },
+    reverse: async () => {
+      if (destroyed) return;
+      spring2.set(0);
+      await waitForRest();
+      onComplete?.();
+    },
+    set: (value, animate2 = false) => {
+      if (destroyed) return;
+      if (animate2) {
+        spring2.set(value);
+      } else {
+        spring2.jump(value);
+        currentValue = value;
+        const offset = totalLength * (1 - value);
+        element.style.strokeDashoffset = String(offset);
+      }
+    },
+    get: () => currentValue,
+    pause: () => {
+      if (destroyed) return;
+      spring2.stop();
+    },
+    resume: () => {
+      if (destroyed) return;
+      spring2.set(currentValue);
+    },
+    reset: () => {
+      if (destroyed) return;
+      spring2.jump(0);
+      currentValue = 0;
+      element.style.strokeDashoffset = String(totalLength);
+    },
+    isAnimating: () => spring2.isAnimating(),
+    destroy: () => {
+      destroyed = true;
+      if (pendingRafId !== null) {
+        cancelAnimationFrame(pendingRafId);
+        pendingRafId = null;
+      }
+      if (pendingTimeoutId !== null) {
+        clearTimeout(pendingTimeoutId);
+        pendingTimeoutId = null;
+      }
+      unsubscribe();
+      spring2.destroy();
+    }
+  };
+  if (autoPlay) {
+    animation.play();
+  }
+  return animation;
+}
+function getPathLength(element) {
+  return element.getTotalLength?.() ?? 0;
+}
+function preparePathForAnimation(element, initialProgress = 0) {
+  const length = element.getTotalLength?.() ?? 0;
+  element.style.strokeDasharray = String(length);
+  element.style.strokeDashoffset = String(length * (1 - initialProgress));
+}
+function getPointAtProgress(path, progress) {
+  try {
+    const length = path.getTotalLength();
+    return path.getPointAtLength(length * Math.max(0, Math.min(1, progress)));
+  } catch {
+    return null;
+  }
+}
+
+// src/layout/flip.ts
+function measureElement2(element) {
+  const rect = element.getBoundingClientRect();
+  return {
+    x: rect.left + window.scrollX,
+    y: rect.top + window.scrollY,
+    width: rect.width,
+    height: rect.height
+  };
+}
+function createFlip(element, first, last, options = {}) {
+  const {
+    config = {},
+    position = true,
+    size = true,
+    onComplete,
+    onUpdate
+  } = options;
+  const deltaX = first.x - last.x;
+  const deltaY = first.y - last.y;
+  const deltaWidth = last.width === 0 ? 1 : first.width / last.width;
+  const deltaHeight = last.height === 0 ? 1 : first.height / last.height;
+  let progress = 0;
+  let isPlaying = false;
+  let cancelled = false;
+  let pendingRafId = null;
+  let pendingTimeoutId = null;
+  let resolvePlay = null;
+  const spring2 = createSpringValue(0, config);
+  const originalTransform = element.style.transform;
+  const originalTransformOrigin = element.style.transformOrigin;
+  if (size) {
+    element.style.transformOrigin = "0 0";
+  }
+  const applyTransform2 = (t) => {
+    progress = t;
+    const invertedT = 1 - t;
+    const transforms = [];
+    if (position) {
+      transforms.push(`translate(${deltaX * invertedT}px, ${deltaY * invertedT}px)`);
+    }
+    if (size && (deltaWidth !== 1 || deltaHeight !== 1)) {
+      const scaleX = 1 + (deltaWidth - 1) * invertedT;
+      const scaleY = 1 + (deltaHeight - 1) * invertedT;
+      transforms.push(`scale(${scaleX}, ${scaleY})`);
+    }
+    element.style.transform = transforms.length > 0 ? transforms.join(" ") : "";
+    try {
+      onUpdate?.(t);
+    } catch (e) {
+      console.error("[SpringKit] FLIP onUpdate error:", e);
+    }
+  };
+  applyTransform2(0);
+  const cleanup = () => {
+    element.style.transform = originalTransform;
+    element.style.transformOrigin = originalTransformOrigin;
+  };
+  return {
+    play: async () => {
+      if (cancelled) return;
+      isPlaying = true;
+      return new Promise((resolve) => {
+        resolvePlay = resolve;
+        const unsubscribe = spring2.subscribe((value) => {
+          if (cancelled) {
+            unsubscribe();
+            resolvePlay = null;
+            resolve();
+            return;
+          }
+          applyTransform2(value);
+        });
+        spring2.set(1);
+        const checkComplete = () => {
+          pendingRafId = null;
+          if (cancelled) {
+            unsubscribe();
+            cleanup();
+            resolvePlay = null;
+            resolve();
+            return;
+          }
+          if (!spring2.isAnimating()) {
+            isPlaying = false;
+            unsubscribe();
+            cleanup();
+            try {
+              onComplete?.();
+            } catch (e) {
+              console.error("[SpringKit] FLIP onComplete error:", e);
+            }
+            resolvePlay = null;
+            resolve();
+          } else {
+            pendingRafId = requestAnimationFrame(checkComplete);
+          }
+        };
+        pendingTimeoutId = setTimeout(() => {
+          pendingTimeoutId = null;
+          checkComplete();
+        }, 16);
+      });
+    },
+    getProgress: () => progress,
+    cancel: () => {
+      cancelled = true;
+      isPlaying = false;
+      if (pendingRafId !== null) {
+        cancelAnimationFrame(pendingRafId);
+        pendingRafId = null;
+      }
+      if (pendingTimeoutId !== null) {
+        clearTimeout(pendingTimeoutId);
+        pendingTimeoutId = null;
+      }
+      spring2.stop();
+      cleanup();
+      if (resolvePlay) {
+        resolvePlay();
+        resolvePlay = null;
+      }
+    },
+    isAnimating: () => isPlaying
+  };
+}
+async function flip(element, mutate, options = {}) {
+  const first = measureElement2(element);
+  await mutate();
+  element.offsetHeight;
+  const last = measureElement2(element);
+  const animation = createFlip(element, first, last, options);
+  await animation.play();
+}
+async function flipBatch(elements, mutate, options = {}) {
+  const firstStates = elements.map((el) => measureElement2(el));
+  await mutate();
+  document.body.offsetHeight;
+  const animations = elements.map((element, i) => {
+    const last = measureElement2(element);
+    return createFlip(element, firstStates[i], last, options);
+  });
+  await Promise.all(animations.map((anim) => anim.play()));
+}
+
+export { AnimationState, MotionValue, adjustBounce, adjustSpeed, allTo, animate, animateAll, applyStagger, applyValuesToElement, buildTransformString, calculateDampingRatio, calculatePeriod, calculateStaggerDelays, centerStagger, clamp, clearWarnings, configFromBounce, configFromDuration, createAutoLayout, createDragSpring, createFeeling, createFlip, createGestures, createLayoutGroup, createLongPressGesture, createMorph, createMorphSequence, createMotionValue, createOrchestration, createParallax, createPathAnimation, createPinchGesture, createRotateGesture, createScrollLinkedValue, createScrollProgress, createScrollSpring, createScrollTrigger, createSharedLayoutContext, createSpringGroup, createSpringValue, createSwipeGesture, createTimeline, createTrail, createVariantPreset, customStagger, decay, degToRad, edgeStagger, flip, flipBatch, getPathLength, getPhysicsPreset, getPointAtProgress, getVariant, globalLoop, gridStagger, hexToRgb, hslToRgb, interpolate, interpolateColor, isAnimatable, isCriticallyDamped, isKeyframeArray, isOverdamped, isTransformProperty, isUnderdamped, isVariant, isVariants, keyframes, lerp, linearStagger, mapRange, measureElement2 as measureElement, mergeVariants, parallel, parseColor, parseKeyframeArray, parseValueWithUnit, physicsPresets, preparePathForAnimation, radToDeg, randomStagger, resolveVariant, reverseStagger, rgbToHex, rgbToHsl, scrollEasings, sequence, shapes, simulateSpring, spiralStagger, spring, springPresets, stagger, staggerPresets, mapRange2 as transformMapRange, transformValue, tween, validateDecayConfig, validateDragConfig, validateSpringConfig, variantPresets, waveStagger };

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { createSpringGroup } from '../../../index.js'
-import type { SpringConfig, SpringGroup } from '../../../types.js'
+import { createSpringGroup } from '@oxog/springkit'
+import type { SpringConfig, SpringGroup } from '@oxog/springkit'
 
 /**
  * Animated values type

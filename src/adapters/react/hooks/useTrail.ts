@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { createSpringValue, type SpringValue } from '../../../core/spring-value.js'
-import type { SpringConfig } from '../../../types.js'
+import { createSpringValue, type SpringValue } from '@oxog/springkit'
+import type { SpringConfig } from '@oxog/springkit'
 
 /**
  * Hook for creating trail animations with staggered delays

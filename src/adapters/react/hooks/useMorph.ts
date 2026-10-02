@@ -7,7 +7,7 @@ import {
   createMorphSequence,
   type MorphConfig,
   type MorphController,
-} from '../../../index.js'
+} from '@oxog/springkit'
 import { useIsomorphicLayoutEffect } from '../utils/ssr.js'
 
 // ============ useMorph ============

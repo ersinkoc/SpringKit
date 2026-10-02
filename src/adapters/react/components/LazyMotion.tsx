@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useState, useEffect, useMemo } from 'react'
+import * as React from 'react'
+import { createContext, useContext, useState, useEffect, useMemo } from 'react'
 
 // ============ Feature Definitions ============
 

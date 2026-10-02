@@ -1,4 +1,5198 @@
-import it,{createContext,memo,useState,useRef,useEffect,useMemo,forwardRef,useCallback,useContext,useLayoutEffect,useTransition,startTransition,cloneElement,Children,isValidElement}from'react';import {jsx,jsxs,Fragment}from'react/jsx-runtime';var ce={stiffness:100,damping:10,mass:1,velocity:0,restSpeed:.01,restDelta:.01,clamp:false};var Tr=.016666666666666666;function yn(n,e,t,r){let{stiffness:o=100,damping:s=10,mass:i=1,restSpeed:a=.01,restDelta:u=.01}=r,c=t-n,l=Math.abs(c),f=Math.abs(e);if(l<=u&&f<=a)return {position:t,velocity:0,isRest:true};let g=Tr,p=o*c,m=f>1e-4?s*e:0,d=i===0?.001:i,h=(p-m)/d,b=e+h*g,y=n+b*g,S=Math.abs(t-y)<=u&&Math.abs(b)<=a;return {position:y,velocity:b,isRest:S}}var Et=class{constructor(){this.animations=new Set;this.animationMap=new WeakMap;this.rafId=null;this.isRunning=false;this.lastTime=0;this.nextId=1;this.idMap=new WeakMap;this.frameListeners=new Set;this.registry=typeof FinalizationRegistry<"u"?new FinalizationRegistry(e=>{this.cleanupCallbacks.forEach(t=>t(e));}):null;this.cleanupCallbacks=new Set;this.tick=()=>{let e=performance.now(),t=e-this.lastTime,r=Math.min(t,64);this.lastTime=e,this.lastFrameDuration=r;for(let s of this.frameListeners)try{s(r);}catch(i){console.error("[SpringKit] Frame listener error:",i);}let o=[];for(let s of this.animations){let i=s.deref();if(!i){o.push(s);continue}i.update(e),i.isComplete()&&(o.push(s),this.animationMap.delete(i),this.idMap.delete(i));}for(let s=0;s<o.length;s++)this.animations.delete(o[s]);this.animations.size>0?this.rafId=requestAnimationFrame(this.tick):this.stop();};this.lastFrameDuration=16.67;}add(e){let t=this.idMap.get(e);if(t!==void 0)return t;this.animations.size>0&&this.animations.size%100===0&&this.cleanupDeadRefs();let r=this.nextId++,o=new WeakRef(e);return this.animations.add(o),this.animationMap.set(e,o),this.idMap.set(e,r),this.registry?.register(e,r),this.start(),r}cleanupDeadRefs(){for(let e of this.animations)e.deref()===void 0&&this.animations.delete(e);}remove(e){let t=this.animationMap.get(e);t&&(this.animations.delete(t),this.animationMap.delete(e),this.idMap.delete(e)),this.animations.size===0&&this.stop();}onCleanup(e){return this.cleanupCallbacks.add(e),()=>this.cleanupCallbacks.delete(e)}onFrame(e){return this.frameListeners.add(e),()=>this.frameListeners.delete(e)}start(){this.isRunning||(this.isRunning=true,this.lastTime=performance.now(),this.tick());}stop(){this.isRunning=false,this.rafId!==null&&(cancelAnimationFrame(this.rafId),this.rafId=null);}get size(){return this.animations.size}getAliveCount(){let e=0;for(let t of this.animations)t.deref()&&e++;return e}getFPS(){return Math.round(1e3/this.lastFrameDuration)}},Ue=new Et;function z(n,e,t){let r=Math.min(e,t),o=Math.max(e,t);return Math.max(r,Math.min(o,n))}function ie(n,e,t){return n+(e-n)*t}var lt=typeof process<"u"&&process.env?.NODE_ENV!=="production",vn=new Set;function We(n){!lt||vn.has(n)||(vn.add(n),console.warn(`[SpringKit] ${n}`));}function xn(n){if(!lt)return;let{stiffness:e=100,damping:t=10,mass:r=1}=n;e>400&&t<10&&We(`High stiffness (${e}) with low damping (${t}) may cause excessive oscillation. Consider increasing damping to at least ${Math.round(e/20)} for smoother animation.`),e<20&&We(`Very low stiffness (${e}) will result in sluggish animation. Consider using stiffness >= 50 for more responsive feel.`),t>e&&We(`Damping (${t}) is higher than stiffness (${e}), which removes the "springy" feel. Consider reducing damping for bouncier animation.`),r<=0&&We(`Mass must be positive. Got ${r}. Using default mass of 1.`),r>10&&We(`High mass (${r}) will make the animation very slow. Consider mass between 0.5 and 5 for typical use cases.`);}function fe(n,e){if(typeof n!="number"||Number.isNaN(n)){let t=`Invalid animation value in ${e}: expected number, got ${n}`;return lt&&console.error(`[SpringKit] ${t}`),0}if(!Number.isFinite(n)){let t=`Invalid animation value in ${e}: Infinity is not supported`;return lt&&console.error(`[SpringKit] ${t}`),0}return n}var wt=class{constructor(e,t,r={}){this.state="idle";this.resolveComplete=null;this.lastUpdateTime=0;xn(r),this.from=fe(e,"spring.from"),this.to=fe(t,"spring.to"),this.clampedFrom=this.from,this.clampedTo=this.to,this.position=this.from,this.velocity=r.velocity??0,this.target=this.to,this.config={...ce,...r,stiffness:r.stiffness??ce.stiffness,damping:r.damping??ce.damping,mass:r.mass??ce.mass,restSpeed:r.restSpeed??ce.restSpeed,restDelta:r.restDelta??ce.restDelta},this.finished=new Promise(o=>{this.resolveComplete=o;});}start(){return this.state==="running"?this:(this.state="running",this.lastUpdateTime=0,this.config.onStart?.(),Ue.add(this),this)}stop(){this.state="idle",Ue.remove(this);}pause(){this.state==="running"&&(this.state="paused",Ue.remove(this));}resume(){this.state==="paused"&&(this.state="running",this.lastUpdateTime=0,Ue.add(this));}reverse(){let e=this.from;this.from=this.to,this.to=e,this.clampedFrom=this.from,this.clampedTo=this.to,this.target=this.to,this.state==="running"&&(this.velocity=-this.velocity);}set(e){let t=fe(e,"spring.set");this.to=t,this.clampedTo=t,this.target=t;}setWithVelocity(e,t){let r=fe(e,"spring.setWithVelocity");this.from=this.position,this.clampedFrom=this.position,this.to=r,this.clampedTo=r,this.target=r,t!==void 0&&(this.velocity=fe(t,"spring.setWithVelocity.velocity")),this.state==="complete"&&(this.state="idle"),this.state!=="running"&&this.start();}update(e){if(this.state!=="running")return;this.lastUpdateTime===0&&(this.lastUpdateTime=e);let t=(e-this.lastUpdateTime)/1e3;this.lastUpdateTime=e;let r=1/15,o=1/60,s=Math.min(t,r),i=Math.max(1,Math.ceil(s/o)),a=this.position,u=this.velocity,c=false;for(let l=0;l<i&&!c;l++){let f=yn(a,u,this.target,this.config);a=f.position,u=f.velocity,c=f.isRest;}if(this.position=a,this.velocity=u,this.config.clamp){let l=Math.min(this.clampedFrom,this.clampedTo),f=Math.max(this.clampedFrom,this.clampedTo);this.position=z(this.position,l,f);}this.config.onUpdate?.(this.position),c&&(this.state="complete",Ue.remove(this),this.position=this.target,this.velocity=0,this.config.onUpdate?.(this.position),this.config.onComplete?.(),this.config.onRest?.(),this.resolveComplete?.());}isAnimating(){return this.state==="running"}isPaused(){return this.state==="paused"}isComplete(){return this.state==="complete"}getValue(){return this.position}getVelocity(){return this.velocity}destroy(){this.stop(),this.resolveComplete?.(),this.resolveComplete=null,this.config.onUpdate=void 0,this.config.onStart=void 0,this.config.onComplete=void 0,this.config.onRest=void 0;}};function Sn(n,e,t){return new wt(n,e,t)}var Vt=class{constructor(e,t={}){this.currentAnimation=null;this.subscribers=new Set;this.resolveComplete=null;this.destroyed=false;this.isNotifying=false;this.value=fe(e,"createSpringValue.initial"),this.config={...ce,...t},this.finishedPromise=new Promise(r=>{this.resolveComplete=r;});}get(){return this.value}getVelocity(){return this.currentAnimation?.getVelocity()??0}set(e,t={}){if(this.destroyed)return;let r=fe(e,"SpringValue.set");this.currentAnimation&&(this.currentAnimation.destroy(),this.currentAnimation=null,this.resolveComplete?.());let o=null;this.finishedPromise=new Promise(u=>{o=u,this.resolveComplete=u;});let s={...this.config,...t},i=s.onUpdate,a=s.onComplete;this.currentAnimation=Sn(this.value,r,{...s,onUpdate:u=>{this.destroyed||(this.value=u,this.notify(),i?.(u));},onComplete:()=>{a?.(),o?.();}}),this.currentAnimation.start();}jump(e){if(this.destroyed||this.isNotifying)return;let t=fe(e,"SpringValue.jump");this.currentAnimation&&(this.currentAnimation.destroy(),this.currentAnimation=null),this.value=t,this.notify();}stop(){this.currentAnimation&&(this.currentAnimation.destroy(),this.currentAnimation=null),this.resolveComplete&&this.resolveComplete();}setConfig(e){this.config={...this.config,...e};}subscribe(e){this.subscribers.add(e);try{e(this.value);}catch(t){console.error("[SpringKit] Subscriber error:",t);}return ()=>{this.subscribers.delete(e);}}isAnimating(){return this.currentAnimation?.isAnimating()??false}get finished(){return this.finishedPromise}notify(){if(!this.isNotifying){this.isNotifying=true;for(let e of this.subscribers)try{e(this.value);}catch(t){console.error("[SpringKit] Subscriber error:",t);}this.isNotifying=false;}}isDestroyed(){return this.destroyed}destroy(){this.destroyed||(this.destroyed=true,this.currentAnimation?.destroy(),this.currentAnimation=null,this.resolveComplete?.(),this.resolveComplete=null,this.subscribers.clear());}};function O(n,e){return new Vt(n,e)}var Lt=class{constructor(e,t={}){this.subscribers=new Set;this.resolveComplete=null;this.notifyRafId=null;this.notifyScheduled=false;this.destroyed=false;this.config={...ce,...t},this.values=new Map;for(let[r,o]of Object.entries(e)){let s=O(o,this.config);s.subscribe(()=>this.scheduleNotify()),this.values.set(r,s);}this.finishedPromise=Promise.resolve(),this.resetPromise();}resetPromise(){this.finishedPromise=new Promise(e=>{this.resolveComplete=e;});}get(){let e={};for(let[t,r]of this.values)e[t]=r.get();return e}getValue(e){return this.values.get(e)?.get()??0}set(e,t={}){if(this.destroyed)return;this.resetPromise();let r=[];for(let[o,s]of Object.entries(e)){let i=this.values.get(o);i&&typeof s=="number"&&(i.set(s,t),r.push(i.finished));}Promise.all(r).then(()=>{this.resolveComplete&&!this.destroyed&&this.resolveComplete();});}jump(e){if(!this.destroyed)for(let[t,r]of Object.entries(e)){let o=this.values.get(t);o&&typeof r=="number"&&o.jump(r);}}stop(){for(let e of this.values.values())e.stop();this.resolveComplete?.();}subscribe(e){this.subscribers.add(e);try{e(this.get());}catch(t){console.error("[SpringKit] SpringGroup subscriber error:",t);}return ()=>this.subscribers.delete(e)}isAnimating(){for(let e of this.values.values())if(e.isAnimating())return  true;return  false}get finished(){return this.finishedPromise}scheduleNotify(){this.destroyed||this.notifyScheduled||(this.notifyScheduled=true,queueMicrotask(()=>{this.notifyScheduled=false,this.destroyed||this.notify();}));}notify(){let e=this.get();for(let t of this.subscribers)try{t(e);}catch(r){console.error("[SpringKit] SpringGroup subscriber error:",r);}}destroy(){this.destroyed=true;for(let e of this.values.values())e.destroy();this.resolveComplete?.(),this.resolveComplete=null,this.subscribers.clear();}isDestroyed(){return this.destroyed}};function re(n,e){return new Lt(n,e)}function Rn(n,e){if(!n)return {values:{},transition:{}};let t=typeof n=="function"?n(e):n,{transition:r={},...o}=t;return {values:o,transition:r}}function $e(n,e,t){return !n||!e?{values:{},transition:{}}:Rn(n[e],t)}function At(n,e){let{staggerChildren:t=0,staggerDirection:r=1,delayChildren:o=0}=e,s=[];for(let i=0;i<n;i++){let a=r===-1?n-1-i:i;s.push(o+a*t);}return s}var It=class{constructor(e,t={}){this.subscribers=new Set;this.frameCount=0;this.pendingUpdates=new Map;this.pendingTimeouts=new Set;this.destroyed=false;let{followDelay:r=2,...o}=t;this.followDelay=r,this.leader=O(0,o),this.springs=[];for(let s=0;s<e;s++){let i=O(0,o);this.springs.push(i);}this.leader.subscribe(()=>{this.frameCount++,this.scheduleFollowerUpdates();});}scheduleFollowerUpdates(){let e=this.leader.get();for(let t=0;t<this.springs.length;t++){let r=(t+1)*this.followDelay,o=this.frameCount+r;this.pendingUpdates.set(t,o),this.scheduleFollowerUpdate(t,e,o,r);}}scheduleFollowerUpdate(e,t,r,o){let s=this.frameCount,i=r-s;if(i<=0)this.springs[e].set(t);else {let a=Math.max(i*16,0),u=setTimeout(()=>{if(this.pendingTimeouts.delete(u),this.destroyed)return;this.pendingUpdates.get(e)===r&&this.springs[e].set(t);},a);this.pendingTimeouts.add(u);}}set(e){this.leader.set(e);}jump(e){this.leader.jump(e);for(let t of this.springs)t.jump(e);}getValues(){return this.springs.map(e=>e.get())}subscribe(e){this.subscribers.add(e);let t=[];for(let r of this.springs)t.push(r.subscribe(()=>{this.notify();}));return e(this.getValues()),()=>{this.subscribers.delete(e);for(let r of t)r();}}notify(){let e=this.getValues();for(let t of this.subscribers)t(e);}destroy(){this.destroyed=true;for(let e of this.pendingTimeouts)clearTimeout(e);this.pendingTimeouts.clear(),this.leader.destroy();for(let e of this.springs)e.destroy();this.subscribers.clear(),this.pendingUpdates.clear();}};function Ot(n,e){return new It(n,e)}var Mr={axis:"both",rubberBand:false,rubberBandFactor:.5,elasticBounce:.3,momentum:true,momentumDecay:.95,stiffness:200,damping:20,mass:1,restSpeed:.01,restDelta:.01,clamp:false},Dt=class{constructor(e,t={}){this.enabled=true;this.position={x:0,y:0};this._isDragging=false;this.startPosition={x:0,y:0};this.pointerStart={x:0,y:0};this.lastPosition={x:0,y:0};this.lastTime=0;this.velocity={x:0,y:0};this.currentSnap=null;this.snapTimeoutId=null;this.snapGeneration=0;this.destroyed=false;this.onPointerDown=e=>{!this.enabled||e.button!==0||(this._isDragging=true,this.startPosition={...this.position},this.pointerStart={x:e.clientX,y:e.clientY},this.lastPosition={x:e.clientX,y:e.clientY},this.lastTime=performance.now(),this.velocity={x:0,y:0},this.element.setPointerCapture(e.pointerId),this.element.addEventListener("pointermove",this.onPointerMove),this.element.addEventListener("pointerup",this.onPointerUp),this.element.addEventListener("pointercancel",this.onPointerUp),this.config.onDragStart&&this.config.onDragStart(e));};this.onPointerMove=e=>{let t=performance.now(),r=t-this.lastTime,o=Math.min(Math.max(r,16),100),s={x:(e.clientX-this.lastPosition.x)/o,y:(e.clientY-this.lastPosition.y)/o},i=.5;this.velocity={x:this.velocity.x*(1-i)+s.x*i,y:this.velocity.y*(1-i)+s.y*i},this.lastPosition={x:e.clientX,y:e.clientY},this.lastTime=t;let a=this.startPosition.x+(e.clientX-this.pointerStart.x),u=this.startPosition.y+(e.clientY-this.pointerStart.y);this.config.bounds&&(a=this.applyBounds(a,this.config.bounds.left??-1/0,this.config.bounds.right??1/0,"x"),u=this.applyBounds(u,this.config.bounds.top??-1/0,this.config.bounds.bottom??1/0,"y")),this.config.axis==="x"?u=0:this.config.axis==="y"&&(a=0),this.position={x:a,y:u},this.config.onDrag&&this.config.onDrag(a,u,e),this.config.onUpdate&&this.config.onUpdate(a,u);};this.onPointerUp=e=>{if(this._isDragging=false,this.element&&document.contains(this.element)){try{this.element.releasePointerCapture(e.pointerId);}catch{}this.element.removeEventListener("pointermove",this.onPointerMove),this.element.removeEventListener("pointerup",this.onPointerUp),this.element.removeEventListener("pointercancel",this.onPointerUp);}if(this.config.snap?.snapOnRelease!==false){let t=this.findNearestSnapPoint();if(t){this.snapTo(t),this.config.onDragEnd&&this.config.onDragEnd(this.position.x,this.position.y,this.velocity);return}}this.release(this.velocity.x*16,this.velocity.y*16),this.config.onDragEnd&&this.config.onDragEnd(this.position.x,this.position.y,this.velocity);};this.element=e,this.config={...Mr,...t,bounds:t.bounds?{...t.bounds}:void 0};let r={stiffness:this.config.stiffness,damping:this.config.damping,mass:this.config.mass,restSpeed:this.config.restSpeed,restDelta:this.config.restDelta,clamp:this.config.clamp};this.springX=O(0,r),this.springY=O(0,r),this.springX.subscribe(()=>{this._isDragging||(this.position.x=this.springX.get(),this.config.onUpdate&&this.config.onUpdate(this.position.x,this.position.y));}),this.springY.subscribe(()=>{this._isDragging||(this.position.y=this.springY.get(),this.config.onUpdate&&this.config.onUpdate(this.position.x,this.position.y));}),this.setupPointerEvents();}setupPointerEvents(){this.element.addEventListener("pointerdown",this.onPointerDown);}getElasticFactor(e){let t=this.config.dragElastic;return t===void 0?this.config.rubberBand?this.config.rubberBandFactor??.5:0:typeof t=="boolean"?t?.5:0:typeof t=="number"?z(t,0,1):z(t[e]??.5,0,1)}applyBounds(e,t,r,o="x"){if(!isFinite(t)&&!isFinite(r))return e;let s=isFinite(t)?t:-1/0,i=isFinite(r)?r:1/0;if(this.config.dragElastic!==void 0||this.config.rubberBand){if(e<s){let u=this.getElasticFactor(o==="x"?"left":"top");return s-(s-e)*u}if(e>i){let u=this.getElasticFactor(o==="x"?"right":"bottom");return i+(e-i)*u}}return z(e,s,i)}findNearestSnapPoint(){let e=this.config.snap;if(!e)return null;if(e.grid){let t=Math.round(this.position.x/e.grid.x)*e.grid.x,r=Math.round(this.position.y/e.grid.y)*e.grid.y;return {x:t,y:r}}if(e.points&&e.points.length>0){let t=Math.sqrt(this.velocity.x**2+this.velocity.y**2),r=e.velocityThreshold??.5;if(t>r)return null;let o=null,s=1/0;for(let i of e.points){let a=this.position.x-i.x,u=this.position.y-i.y,c=Math.sqrt(a*a+u*u),l=i.radius??50;c<l&&c<s&&(s=c,o=i);}return o}return null}getEffectiveBounds(){let e={left:this.config.bounds?.left??this.config.constraints?.bounds?.left??-1/0,right:this.config.bounds?.right??this.config.constraints?.bounds?.right??1/0,top:this.config.bounds?.top??this.config.constraints?.bounds?.top??-1/0,bottom:this.config.bounds?.bottom??this.config.constraints?.bounds?.bottom??1/0},t=this.config.constraints;if(t?.constrainToParent&&this.element.parentElement){let o=this.element.parentElement.getBoundingClientRect(),s=this.element.getBoundingClientRect(),i=this.normalizePadding(t.constraintPadding);e.left=Math.max(e.left,i.left),e.right=Math.min(e.right,o.width-s.width-i.right),e.top=Math.max(e.top,i.top),e.bottom=Math.min(e.bottom,o.height-s.height-i.bottom);}if(t?.constrainToElement){let r=t.constrainToElement.getBoundingClientRect(),o=this.element.getBoundingClientRect(),s=this.element.parentElement?.getBoundingClientRect()??{left:0,top:0},i=this.normalizePadding(t.constraintPadding),a=r.left-s.left,u=r.top-s.top;e.left=Math.max(e.left,a+i.left),e.right=Math.min(e.right,a+r.width-o.width-i.right),e.top=Math.max(e.top,u+i.top),e.bottom=Math.min(e.bottom,u+r.height-o.height-i.bottom);}return e}normalizePadding(e){return typeof e=="number"?{top:e,right:e,bottom:e,left:e}:{top:e?.top??0,right:e?.right??0,bottom:e?.bottom??0,left:e?.left??0}}enable(){this.enabled=true;}disable(){this.enabled=false,this._isDragging&&(this._isDragging=false);}isEnabled(){return this.enabled}isDragging(){return this._isDragging}reset(){this.springX.jump(0),this.springY.jump(0),this.position={x:0,y:0},this.velocity={x:0,y:0},this.currentSnap=null,this.config.onUpdate&&this.config.onUpdate(0,0);}getPosition(){return {...this.position}}getVelocity(){return {...this.velocity}}setPosition(e,t){if(this.destroyed)return;let r=Number.isFinite(e)?e:this.position.x,o=Number.isFinite(t)?t:this.position.y;this.position={x:r,y:o},this.springX.jump(r),this.springY.jump(o);}jumpTo(e,t){if(this.destroyed)return;let r=Number.isFinite(e)?e:this.position.x,o=Number.isFinite(t)?t:this.position.y;this.position={x:r,y:o},this.springX.jump(r),this.springY.jump(o),this.config.onUpdate&&this.config.onUpdate(r,o);}animateTo(e,t){if(this.destroyed)return;let r=Number.isFinite(e)?e:this.position.x,o=Number.isFinite(t)?t:this.position.y;this.springX.set(r),this.springY.set(o);}release(e,t){let r=this.getEffectiveBounds(),{left:o,right:s,top:i,bottom:a}=r,u=this.position.x,c=this.position.y;if(this.config.momentum){let l=this.config.momentumDecay??.95,f=Math.max(0,Math.min(.99,l)),g=f<1?1/(1-f):100,p=e*g*.1,m=t*g*.1;u+=p,c+=m;}if(this.config.modifyTarget){let l=this.config.modifyTarget({x:u,y:c});u=l.x,c=l.y;}u=z(u,o,s),c=z(c,i,a),this.config.onBoundsHit&&(this.position.x<o&&this.config.onBoundsHit("left"),this.position.x>s&&this.config.onBoundsHit("right"),this.position.y<i&&this.config.onBoundsHit("top"),this.position.y>a&&this.config.onBoundsHit("bottom")),(u!==this.position.x||this.position.x<o||this.position.x>s)&&this.springX.set(u,{velocity:e}),(c!==this.position.y||this.position.y<i||this.position.y>a)&&this.springY.set(c,{velocity:t});}snapToNearest(){let e=this.findNearestSnapPoint();e&&this.snapTo(e);}snapTo(e){this.currentSnap=e,this.config.onSnapStart&&this.config.onSnapStart(e),this.springX.set(e.x),this.springY.set(e.y),this.snapTimeoutId!==null&&clearTimeout(this.snapTimeoutId);let t=++this.snapGeneration;this.snapTimeoutId=setTimeout(()=>{this.snapTimeoutId=null,!this.destroyed&&t===this.snapGeneration&&this.currentSnap===e&&this.config.onSnapComplete&&this.config.onSnapComplete(e);},500);}setConstraints(e){this.config.constraints=e;}setSnap(e){this.config.snap=e;}destroy(){this.destroyed=true,this.snapTimeoutId!==null&&(clearTimeout(this.snapTimeoutId),this.snapTimeoutId=null),this.element.removeEventListener("pointerdown",this.onPointerDown),this.element.removeEventListener("pointermove",this.onPointerMove),this.element.removeEventListener("pointerup",this.onPointerUp),this.element.removeEventListener("pointercancel",this.onPointerUp),this.springX.destroy(),this.springY.destroy();}};function kt(n,e){return new Dt(n,e)}function Ft(n){if(n.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/i))return Pr(n);let t=n.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/i);if(t)return {r:parseInt(t[1],10),g:parseInt(t[2],10),b:parseInt(t[3],10)};let r=n.match(/rgba\((\d+),\s*(\d+),\s*(\d+),\s*[\d.]+\)/i);if(r)return {r:parseInt(r[1],10),g:parseInt(r[2],10),b:parseInt(r[3],10)};let o=n.match(/hsl\((\d+),\s*(\d+)%,\s*(\d+)%\)/i);return o?Cr(parseInt(o[1],10),parseInt(o[2],10),parseInt(o[3],10)):{r:0,g:0,b:0}}function Tn(n,e,t){let r=o=>Math.round(Math.max(0,Math.min(255,o))).toString(16).padStart(2,"0");return `#${r(n)}${r(e)}${r(t)}`}function Pr(n){let e=n.replace("#","");return e.length===3?{r:parseInt(e.charAt(0)+e.charAt(0),16),g:parseInt(e.charAt(1)+e.charAt(1),16),b:parseInt(e.charAt(2)+e.charAt(2),16)}:{r:parseInt(e.slice(0,2),16),g:parseInt(e.slice(2,4),16),b:parseInt(e.slice(4,6),16)}}function Cr(n,e,t){if(n=(n%360+360)%360,e=Math.max(0,Math.min(100,e))/100,t=Math.max(0,Math.min(100,t))/100,e===0){let i=Math.round(t*255);return {r:i,g:i,b:i}}let r=(i,a,u)=>(u<0&&(u+=1),u>1&&(u-=1),u<1/6?i+(a-i)*6*u:u<1/2?a:u<2/3?i+(a-i)*(2/3-u)*6:i),o=t<.5?t*(1+e):t+e-t*e,s=2*t-o;return {r:Math.round(r(s,o,n/360+1/3)*255),g:Math.round(r(s,o,n/360)*255),b:Math.round(r(s,o,n/360-1/3)*255)}}function Er(n,e,t){let r=Ft(n),o=Ft(e);return Tn(Math.round(ie(r.r,o.r,t)),Math.round(ie(r.g,o.g,t)),Math.round(ie(r.b,o.b,t)))}function Ut(n,e={}){let{offset:t=["start","end"],smooth:r=0}=e,o=0,s=0,i=0,a=performance.now(),u=0,c=0,l=null,f=false,g=new Set,p=()=>{let b=window.scrollY,y=window.innerHeight,v=performance.now(),S=Math.max(v-a,1);u=(b-i)/S*1e3,c=b>i?1:b<i?-1:0,i=b,a=v;let R,C=true,T=1;if(n){let x=n.getBoundingClientRect(),M=x.top+b,P=x.height,w=t[0]==="start"?M:t[0]==="center"?M+P/2:M+P,F=t[1]==="start"?y:t[1]==="center"?y/2:0,k=w-y,D=w-F,N=D-k;R=N!==0?z((b-k)/N,0,1):b>=D?1:0,C=x.top<y&&x.bottom>0,T=C?z((Math.min(x.bottom,y)-Math.max(x.top,0))/x.height,0,1):0;}else {let x=document.documentElement.scrollHeight-y;R=x>0?z(b/x,0,1):0;}return r>0?(s=ie(s,R,1-r),o=s):o=R,{progress:o,scrollY:b,velocity:u,direction:c,isInView:C,visibleRatio:T}},m=b=>{g.forEach(y=>{try{y(b);}catch(v){console.error("[SpringKit] ScrollProgress subscriber error:",v);}});},d=()=>{l||f||(l=requestAnimationFrame(()=>{if(l=null,f)return;let b=p();m(b);}));},h=p();return window.addEventListener("scroll",d,{passive:true}),window.addEventListener("resize",d,{passive:true}),{get:()=>o,getInfo:()=>p(),subscribe:b=>(g.add(b),b(h),()=>g.delete(b)),destroy:()=>{f||(f=true,l&&cancelAnimationFrame(l),window.removeEventListener("scroll",d),window.removeEventListener("resize",d),g.clear());}}}function $t(n,e={}){let{speed:t=.5,direction:r="vertical",easing:o=p=>p,rootMargin:s="0px"}=e,i=0,a=false,u=null,c=null,l=false,f=()=>{if(!a)return;let p=n.getBoundingClientRect(),m=window.innerHeight,d=p.top+p.height/2,h=m/2,y=(d-h)/m;i=o(Math.abs(y))*Math.sign(y)*t*100,r==="vertical"?n.style.transform=`translate3d(0, ${i}px, 0)`:n.style.transform=`translate3d(${i}px, 0, 0)`;};u=new IntersectionObserver(p=>{let m=p[0];m&&(a=m.isIntersecting,a&&f());},{rootMargin:s}),u.observe(n);let g=()=>{l||a&&c===null&&(c=requestAnimationFrame(()=>{c=null,l||f();}));};return window.addEventListener("scroll",g,{passive:true}),{getOffset:()=>i,update:f,destroy:()=>{l=true,c!==null&&(cancelAnimationFrame(c),c=null),u?.disconnect(),window.removeEventListener("scroll",g),n.style.transform="";}}}function Ht(n,e={}){let{start:t="top",end:r="bottom",startOffset:o=0,endOffset:s=0,onEnter:i,onLeave:a,onProgress:u,once:c=false,scrub:l=false}=e,f=false,g=0,p=false,m=0,d=null,h=(v,S)=>{if(typeof v=="number")return v;switch(v){case "top":return S.top;case "center":return S.top+S.height/2;case "bottom":return S.bottom}},b=()=>{let v=n.getBoundingClientRect(),S=window.innerHeight,R=h(t,v)+o,C=h(r,v)+s,T=S,M=T-0,P=M!==0?(T-R)/M:0,F=(M!==0?(T-C)/M:1)-P,k=F!==0?z((P-0)/F,0,1):P>=0?1:0;typeof l=="number"&&l>0?(m=ie(m,k,1-l),g=m):g=k;let D=v.top<S&&v.bottom>0;return {progress:g,scrollY:window.scrollY,velocity:0,direction:0,isInView:D,visibleRatio:D?z((Math.min(v.bottom,S)-Math.max(v.top,0))/v.height,0,1):0}},y=()=>{d||(d=requestAnimationFrame(()=>{d=null;let v=b(),S=f;if(f=v.progress>0&&v.progress<1,!S&&f&&(!c||!p)){p=true;try{i?.(v);}catch(R){console.error("[SpringKit] ScrollTrigger onEnter error:",R);}}if(S&&!f)try{a?.(v);}catch(R){console.error("[SpringKit] ScrollTrigger onLeave error:",R);}if(f||l)try{u?.(v);}catch(R){console.error("[SpringKit] ScrollTrigger onProgress error:",R);}}));};return window.addEventListener("scroll",y,{passive:true}),window.addEventListener("resize",y,{passive:true}),y(),{isActive:()=>f,getProgress:()=>g,refresh:()=>{b();},destroy:()=>{d&&cancelAnimationFrame(d),window.removeEventListener("scroll",y),window.removeEventListener("resize",y);}}}function jt(n,e){let{inputRange:t,outputRange:r,clamp:o=true,easing:s}=e;if(t.length!==r.length)throw new Error("inputRange and outputRange must have the same length");let i=r[0],a=typeof i=="string"&&(i.startsWith("#")||i.startsWith("rgb")||i.startsWith("hsl")),u=i??0,c=new Set,l=g=>{let p=g;s&&(p=s(p));let m=t[0]??0,d=t[t.length-1]??1;o&&(p=z(p,m,d));let h=0;for(let C=0;C<t.length-1;C++){let T=t[C]??0,x=t[C+1]??1;if(p>=T&&p<=x){h=C;break}p>x&&(h=C+1);}let b=t[h]??0,y=t[h+1]??b,v=y!==b?(p-b)/(y-b):0,S=r[h]??0,R=r[h+1]??S;return a&&typeof S=="string"&&typeof R=="string"?Er(S,R,v):ie(S,R,v)},f=n.subscribe(g=>{u=l(g.progress),c.forEach(p=>p(u));});return {get:()=>u,subscribe:g=>(c.add(g),g(u),()=>c.delete(g)),destroy:()=>{f(),c.clear();}}}var wr=0;function Xt(n={}){let e=++wr,t=0,{defaults:r={},autoplay:o=false,repeat:s=0,yoyo:i=false,repeatDelay:a=0,onStart:u,onUpdate:c,onComplete:l,onRepeat:f}=n,g=[],p=new Map,m=new Map,d=new Map,h=0,b=0,y=false,v=false,S=false,R=0,C=null,T=null,x=0,M=false,P=0,w=E=>{if(E===void 0)return P;if(typeof E=="number")return E;if(E==="<"){let L=g[g.length-1];return L?L.startTime:(console.warn('[SpringKit] Timeline: "<" position used with no previous segments'),0)}if(E===">")return P;if(E.startsWith("+="))return P+parseFloat(E.slice(2));if(E.startsWith("-="))return P-parseFloat(E.slice(2));if(p.has(E))return p.get(E);let I=E.match(/^([a-zA-Z_]\w*)([+-]=?\d*\.?\d+)?$/);if(I){let L=I[1],G=I[2];if(!L)return console.warn(`[SpringKit] Timeline: Invalid label reference in position "${E}"`),P;let U=p.get(L)??0;if(G){let V=parseFloat(G.replace("=",""));return U+V}return U}return P},F=E=>typeof E=="string"?document.querySelector(E):E instanceof HTMLElement?E:null,k=E=>{let I={};for(let[L,G]of Object.entries(E))typeof G=="number"&&!["duration","delay"].includes(L)&&(I[L]=G);return I},D=(E,I)=>{let L=[],G={};for(let[U,V]of Object.entries(I))switch(U){case "x":L.push(`translateX(${V}px)`);break;case "y":L.push(`translateY(${V}px)`);break;case "z":L.push(`translateZ(${V}px)`);break;case "scale":L.push(`scale(${V})`);break;case "scaleX":L.push(`scaleX(${V})`);break;case "scaleY":L.push(`scaleY(${V})`);break;case "rotate":case "rotation":L.push(`rotate(${V}deg)`);break;case "rotateX":L.push(`rotateX(${V}deg)`);break;case "rotateY":L.push(`rotateY(${V}deg)`);break;case "rotateZ":L.push(`rotateZ(${V}deg)`);break;case "skewX":L.push(`skewX(${V}deg)`);break;case "skewY":L.push(`skewY(${V}deg)`);break;case "opacity":G.opacity=String(V);break;default:G[U]=typeof V=="number"?`${V}px`:String(V);}L.length>0&&(E.style.transform=L.join(" "));for(let[U,V]of Object.entries(G))E.style[U]=V;},N=(E,I)=>{let L={},G=getComputedStyle(E);for(let U of Object.keys(I))switch(U){case "opacity":L[U]=parseFloat(G.opacity)||1;break;case "x":case "y":case "z":case "scale":case "scaleX":case "scaleY":case "rotate":case "rotation":case "rotateX":case "rotateY":case "rotateZ":case "skewX":case "skewY":L[U]=U.startsWith("scale")?1:0;break;default:L[U]=parseFloat(G.getPropertyValue(U))||0;}return L},Q=64,ee=E=>{if(!y||S)return;let I=x?E-x:0,L=Math.min(I,Q)/1e3;x=E,h+=v?-L:L,h=z(h,0,b);let G=m.get(Math.floor(h*1e3));G&&G.forEach(V=>{try{V();}catch(q){console.error("[SpringKit] Timeline callback error:",q);}});let U=d.get(Math.floor(h*1e3));if(U!==void 0){S=true;try{U?.();}catch(V){console.error("[SpringKit] Timeline pause callback error:",V);}return}for(let V of g){let q=V.endTime-V.startTime,J=q>0?z((h-V.startTime)/q,0,1):h>=V.endTime?1:0,B=h>=V.startTime&&h<=V.endTime;B&&!V.isActive&&(V.isActive=true,V.props.onStart?.()),V.isActive&&V.spring&&V.props.onUpdate?.(J),B&&J>=1&&!V.isComplete&&(V.isComplete=true,V.props.onComplete?.());}if(c?.(b>0?h/b:1),v&&h<=0||!v&&h>=b)if(s===-1||R<s){if(R++,f?.(R),i?v=!v:(h=0,g.forEach(V=>{V.isActive=false,V.isComplete=false;})),a>0){T=setTimeout(()=>{T=null,C=requestAnimationFrame(ee);},a*1e3);return}}else {y=false,l?.();return}C=requestAnimationFrame(ee);},j={to(E,I,L){let G=w(L)+(I.delay||0),U=I.duration||.5,V=G+U,q=F(E),J=k(I),B={id:`segment_${e}_${t++}`,target:E,props:I,startTime:G,endTime:V,spring:null,isActive:false,isComplete:false};if(q&&Object.keys(J).length>0){let Ee=N(q,J),te={...r,...I.spring};B.spring=re(Ee,te),B.spring.subscribe(ye=>{D(q,ye);});let be=B.props.onStart;B.props.onStart=()=>{B.spring?.set(J),be?.();};}return g.push(B),P=V,b=Math.max(b,V),j},from(E,I,L){let G=w(L)+(I.delay||0),U=I.duration||.5,V=G+U,q=F(E),J=k(I),B={id:`segment_${e}_${t++}`,target:E,props:I,startTime:G,endTime:V,spring:null,isActive:false,isComplete:false};if(q&&Object.keys(J).length>0){let Ee=N(q,J),te={...r,...I.spring};B.spring=re(J,te),D(q,J),B.spring.subscribe(ye=>{D(q,ye);});let be=B.props.onStart;B.props.onStart=()=>{B.spring?.set(Ee),be?.();};}return g.push(B),P=V,b=Math.max(b,V),j},fromTo(E,I,L,G){let U=w(G)+(L.delay||0),V=L.duration||.5,q=U+V,J=F(E),B=k(I),Ee=k(L),te={id:`segment_${e}_${t++}`,target:E,props:L,startTime:U,endTime:q,spring:null,isActive:false,isComplete:false};if(J&&Object.keys(Ee).length>0){let be={...r,...L.spring};te.spring=re(B,be),D(J,B),te.spring.subscribe(ct=>{D(J,ct);});let ye=te.props.onStart;te.props.onStart=()=>{te.spring?.set(Ee),ye?.();};}return g.push(te),P=q,b=Math.max(b,q),j},addLabel(E,I){let L=w(I);return p.set(E,L),j},call(E,I){let L=Math.floor(w(I)*1e3);return m.has(L)||m.set(L,[]),m.get(L).push(E),j},set(E,I,L){let G=F(E);if(G){let U=w(L);this.call(()=>{D(G,k(I));},U);}return j},addPause(E,I){let L=Math.floor(w(E)*1e3);return d.set(L,I),j},play(){return M||(M=true,u?.()),y=true,S=false,x=0,C=requestAnimationFrame(ee),j},pause(){return S=true,C&&(cancelAnimationFrame(C),C=null),j},resume(){return S&&(S=false,x=0,C=requestAnimationFrame(ee)),j},reverse(){return v=!v,j},restart(){return h=v?b:0,R=0,M=false,g.forEach(E=>{E.isActive=false,E.isComplete=false;}),this.play()},seek(E){return typeof E=="string"?h=p.get(E)??0:h=z(E,0,b),j},kill(){y=false,C&&(cancelAnimationFrame(C),C=null),T&&(clearTimeout(T),T=null),g.forEach(E=>E.spring?.destroy()),g.length=0,p.clear(),m.clear(),d.clear();},time:()=>h,duration:()=>b,progress:()=>b>0?h/b:0,isPlaying:()=>y&&!S,isReversed:()=>v,getById(E){return g.find(I=>I.id===E)}};return o&&j.play(),j}function Mn(n){let e=[],t=/([MLCQAZHVST])([^MLCQAZHVST]*)/gi,r=n.matchAll(t);for(let o of r){let s=o[1],i=o[2];if(!s||i===void 0)continue;let a=s.toUpperCase(),u=i.trim().split(/[\s,]+/).filter(c=>c!=="").map(parseFloat).filter(c=>!isNaN(c));e.push({type:a,values:u});}return e}function Pn(n){return n.map(s=>{let{type:i,values:a}=s,u=[...a];switch(i){case "M":a[0]??0,a[1]??0;break;case "L":a[0]??0,a[1]??0;break;case "H":u[0]=a[0]??0,a[0]??0;break;case "V":u[0]=a[0]??0,a[0]??0;break;case "C":a[4]??0,a[5]??0;break;case "Q":a[2]??0,a[3]??0;break;case "A":a[5]??0,a[6]??0;break;case "S":a[2]??0,a[3]??0;break;case "T":a[0]??0,a[1]??0;break;}return {type:i,values:u}})}function Vr(){if(typeof document>"u")return  false;try{let n="http://www.w3.org/2000/svg",e=document.createElementNS(n,"svg"),t=document.createElementNS(n,"path");t.setAttribute("d","M0,0 L10,10"),e.appendChild(t),document.body.appendChild(e);let r=typeof t.getTotalLength=="function",o=!1;if(r)try{t.getTotalLength(),o=!0;}catch{o=!1;}return document.body.removeChild(e),o}catch{return  false}}function Lr(n,e){let t=[];for(let r of n)if(r.type==="M"||r.type==="L")t.push({x:r.values[0]??0,y:r.values[1]??0});else if(r.type==="C")t.push({x:r.values[4]??0,y:r.values[5]??0,cp1x:r.values[0]??0,cp1y:r.values[1]??0,cp2x:r.values[2]??0,cp2y:r.values[3]??0});else if(r.type==="Q")t.push({x:r.values[2]??0,y:r.values[3]??0,cp1x:r.values[0]??0,cp1y:r.values[1]??0});else if(r.type==="A")t.push({x:r.values[5]??0,y:r.values[6]??0});else if(r.type==="H"){let o=t[t.length-1];t.push({x:r.values[0]??0,y:o?.y??0});}else if(r.type==="V"){let o=t[t.length-1];t.push({x:o?.x??0,y:r.values[0]??0});}if(t.length>0&&t.length<e){let r=[],o=(t.length-1)/(e-1);for(let s=0;s<e;s++){let i=s*o,a=Math.floor(i),u=i-a;if(a>=t.length-1)r.push(t[t.length-1]);else {let c=t[a],l=t[a+1];r.push({x:ie(c.x,l.x,u),y:ie(c.y,l.y,u)});}}return r}return t}function Cn(n,e){if(!Vr())return Lr(n,e);let t=[],r="http://www.w3.org/2000/svg",o=document.createElementNS(r,"svg"),s=document.createElementNS(r,"path"),i="";for(let a of n)i+=a.type+a.values.join(" ");s.setAttribute("d",i),o.appendChild(s),document.body.appendChild(o);try{let u=s.getTotalLength()/(e-1);for(let c=0;c<e;c++){let l=s.getPointAtLength(c*u);t.push({x:l.x,y:l.y});}}finally{document.body.removeChild(o);}return t}function En(n,e,t){return {x:ie(n.x,e.x,t),y:ie(n.y,e.y,t)}}function wn(n){if(n.length===0)return "";let e=n[0],t=`M ${e.x} ${e.y}`;for(let r=1;r<n.length;r++){let o=n[r];t+=` L ${o.x} ${o.y}`;}return t}function Ke(n,e={}){let{spring:t={stiffness:120,damping:14},samples:r=100,onProgress:o,onComplete:s}=e,i=n,a=[],u=[],c=[],l=new Set,f=Mn(n);a=Cn(Pn(f),r),c=[...a],u=[...a];let g=O(0,t);return g.subscribe(()=>{let p=g.get();o?.(p),c=a.map((m,d)=>En(m,u[d]??m,p)),i=wn(c),l.forEach(m=>{try{m(i);}catch(d){console.error("[SpringKit] Morph subscriber error:",d);}}),p>=.999&&s?.();}),{getPath:()=>i,getProgress:()=>g.get(),morphTo(p){let m=Mn(p),d=Cn(Pn(m),r);for(a=[...c],u=d;a.length<u.length;)a.push(a[a.length-1]||{x:0,y:0});for(;u.length<a.length;)u.push(u[u.length-1]||{x:0,y:0});g.jump(0),g.set(1);},setProgress(p){let m=z(p,0,1);g.jump(m),c=a.map((d,h)=>En(d,u[h]??d,m)),i=wn(c),l.forEach(d=>{try{d(i);}catch(h){console.error("[SpringKit] Morph subscriber error:",h);}});},subscribe(p){l.add(p);try{p(i);}catch(m){console.error("[SpringKit] Morph subscriber error:",m);}return ()=>l.delete(p)},destroy(){g.destroy(),l.clear();}}}function Gt(n,e={}){if(n.length===0)throw new Error("At least one path is required");let t=0,r=n[0],o=Ke(r,e);return {getPath:()=>o.getPath(),getCurrentIndex:()=>t,morphToIndex(s){let i=z(s,0,n.length-1);if(i!==t){t=i;let a=n[i];o.morphTo(a);}},morphToNext(){this.morphToIndex((t+1)%n.length);},morphToPrevious(){this.morphToIndex((t-1+n.length)%n.length);},subscribe:s=>o.subscribe(s),destroy:()=>o.destroy()}}function ft(n){let e=n.getBoundingClientRect(),t=getComputedStyle(n);return {x:e.left+window.scrollX,y:e.top+window.scrollY,width:e.width,height:e.height,opacity:parseFloat(t.opacity)||1,borderRadius:parseFloat(t.borderRadius)||0,scaleX:1,scaleY:1}}function Ar(n,e,t,r){let o=r.x!==void 0?e.x-t.x+(r.x-e.x):0,s=r.y!==void 0?e.y-t.y+(r.y-e.y):0,i=r.width!==void 0&&t.width!==0?r.width/t.width:1,a=r.height!==void 0&&t.height!==0?r.height/t.height:1;if(n.style.transform=`translate(${o}px, ${s}px) scale(${i}, ${a})`,n.style.transformOrigin="top left",r.opacity!==void 0&&(n.style.opacity=String(r.opacity)),r.borderRadius!==void 0){let u=r.borderRadius/Math.max(i,a);n.style.borderRadius=`${u}px`;}}function Vn(n){n.style.transform="",n.style.transformOrigin="",n.style.opacity="",n.style.borderRadius="";}function Ve(n={}){let{spring:e={stiffness:300,damping:30},onAnimationStart:t,onAnimationComplete:r,crossfade:o=false,transition:s={}}=n,i=new Map,a=new Map,u=(m,d)=>{i.has(m)||i.set(m,[]);let h=i.get(m);if(!h.some(y=>y.element===d)){let y=ft(d);h.push({id:m,element:d,measurement:y,spring:null,isAnimating:false,pendingRafId:null}),a.has(m)||a.set(m,y);}},c=(m,d)=>{let h=i.get(m);if(!h)return;let b=h.findIndex(y=>y.element===d);if(b!==-1){let y=h[b];a.set(m,ft(d)),y.pendingRafId!==null&&(cancelAnimationFrame(y.pendingRafId),y.pendingRafId=null),y.spring?.destroy(),h.splice(b,1),h.length===0&&i.delete(m);}},l=(m,d,h)=>{m.spring?.destroy();let b={x:d.x,y:d.y,width:d.width,height:d.height};o&&(b.opacity=d.opacity??1),d.borderRadius!==void 0&&(b.borderRadius=d.borderRadius),m.spring=re(b,e),m.isAnimating=true,t?.(m.id),m.spring.subscribe(S=>{Ar(m.element,d,h,S);});let y={x:h.x,y:h.y,width:h.width,height:h.height};o&&(y.opacity=h.opacity??1),h.borderRadius!==void 0&&(y.borderRadius=h.borderRadius),m.spring.set(y);let v=()=>{m.pendingRafId=null,m.spring&&!m.spring.isAnimating()?(m.isAnimating=false,Vn(m.element),r?.(m.id)):m.isAnimating&&(m.pendingRafId=requestAnimationFrame(v));};m.pendingRafId=requestAnimationFrame(v);};return {register:u,unregister:c,update:()=>{for(let[m,d]of i)for(let h of d){let b=a.get(m),y=ft(h.element);b&&(b.x!==y.x||b.y!==y.y||b.width!==y.width||b.height!==y.height)&&l(h,b,y),h.measurement=y,a.set(m,y);}},forceUpdate:()=>{for(let[m,d]of i)for(let h of d)h.measurement=ft(h.element),a.set(m,h.measurement);},destroy:()=>{for(let m of i.values())for(let d of m)d.pendingRafId!==null&&(cancelAnimationFrame(d.pendingRafId),d.pendingRafId=null),d.spring?.destroy(),Vn(d.element);i.clear(),a.clear();}}}var Ir=0;function Yt(){let n=new Map;return {createGroup(e){let t=e??`layout-group-${Ir++}`,r=Ve();return n.set(t,r),r},getGroup(e){return n.get(e)},updateAll(){for(let e of n.values())e.update();},destroy(){for(let e of n.values())e.destroy();n.clear();}}}function Nt(n={}){let{root:e=typeof document<"u"?document.body:null,attribute:t="data-layout-id",debounce:r=0,...o}=n;if(!e)return {update:()=>{},forceUpdate:()=>{},destroy:()=>{}};let s=Ve(o),i=null,a=null,u=null,c=()=>{e.querySelectorAll(`[${t}]`).forEach(g=>{let p=g.getAttribute(t);p&&g instanceof HTMLElement&&s.register(p,g);});},l=()=>{u&&clearTimeout(u),r>0?u=setTimeout(()=>{c(),s.update();},r):(c(),s.update());};return c(),i=new MutationObserver(f=>{let g=false;for(let p of f)p.type==="childList"&&(p.addedNodes.forEach(m=>{m instanceof HTMLElement&&(m.hasAttribute(t)&&(g=true),m.querySelector(`[${t}]`)&&(g=true));}),p.removedNodes.forEach(m=>{if(m instanceof HTMLElement){let d=m.getAttribute(t);d&&s.unregister(d,m);}})),p.type==="attributes"&&p.attributeName===t&&(g=true);g&&l();}),i.observe(e,{childList:true,subtree:true,attributes:true,attributeFilter:[t]}),a=new ResizeObserver(()=>{l();}),a.observe(e),{update:()=>{c(),s.update();},forceUpdate:()=>{c(),s.forceUpdate();},destroy:()=>{u&&clearTimeout(u),i?.disconnect(),a?.disconnect(),s.destroy();}}}var Ze=class{constructor(e,t={}){this._velocity=0;this._subscribers=new Set;this._eventListeners=new Map;this._springValue=null;this._isAnimating=false;this._destroyed=false;this._checkEndRafId=null;this._value=e,this._springConfig=t.spring??{stiffness:100,damping:15},typeof e=="number"&&(this._springValue=O(e,{...this._springConfig,onUpdate:r=>{this._destroyed||(this._value=r,this._velocity=this._springValue?.getVelocity()??0,this._notify());}}));}get(){return this._value}getVelocity(){return this._velocity}isAnimating(){return this._isAnimating}isDestroyed(){return this._destroyed}set(e,t=true){if(!this._destroyed)if(this._checkEndRafId!==null&&(cancelAnimationFrame(this._checkEndRafId),this._checkEndRafId=null),typeof e=="number"&&this._springValue&&t){this._isAnimating=true,this._emit("animationStart"),this._springValue.set(e);let r=e,o=()=>{if(this._destroyed){this._checkEndRafId=null;return}let s=Math.abs(this._springValue?.getVelocity()??0),i=this._springValue?.get()??0,a=s<.01,u=Math.abs(i-r)<.01;a||u?(this._isAnimating=false,this._checkEndRafId=null,this._emit("animationEnd")):this._isAnimating?this._checkEndRafId=requestAnimationFrame(o):this._checkEndRafId=null;};this._checkEndRafId=requestAnimationFrame(o);}else this._value=e,this._velocity=0,this._notify();}jump(e){this._destroyed||(this._value=e,this._velocity=0,typeof e=="number"&&this._springValue&&this._springValue.jump(e),this._isAnimating=false,this._notify());}stop(){this._checkEndRafId!==null&&(cancelAnimationFrame(this._checkEndRafId),this._checkEndRafId=null),this._springValue&&this._springValue.stop(),this._isAnimating=false,this._emit("animationEnd");}subscribe(e){return this._subscribers.add(e),e(this._value),()=>{this._subscribers.delete(e);}}on(e,t){return this._eventListeners.has(e)||this._eventListeners.set(e,new Set),this._eventListeners.get(e).add(t),()=>{this._eventListeners.get(e)?.delete(t);}}setConfig(e){this._springConfig={...this._springConfig,...e},this._springValue&&this._springValue.setConfig(e);}destroy(){this._destroyed=true,this._checkEndRafId!==null&&(cancelAnimationFrame(this._checkEndRafId),this._checkEndRafId=null),this._subscribers.clear(),this._eventListeners.clear(),this._springValue&&(this._springValue.destroy(),this._springValue=null);}_notify(){this._subscribers.forEach(e=>{try{e(this._value);}catch(t){console.error("MotionValue subscriber error:",t);}}),this._emit("change");}_emit(e){this._eventListeners.get(e)?.forEach(t=>{try{t();}catch(r){console.error(`MotionValue ${e} listener error:`,r);}});}};function $(n,e){return new Ze(n,e)}function Ln(n,e){let t=new Ze(e(n.get())),r=n.subscribe(s=>{t.jump(e(s));}),o=t.destroy.bind(t);return t.destroy=()=>{r(),o();},t}function Or(n,e,t,r={}){let[o,s]=e,[i,a]=t,u=s-o;return Ln(n,c=>{if(u===0)return i;let l=(c-o)/u;return r.clamp&&(l=Math.max(0,Math.min(1,l))),i+l*(a-i)})}function Le(n){let e=n.getBoundingClientRect();return {x:e.left+window.scrollX,y:e.top+window.scrollY,width:e.width,height:e.height}}function An(n,e,t,r={}){let{config:o={},position:s=true,size:i=true,onComplete:a,onUpdate:u}=r,c=e.x-t.x,l=e.y-t.y,f=t.width===0?1:e.width/t.width,g=t.height===0?1:e.height/t.height,p=0,m=false,d=false,h=null,b=null,y=null,v=O(0,o),S=n.style.transform,R=n.style.transformOrigin;i&&(n.style.transformOrigin="0 0");let C=x=>{p=x;let M=1-x,P=[];if(s&&P.push(`translate(${c*M}px, ${l*M}px)`),i&&(f!==1||g!==1)){let w=1+(f-1)*M,F=1+(g-1)*M;P.push(`scale(${w}, ${F})`);}n.style.transform=P.length>0?P.join(" "):"";try{u?.(x);}catch(w){console.error("[SpringKit] FLIP onUpdate error:",w);}};C(0);let T=()=>{n.style.transform=S,n.style.transformOrigin=R;};return {play:async()=>{if(!d)return m=true,new Promise(x=>{y=x;let M=v.subscribe(w=>{if(d){M(),y=null,x();return}C(w);});v.set(1);let P=()=>{if(h=null,d){M(),T(),y=null,x();return}if(v.isAnimating())h=requestAnimationFrame(P);else {m=false,M(),T();try{a?.();}catch(w){console.error("[SpringKit] FLIP onComplete error:",w);}y=null,x();}};b=setTimeout(()=>{b=null,P();},16);})},getProgress:()=>p,cancel:()=>{d=true,m=false,h!==null&&(cancelAnimationFrame(h),h=null),b!==null&&(clearTimeout(b),b=null),v.stop(),T(),y&&(y(),y=null);},isAnimating:()=>m}}async function _t(n,e,t={}){let r=Le(n);await e(),n.offsetHeight;let o=Le(n);await An(n,r,o,t).play();}function Fr(n,e){let t=Object.keys(n),r=Object.keys(e);if(t.length!==r.length)return  false;for(let o of t)if(n[o]!==e[o])return  false;return  true}function qt(n,e={}){let t=useRef(null),r=useRef(false),o=useRef(e),s=useRef(n);o.current=e,(!t.current||t.current.isDestroyed())&&(t.current=re(n,e),s.current=n);let i=useCallback(()=>{let c=t.current;return c?c.get():n},[]),[a,u]=useState(i);return useEffect(()=>{r.current=true;let c=t.current;if(!c)return;let l=c.subscribe(f=>{r.current&&u(f);});return ()=>{r.current=false,l();}},[]),useEffect(()=>{let c=t.current;c&&(Fr(n,s.current)||(s.current=n,c.set(n,o.current)));}),useEffect(()=>()=>{t.current?.destroy(),t.current=null;},[]),a}function Hr(n,e={}){let t=useRef(null);return (!t.current||t.current.isDestroyed())&&(t.current=O(n,e)),useEffect(()=>()=>t.current?.destroy(),[]),t.current}function Yr(n,e,t={}){let r=useRef([]),o=useRef(false),s=useRef(e);s.current=e;let i=useCallback(()=>{let c=[];for(let l=0;l<n;l++){let f=s.current(l);c.push(f.from??f.values);}return c},[n]),[a,u]=useState(i);return useEffect(()=>{o.current=true,r.current.forEach(f=>f?.destroy()),r.current=[];let c=[],l=[];for(let f=0;f<n;f++){let g=s.current(f),p=g.from??g.values,m=re(p,{...t,...g.config});r.current.push(m);let d=f,h=m.subscribe(y=>{o.current&&u(v=>{let S=v[d],R=y,C=false;if(S){for(let x in R)if(R[x]!==S[x]){C=true;break}}else C=true;if(!C)return v;let T=[...v];return T[d]=R,T});});l.push(h);let b=setTimeout(()=>{m.set(g.values);},g.delay??0);c.push(b);}return ()=>{o.current=false,l.forEach(f=>f()),c.forEach(clearTimeout),r.current.forEach(f=>f?.destroy());}},[n,t]),a}function _r(n,e,t={}){let r=useRef(null),o=useRef(false),[s,i]=useState(()=>Array.from({length:n},()=>({...e}))),a=useRef(true),u=useRef(JSON.stringify(e)),c=useRef([]);return useEffect(()=>{o.current=true;let l=Object.keys(e),f=new Map,g=r.current;l.forEach(m=>{let d=[],h=e[m],b=g?.get(m);for(let y=0;y<n;y++){let v=b?.[y],S=v&&!v.isDestroyed()?v:O(h,t);d.push(S);}f.set(m,d);}),r.current=f;let p=[];return f.forEach((m,d)=>{m.forEach((h,b)=>{let y=h.subscribe(()=>{o.current&&i(v=>{let S=[...v];S[b]||(S[b]={...e});let R={...S[b]};return f.forEach((C,T)=>{R[T]=C[b].get();}),S[b]=R,S});});p.push(y);});}),()=>{o.current=false,p.forEach(m=>m()),f.forEach(m=>{m.forEach(d=>d.destroy());}),f.clear(),r.current=null;}},[n,t.stiffness,t.damping,t.mass]),useEffect(()=>{if(!r.current)return;let l=JSON.stringify(e);if(a.current){a.current=false,u.current=l;return}if(l===u.current)return;u.current=l;let f=Object.keys(e),g=50;return c.current.forEach(clearTimeout),c.current=[],f.forEach(p=>{let m=r.current?.get(p);if(!m)return;let d=e[p];m.forEach((h,b)=>{let y=setTimeout(()=>{h.set(d,t);},b*g);c.current.push(y);});}),()=>{c.current.forEach(clearTimeout),c.current=[];}},[JSON.stringify(e),t.stiffness,t.damping]),s}function qr(n={}){let e=useRef(null),t=useRef({x:0,y:0}),[r,o]=useState(null),[s,i]=useState(false),[,a]=useState({}),u=useRef(n),c=useRef(null),l=useRef(false);u.current=n;let f=d=>{o(d);},g=()=>{c.current===null&&(c.current=requestAnimationFrame(()=>{c.current=null,l.current&&(l.current=false,a({}));}));};useEffect(()=>{let d=true;return e.current&&(e.current.destroy(),e.current=null),c.current!==null&&(cancelAnimationFrame(c.current),c.current=null),r&&(e.current=kt(r,{...u.current,onDragStart:h=>{d&&(i(true),u.current.onDragStart?.(h));},onDragEnd:(h,b,y)=>{d&&(i(false),u.current.onDragEnd?.(h,b,y));},onUpdate:(h,b)=>{d&&(t.current={x:h,y:b},l.current=true,g(),u.current.onUpdate?.(h,b));}})),()=>{d=false,e.current?.destroy(),e.current=null,c.current!==null&&(cancelAnimationFrame(c.current),c.current=null);}},[r]);let p=d=>{let h=d.x??t.current.x,b=d.y??t.current.y,y=Number.isFinite(h)?h:t.current.x,v=Number.isFinite(b)?b:t.current.y;e.current?.setPosition(y,v);},m=()=>{e.current?.reset(),t.current={x:0,y:0},a({});};return [t.current,{ref:f,set:p,reset:m,isDragging:s}]}function Wr(n){let e=useRef({isDragging:false,startX:0,startY:0,currentX:0,currentY:0});return {onPointerDown:i=>{e.current={isDragging:true,startX:i.clientX,startY:i.clientY,currentX:i.clientX,currentY:i.clientY};try{n.onDragStart?.(i);}catch(a){console.error("[SpringKit] Gesture onDragStart error:",a);}},onPointerMove:i=>{if(!e.current.isDragging)return;let a=i.clientX-e.current.startX,u=i.clientY-e.current.startY;try{n.onDrag?.({x:a,y:u});}catch(c){console.error("[SpringKit] Gesture onDrag error:",c);}e.current.currentX=i.clientX,e.current.currentY=i.clientY;},onPointerUp:()=>{e.current.isDragging=false;},onPointerCancel:()=>{e.current.isDragging=false;}}}var me=createContext(null);me.displayName="PresenceContext";function Zr(){let n=useContext(me);return n===null?[true,()=>{}]:[n.isPresent,n.safeToRemove]}function Qr(){let n=useContext(me);return n===null?true:n.isPresent}function Jr(){return useContext(me)?.custom}function eo(){let n=useRef(null),e=useRef(new Map),t=useRef(new Map),r=useRef(false),o=useRef([]),s=useRef(new Set),i=useRef(new Set),a=useRef(false);useEffect(()=>{a.current=false;},[]);useCallback((g,p)=>null,[]);let c=useCallback(()=>{let g=n.current;if(!g)return;let p=[],m={};t.current.forEach((d,h)=>{switch(h){case "x":p.push(`translateX(${d}px)`);break;case "y":p.push(`translateY(${d}px)`);break;case "z":p.push(`translateZ(${d}px)`);break;case "scale":p.push(`scale(${d})`);break;case "scaleX":p.push(`scaleX(${d})`);break;case "scaleY":p.push(`scaleY(${d})`);break;case "rotate":case "rotateZ":p.push(`rotate(${d}deg)`);break;case "rotateX":p.push(`rotateX(${d}deg)`);break;case "rotateY":p.push(`rotateY(${d}deg)`);break;case "opacity":m.opacity=String(d);break;default:m[h]=`${d}px`;}}),p.length>0&&(g.style.transform=p.join(" ")),Object.entries(m).forEach(([d,h])=>{g.style.setProperty(d,h);});},[]),l=useCallback(async(g,p={})=>{let{config:m={},delay:d=0,onComplete:h}=p;try{if(d>0&&await new Promise(y=>{let v=setTimeout(()=>{i.current.delete(v),y();},d);i.current.add(v);}),a.current)return;r.current=!0;let b=[];for(let[y,v]of Object.entries(g)){let S=Array.isArray(v)?v:[v],R=Promise.resolve();for(let C of S)R=R.then(()=>new Promise(T=>{if(a.current){T();return}try{let x=e.current.get(y);if(!x){x=O(t.current.get(y)??0,m),e.current.set(y,x);let w=x.subscribe(F=>{a.current||(t.current.set(y,F),c());});o.current.push(w);}(m.stiffness||m.damping||m.mass)&&x.setConfig(m),x.set(C);let M=null,P=()=>{M!==null&&s.current.delete(M),a.current||!x||!x.isAnimating()?T():(M=requestAnimationFrame(P),s.current.add(M));};M=requestAnimationFrame(P),s.current.add(M);}catch(x){console.error("[SpringKit] Animation failed:",x),T();}}));b.push(R);}await Promise.all(b),a.current||(r.current=!1,h?.());}catch(b){console.error("[SpringKit] animate() error:",b),r.current=false;}},[c]),f={stop:useCallback(()=>{e.current.forEach(g=>{g.stop();}),r.current=false;},[]),get:useCallback(g=>t.current.get(g),[]),isAnimating:useCallback(()=>r.current,[])};return useEffect(()=>{let g=s.current,p=i.current,m=o.current,d=e.current;return ()=>{a.current=true,g.forEach(h=>cancelAnimationFrame(h)),g.clear(),p.forEach(h=>clearTimeout(h)),p.clear(),m.forEach(h=>h()),d.forEach(h=>h.destroy()),d.clear();}},[]),[n,l,f]}function kn(n,e){let t=useRef(null);return (t.current===null||t.current.isDestroyed())&&(t.current=$(n,e)),useEffect(()=>()=>{t.current?.destroy();},[]),t.current}function no(n){let[e,t]=useState(()=>n?.get());return useEffect(()=>n?(t(n.get()),n.subscribe(o=>{t(o);})):void 0,[n]),e}function ro(n,e){let t=kn(n,e);return useEffect(()=>{t.set(n);},[n,t]),t}function oo(n,e){let t=useRef(null);if(t.current===null||Object.values(t.current).some(o=>o.isDestroyed())){let o={};for(let s in n)if(Object.prototype.hasOwnProperty.call(n,s)){let i=n[s];o[s]=$(i,e);}t.current=o;}return useEffect(()=>()=>{if(t.current){let o=t.current;for(let s in o)Object.prototype.hasOwnProperty.call(o,s)&&o[s].destroy();}},[]),t.current}function so(n){let e=useRef(null),t=useRef(null),r=useRef(0),o=useRef(false);return (e.current===null||e.current.isDestroyed())&&(e.current=$(n.getVelocity())),useEffect(()=>{let s=()=>{if(o.current)return;o.current=true;let a=()=>{if(!o.current)return;let u=n.getVelocity();Math.abs(u-r.current)>.001&&(e.current?.jump(u),r.current=u),n.isAnimating()||Math.abs(u)>.001?t.current=requestAnimationFrame(a):(o.current=false,t.current=null);};t.current=requestAnimationFrame(a);},i=n.on("animationStart",s);return n.isAnimating()&&s(),()=>{i(),o.current=false,t.current&&(cancelAnimationFrame(t.current),t.current=null);}},[n]),useEffect(()=>()=>{e.current?.destroy();},[]),e.current}function ao(n,e,t){let r=useRef(t);r.current=t,useEffect(()=>e==="change"?n.subscribe(o=>r.current(o)):n.on(e,()=>r.current(n.get())),[n,e]);}function Zt(n,e,t,r){let o=useRef(null),s=useRef(null),i=useMemo(()=>{if(typeof e=="function")return e;if(!t)throw new Error("useTransform: outputRange is required when using range mapping");let a=e;return typeof t[0]=="number"?u=>{let c=0;for(;c<a.length-1;c++){let d=a[c+1];if(d!==void 0&&u<=d)break}let l=a[c]??0,f=a[Math.min(c+1,a.length-1)]??1,g=t[c]??0,p=t[Math.min(c+1,t.length-1)]??1,m=f!==l?(u-l)/(f-l):0;return r?.ease&&(m=r.ease(m)),r?.clamp&&(m=Math.max(0,Math.min(1,m))),g+m*(p-g)}:u=>{let c=0;for(;c<a.length-1;c++){let p=a[c+1];if(p!==void 0&&u<=p)break}let l=a[c]??0,f=a[c+1]??1;return (f!==l?(u-l)/(f-l):0)<.5?t[c]:t[c+1]}},[e,t,r?.clamp,r?.ease]);return o.current===null&&(o.current=$(i(n.get()))),useEffect(()=>(s.current=n.subscribe(a=>{o.current?.jump(i(a));}),()=>{s.current?.();}),[n,i]),useEffect(()=>()=>{o.current?.destroy();},[]),o.current}function dt(n,e){let t=useRef(null),r=useRef([]),o=()=>n.map(s=>s.get());return t.current===null&&(t.current=$(e(o()))),useEffect(()=>(r.current=n.map(s=>s.subscribe(()=>{t.current?.jump(e(o()));})),()=>{r.current.forEach(s=>s());}),[n,e]),useEffect(()=>()=>{t.current?.destroy();},[]),t.current}function uo(n,e){let t=useRef(null),r=useRef(null),o=useRef(false);return (t.current===null||t.current.isDestroyed())&&(t.current=$(e(n.getVelocity()))),useEffect(()=>{let s=()=>{if(o.current)return;o.current=true;let a=()=>{if(!o.current)return;let u=n.getVelocity();t.current?.jump(e(u)),n.isAnimating()||Math.abs(u)>.001?r.current=requestAnimationFrame(a):(o.current=false,r.current=null);};r.current=requestAnimationFrame(a);},i=n.on("animationStart",s);return n.isAnimating()&&s(),()=>{i(),o.current=false,r.current&&(cancelAnimationFrame(r.current),r.current=null);}},[n,e]),useEffect(()=>()=>{t.current?.destroy();},[]),t.current}function co(n,e,t,r){let o=useRef(null),s=useRef(null),i=useMemo(()=>a=>{let u=0;for(;u<e.length-1;u++){let m=e[u+1];if(m!==void 0&&a<=m)break}let c=e[u]??0,l=e[u+1]??1,f=t[u]??0,g=t[u+1]??1,p=(a-c)/(l-c);return f+p*(g-f)},[e,t]);return o.current===null&&(o.current=$(i(n.get()),{spring:r})),useEffect(()=>(s.current=n.subscribe(a=>{o.current?.set(i(a));}),()=>{s.current?.();}),[n,i]),useEffect(()=>()=>{o.current?.destroy();},[]),o.current}function lo(n,...e){let t=useRef(null),r=useRef([]),o=useRef(e);o.current=e;let s=useRef(n);s.current=n;let i=useCallback(()=>{let u="";return s.current.forEach((c,l)=>{u+=c,l<o.current.length&&(u+=String(o.current[l]?.get()??""));}),u},[]);t.current===null&&(t.current=$(i()));let a=e.length;return useEffect(()=>(r.current.forEach(u=>u()),r.current=o.current.map(u=>u.subscribe(()=>{t.current?.jump(i());})),()=>{r.current.forEach(u=>u()),r.current=[];}),[a,i]),useEffect(()=>()=>{t.current?.destroy();},[]),t.current}function fo(){let n=useRef(null),e=useRef(null),t=useRef(null);return n.current===null&&(n.current=$(0)),useEffect(()=>{let r=true,o=s=>{if(!r)return;t.current===null&&(t.current=s);let i=s-t.current;n.current?.jump(i),e.current=requestAnimationFrame(o);};return e.current=requestAnimationFrame(o),()=>{r=false,e.current&&cancelAnimationFrame(e.current);}},[]),useEffect(()=>()=>{n.current?.destroy();},[]),n.current}function mo(n){let e=useRef(n),t=useRef(null),r=useRef(null);e.current=n,useEffect(()=>{let o=s=>{let i=r.current!==null?s-r.current:0;r.current=s,e.current(s,i),t.current=requestAnimationFrame(o);};return t.current=requestAnimationFrame(o),()=>{t.current&&cancelAnimationFrame(t.current);}},[]);}function po(n,e=["transform","opacity"]){let t=useRef(null),r=useRef(null),o=useRef(false),s=useRef(false),i=useRef(n);i.current=n;let a=useRef(e);a.current=e,t.current===null&&(t.current=$("auto"));let u=n.length;return useEffect(()=>{s.current=false;let c=()=>{if(s.current)return;let l=i.current.some(f=>f.isAnimating());l&&!o.current?(t.current?.jump(a.current.join(", ")),o.current=true):!l&&o.current&&(t.current?.jump("auto"),o.current=false),s.current||(r.current=requestAnimationFrame(c));};return r.current=requestAnimationFrame(c),()=>{s.current=true,r.current&&(cancelAnimationFrame(r.current),r.current=null);}},[u]),useEffect(()=>()=>{t.current?.destroy();},[]),t.current}function go(...n){return dt(n,e=>e.reduce((t,r)=>t+r,0))}function ho(...n){return dt(n,e=>e.reduce((t,r)=>t*r,1))}function bo(n,e){return dt([n,e],([t,r])=>t-r)}function yo(n,e,t){return Zt(n,r=>Math.max(e,Math.min(t,r)))}function vo(n,e){return Zt(n,t=>Math.round(t/e)*e)}function xo(n,e=.1){let t=useRef(null),r=useRef(n.get());return t.current===null&&(t.current=$(n.get())),useEffect(()=>n.subscribe(s=>{r.current=r.current+(s-r.current)*e,t.current?.jump(r.current);}),[n,e]),useEffect(()=>()=>{t.current?.destroy();},[]),t.current}function So(n,e){let t=useRef(null),r=useRef([]);return t.current===null&&(t.current=$(n.get()),r.current=Array(e).fill(n.get())),useEffect(()=>n.subscribe(s=>{r.current.push(s);let i=r.current.shift();i!==void 0&&t.current?.jump(i);}),[n,e]),useEffect(()=>()=>{t.current?.destroy();},[]),t.current}function Ro(){let n=useRef(false),e=useRef(null),t=useRef(null),r=useCallback((a,u)=>{if(n.current=true,a.preventDefault(),e.current){let c="nativeEvent"in a?a.nativeEvent:a;e.current(c,u);}},[]),o=useCallback(()=>{n.current=false,t.current&&t.current();},[]),s=useCallback(()=>n.current,[]);return {start:r,stop:o,isDragging:s,_setDragHandler:a=>{e.current=a;},_setStopHandler:a=>{t.current=a;},_notifyDragEnd:()=>{n.current=false;}}}function Co(){let[n,e]=useTransition();return [useCallback(r=>{startTransition(()=>{r();});},[]),n]}function Eo(){let[,n]=useState(0);return useCallback(()=>{n(e=>e+1);},[])}function wo(){let n=useRef(null),e=useCallback(o=>{o&&(n.current=o.getBoundingClientRect());},[]),t=useCallback(o=>o?o.getBoundingClientRect():null,[]),r=useCallback(o=>{if(!o||!n.current)return {x:0,y:0,scaleX:1,scaleY:1};let s=o.getBoundingClientRect(),i=n.current;return {x:i.left-s.left,y:i.top-s.top,scaleX:i.width/s.width,scaleY:i.height/s.height}},[]);return {measureBefore:e,measureAfter:t,getLayoutDelta:r}}var K=typeof window<"u",Un=!K,Z=K?useLayoutEffect:useEffect;function Io(){return !!Un}function Oo(n){return K&&typeof requestAnimationFrame<"u"?requestAnimationFrame(n):0}function Do(n){K&&typeof cancelAnimationFrame<"u"&&cancelAnimationFrame(n);}function ko(n={}){let{once:e=false,amount:t="some",margin:r="0px",root:o}=n,s=useRef(null),[i,a]=useState(false),[u,c]=useState(),l=useRef(false);return useEffect(()=>{if(!K)return;let f=s.current;if(!f||e&&l.current)return;let g;t==="some"?g=0:t==="all"?g=1:g=t;let p=new IntersectionObserver(m=>{let[d]=m;if(d){let h=d.isIntersecting;c(d),a(h),h&&e&&(l.current=true,p.disconnect());}},{root:o?.current??null,rootMargin:r,threshold:g});return p.observe(f),()=>{p.disconnect();}},[e,t,r,o]),{ref:s,inView:i,entry:u}}function Fo(n,e={}){let t=useRef(null),r=useRef(n),o=useRef(false);r.current=n;let{once:s=false,amount:i="some",margin:a="0px",root:u}=e;return useEffect(()=>{if(!K)return;let c=t.current;if(!c||s&&o.current)return;let l;i==="some"?l=0:i==="all"?l=1:l=i;let f=new IntersectionObserver(g=>{let[p]=g;p?.isIntersecting&&(r.current(p),s&&(o.current=true,f.disconnect()));},{root:u?.current??null,rootMargin:a,threshold:l});return f.observe(c),()=>f.disconnect()},[s,i,a,u]),t}function Uo(n={}){let e=useRef(new Map),[t,r]=useState(new Map),o=useRef(null),{once:s=false,amount:i="some",margin:a="0px",root:u}=n;return useEffect(()=>{if(!K)return;let f;return i==="some"?f=0:i==="all"?f=1:f=i,o.current=new IntersectionObserver(g=>{r(p=>{let m=new Map(p);return g.forEach(d=>{let h=d.target.dataset.inviewId;h&&(m.set(h,d.isIntersecting),d.isIntersecting&&s&&o.current?.unobserve(d.target));}),m});},{root:u?.current??null,rootMargin:a,threshold:f}),e.current.forEach(g=>{o.current?.observe(g);}),()=>{o.current?.disconnect();}},[s,i,a,u]),{setRef:(f,g)=>{if(g)g.dataset.inviewId=f,e.current.set(f,g),o.current?.observe(g);else {let p=e.current.get(f);p&&(o.current?.unobserve(p),e.current.delete(f),r(m=>{let d=new Map(m);return d.delete(f),d}));}},getInView:f=>t.get(f)??false,inViewMap:t}}function $o(n={}){let{target:e,container:t,offset:r=["start start","end end"],axis:o="y"}=n,s=useRef(null),i=useRef(null),a=useRef(null),u=useRef(null);return (s.current===null||s.current.isDestroyed())&&(s.current=$(0),i.current=$(0),a.current=$(0),u.current=$(0)),useEffect(()=>{if(!K)return;let c=s.current,l=i.current,f=a.current,g=u.current,p=t?.current??e?.current??window,m=p===window,d=()=>{if(m)return {x:window.scrollX||window.pageXOffset,y:window.scrollY||window.pageYOffset};let T=p;return {x:T.scrollLeft,y:T.scrollTop}},h=()=>{if(m)return {width:document.documentElement.scrollWidth-window.innerWidth,height:document.documentElement.scrollHeight-window.innerHeight};let T=p;return {width:T.scrollWidth-T.clientWidth,height:T.scrollHeight-T.clientHeight}},b=()=>{let T=d(),x=h();c.jump(T.x),l.jump(T.y),f.jump(x.width>0?T.x/x.width:0),g.jump(x.height>0?T.y/x.height:0);},y=()=>{let T=e?.current;if(!T){b();return}let x=d();c.jump(x.x),l.jump(x.y);let M=T.getBoundingClientRect(),P=window.innerHeight,[F,k]=r,D=$n(F,M,P),N=$n(k,M,P),Q=o==="y"?M.top:M.left,ee=N-D,j=ee!==0?(D-Q)/ee:0,E=Math.max(0,Math.min(1,j));o==="y"?g.jump(E):f.jump(E);},v=null,S=true,R=()=>{v===null&&(v=requestAnimationFrame(()=>{S&&(e?.current?y():b(),v=null);}));};R();let C=m?window:p;return C.addEventListener("scroll",R,{passive:true}),window.addEventListener("resize",R,{passive:true}),()=>{S=false,C.removeEventListener("scroll",R),window.removeEventListener("resize",R),v!==null&&cancelAnimationFrame(v);}},[e,t,r,o]),useEffect(()=>()=>{s.current?.destroy(),i.current?.destroy(),a.current?.destroy(),u.current?.destroy();},[]),{scrollX:s.current,scrollY:i.current,scrollXProgress:a.current,scrollYProgress:u.current}}function $n(n,e,t,r,o){let s=n.split(" "),i=s[0]||"start",a=s[1]||"start",u;i==="start"?u=e.top:i==="center"?u=e.top+e.height/2:i==="end"?u=e.bottom:i.endsWith("px")?u=e.top+parseFloat(i):i.endsWith("%")?u=e.top+e.height*parseFloat(i)/100:u=e.top;let c;return a==="start"?c=0:a==="center"?c=t/2:a==="end"?c=t:a.endsWith("px")?c=parseFloat(a):a.endsWith("%")?c=t*parseFloat(a)/100:c=0,c-u}function Ho(n="y"){let e=useRef(null),t=useRef(0),r=useRef(Date.now());return (e.current===null||e.current.isDestroyed())&&(e.current=$(0)),useEffect(()=>{if(!K)return;let o=e.current,s=()=>{let i=Date.now(),a=n==="y"?window.scrollY||window.pageYOffset:window.scrollX||window.pageXOffset,u=i-r.current,c=a-t.current;u>0&&o.jump(c/u*1e3),t.current=a,r.current=i;};return window.addEventListener("scroll",s,{passive:true}),()=>{window.removeEventListener("scroll",s);}},[n]),useEffect(()=>()=>{e.current?.destroy();},[]),e.current}function nn(n={}){let{hover:e=true,press:t=true,focus:r=true,drag:o=false}=n,s=useRef(null),[i,a]=useState({isHovered:false,isPressed:false,isFocused:false,isDragging:false}),u={...e&&{onMouseEnter:()=>a(c=>({...c,isHovered:true})),onMouseLeave:()=>a(c=>({...c,isHovered:false,isPressed:false}))},...t&&{onMouseDown:()=>a(c=>({...c,isPressed:true})),onMouseUp:()=>a(c=>({...c,isPressed:false})),onTouchStart:()=>a(c=>({...c,isPressed:true})),onTouchEnd:()=>a(c=>({...c,isPressed:false}))},...r&&{onFocus:()=>a(c=>({...c,isFocused:true})),onBlur:()=>a(c=>({...c,isFocused:false}))},...o&&{onDragStart:()=>a(c=>({...c,isDragging:true})),onDragEnd:()=>a(c=>({...c,isDragging:false}))}};return useEffect(()=>{if(!t||!K)return;let c=()=>{a(l=>l.isPressed?{...l,isPressed:false}:l);};return window.addEventListener("mouseup",c),window.addEventListener("touchend",c),()=>{window.removeEventListener("mouseup",c),window.removeEventListener("touchend",c);}},[t]),{ref:s,...i,handlers:u}}function jo(){let n=useRef(null),[e,t]=useState(false);return {ref:n,isHovered:e,handlers:{onMouseEnter:()=>t(true),onMouseLeave:()=>t(false)}}}function Xo(){let n=useRef(null),[e,t]=useState(false),r={onMouseDown:()=>t(true),onMouseUp:()=>t(false),onMouseLeave:()=>t(false),onTouchStart:()=>t(true),onTouchEnd:()=>t(false)};return useEffect(()=>{if(!K)return;let o=()=>t(false);return window.addEventListener("mouseup",o),window.addEventListener("touchend",o),()=>{window.removeEventListener("mouseup",o),window.removeEventListener("touchend",o);}},[]),{ref:n,isPressed:e,handlers:r}}function Go(){let n=useRef(null),[e,t]=useState(false);return {ref:n,isFocused:e,handlers:{onFocus:()=>t(true),onBlur:()=>t(false)}}}function Yo(){let{ref:n,isHovered:e,isPressed:t,isFocused:r,handlers:o}=nn({hover:true,press:true,focus:true});return {ref:n,isHovered:e,isPressed:t,isFocused:r,activeState:t?"pressed":e?"hovered":r?"focused":"default",handlers:o}}function No(n){let{ref:e,isHovered:t,isPressed:r,isFocused:o,handlers:s}=nn({hover:!!n.hover,press:!!n.press,focus:!!n.focus}),i={...n.default};return o&&n.focus&&Object.assign(i,n.focus),t&&n.hover&&Object.assign(i,n.hover),r&&n.press&&Object.assign(i,n.press),{ref:e,handlers:s,isHovered:t,isPressed:r,isFocused:o,...i}}function yt(){let[n,e]=useState(false);return useEffect(()=>{if(!K)return;let t=window.matchMedia("(prefers-reduced-motion: reduce)");e(t.matches);let r=o=>{e(o.matches);};return t.addEventListener?(t.addEventListener("change",r),()=>t.removeEventListener("change",r)):(t.addListener(r),()=>t.removeListener(r))},[]),n}function qo(){return K?window.matchMedia("(prefers-reduced-motion: reduce)").matches:false}function zo(n){return yt()?n.reduced:n.default}function Wo(){return !yt()}function Ko(n,e){return yt()?e:n}function Zo(n={}){let{target:e,offset:t,smooth:r}=n,[o,s]=useState(0),[i,a]=useState({progress:0,scrollY:0,velocity:0,direction:0,isInView:true,visibleRatio:1}),u=useRef(null);return Z(()=>{let c=e?.current??null,l=Ut(c,{offset:t,smooth:r});u.current=l;let f=l.subscribe(g=>{s(g.progress),a(g);});return ()=>{f(),l.destroy();}},[e?.current,t?.[0],t?.[1],r]),{progress:o,info:i,scrollProgress:u.current}}function Qo(n={}){let e=useRef(null),[t,r]=useState(0);return Z(()=>{if(!e.current)return;let o=$t(e.current,n),s=null,i=true,a=()=>{i&&(r(o.getOffset()),s=requestAnimationFrame(a));};return s=requestAnimationFrame(a),()=>{i=false,s!==null&&cancelAnimationFrame(s),o.destroy();}},[n.speed,n.direction,n.rootMargin]),{ref:e,offset:t}}function Jo(n={}){let e=useRef(null),[t,r]=useState(false),[o,s]=useState(0),[i,a]=useState(false);return Z(()=>{if(!e.current)return;let u=Ht(e.current,{...n,onEnter:()=>a(true),onProgress:c=>{r(c.progress>0&&c.progress<1),s(c.progress);}});return ()=>u.destroy()},[n.start,n.end,n.startOffset,n.endOffset,n.once,n.scrub]),{ref:e,isActive:t,progress:o,hasEntered:i}}function ei(n,e){let[t,r]=useState(e.outputRange[0]??0);return Z(()=>{if(!n)return;let o=jt(n,e),s=o.subscribe(i=>{r(i);});return ()=>{s(),o.destroy();}},[n,e.inputRange,e.outputRange,e.clamp,e.smooth]),t}function ni(n={}){let e=useRef(null);Z(()=>{let l=Xt(n);return e.current=l,()=>{l.kill();}},[]);let t=useCallback(()=>{e.current?.play();},[]),r=useCallback(()=>{e.current?.pause();},[]),o=useCallback(()=>{e.current?.resume();},[]),s=useCallback(()=>{e.current?.reverse();},[]),i=useCallback(()=>{e.current?.restart();},[]),a=useCallback(l=>{e.current?.seek(l);},[]),u=useCallback(()=>{e.current?.kill();},[]);return useMemo(()=>{let l={timeline:e.current,play:t,pause:r,resume:o,reverse:s,restart:i,seek:a,kill:u,get isPlaying(){return e.current?.isPlaying()??false},get isPaused(){return !(e.current?.isPlaying()??false)},get progress(){return e.current?.progress()??0},to:(f,g,p)=>(e.current?.to(f,g,p),l),from:(f,g,p)=>(e.current?.from(f,g,p),l),fromTo:(f,g,p,m)=>(e.current?.fromTo(f,g,p,m),l),addLabel:(f,g)=>(e.current?.addLabel(f,g),l)};return l},[t,r,o,s,i,a,u])}function ri(n){let e=useRef(0),t=useRef(false),r=useRef(true),o=useRef(false);return Z(()=>{if(!n)return;let s=()=>{e.current=n.progress(),t.current=n.isPlaying(),r.current=!n.isPlaying(),o.current=n.isReversed();};s();let i=null,a=true,u=()=>{a&&(s(),i=requestAnimationFrame(u));};return i=requestAnimationFrame(u),()=>{a=false,i!==null&&(cancelAnimationFrame(i),i=null);}},[n]),{get progress(){return e.current},get isPlaying(){return t.current},get isPaused(){return r.current},get isReversed(){return o.current}}}function oi(n,e={}){let[t,r]=useState(n),[o,s]=useState(0),i=useRef(null),a=useRef(false),u=useRef(e);u.current=e,Z(()=>{a.current=true;let f=u.current,g=Ke(n,{...f,onProgress:m=>{a.current&&(s(m),f.onProgress?.(m));}}),p=g.subscribe(m=>{a.current&&r(m);});return i.current=g,()=>{a.current=false,p(),g.destroy();}},[n]);let c=useCallback(f=>{i.current?.morphTo(f);},[]),l=useCallback(f=>{i.current?.setProgress(f);},[]);return {path:t,progress:o,morphTo:c,setProgress:l,controller:i.current}}function ii(n,e={}){let[t,r]=useState(n[0]??""),[o,s]=useState(0),i=useRef(false),a=useRef(null),u=useRef(e);u.current=e;let c=n.join("|");Z(()=>{if(n.length===0)return;i.current=true;let p=Gt(n,u.current),m=p.subscribe(d=>{i.current&&(r(d),s(p.getCurrentIndex()));});return a.current=p,()=>{i.current=false,m(),p.destroy();}},[c]);let l=useCallback(p=>{a.current?.morphToIndex(p);},[]),f=useCallback(()=>{a.current?.morphToNext();},[]),g=useCallback(()=>{a.current?.morphToPrevious();},[]);return {path:t,currentIndex:o,morphToIndex:l,morphToNext:f,morphToPrevious:g}}function si(n,e={}){let[t,r]=useState(0),o=useRef(null),s=useRef(null),i=useRef(null),a=useCallback(l=>{if(i.current?.(),i.current=null,!l){o.current?.destroy(),o.current=null,s.current=null;return}s.current=l;let f=Ke(n,{...e,onProgress:g=>{r(g),e.onProgress?.(g);}});i.current=f.subscribe(g=>{l.setAttribute("d",g);}),o.current=f;},[n]),u=useCallback(l=>{o.current?.morphTo(l);},[]),c=useCallback(l=>{o.current?.setProgress(l);},[]);return {pathRef:a,morphTo:u,setProgress:c,progress:t}}var Gn=createContext(null),Yn=createContext(null);function ai(n={}){let e=useRef(null);Z(()=>{let i=Ve(n);return e.current=i,()=>{i.destroy();}},[]);let t=useCallback((i,a)=>{e.current?.register(i,a);},[]),r=useCallback((i,a)=>{e.current?.unregister(i,a);},[]),o=useCallback(()=>{e.current?.update();},[]),s=useCallback(()=>{e.current?.forceUpdate();},[]);return {register:t,unregister:r,update:o,forceUpdate:s,layoutGroup:e.current}}function ui(n,e={}){let{group:t,...r}=e,o=useRef(null),s=useRef(null);Z(()=>{if(!t)return s.current=Ve(r),()=>{s.current?.destroy();}},[t]);let i=useCallback(u=>{let c=t??s.current;o.current&&c&&c.unregister(n,o.current),o.current=u,u&&c&&c.register(n,u);},[n,t]),a=useCallback(()=>{(t??s.current)?.update();},[t]);return {ref:i,update:a}}function ci(n={}){let e=useRef(null),t=useRef(null),r=useCallback(i=>{i&&(t.current=Le(i)),e.current=i;},[]),o=useCallback(async i=>{e.current&&(await _t(e.current,i??(()=>{}),n),t.current=Le(e.current));},[n]),s=useCallback(()=>e.current?Le(e.current):null,[]);return {ref:r,flip:o,measure:s}}function li(n={}){let e=useRef(null),t=useCallback(s=>{e.current&&(e.current.destroy(),e.current=null),s&&(e.current=Nt(n));},[]),r=useCallback(()=>{e.current?.update();},[]),o=useCallback(()=>{e.current?.forceUpdate();},[]);return {containerRef:t,update:r,forceUpdate:o}}function fi({children:n,config:e}){let t=useRef(null);return Z(()=>(t.current=Ve(e),()=>{t.current?.destroy();}),[]),it.createElement(Gn.Provider,{value:t.current},n)}function mi({children:n}){let e=useRef(null);return Z(()=>(e.current=Yt(),()=>{e.current?.destroy();}),[]),it.createElement(Yn.Provider,{value:e.current},n)}var sn=createContext({variant:void 0});function Nn(){return useContext(sn)}function hi(n){let{variants:e,animate:t,initial:r,custom:o,inherit:s=true,spring:i,onAnimationComplete:a}=n,u=Nn(),c=useRef(void 0),l=useRef(false),f=useMemo(()=>{if(typeof t=="string")return t;if(s&&u.variant)return u.variant},[t,s,u.variant]),g=useMemo(()=>r===false?$e(e,f,o).values:typeof r=="string"?$e(e,r,o).values:typeof r=="object"?r:{},[r,e,f,o]),p=useMemo(()=>typeof t=="object"?t:f&&e?$e(e,f,o).values:g,[t,f,e,o,g]),m=useMemo(()=>f&&e?$e(e,f,o).transition:u.transition||{},[f,e,o,u.transition]),d=useMemo(()=>u.staggerIndex!==void 0&&m.staggerChildren?u.staggerIndex*m.staggerChildren+(m.delayChildren||0):m.delay||0,[u.staggerIndex,m]),h=(T,x)=>{if(T===void 0)return x;if(typeof T=="number")return T;let M=parseFloat(T);return isNaN(M)?x:M},b=useCallback((T,x)=>({x:h(T.x??x?.x,0),y:h(T.y??x?.y,0),scale:T.scale??x?.scale??1,scaleX:T.scaleX??x?.scaleX??1,scaleY:T.scaleY??x?.scaleY??1,rotate:T.rotate??x?.rotate??0,opacity:T.opacity??x?.opacity??1}),[]),y=useMemo(()=>b(g),[g,b]),v=useMemo(()=>b(p,g),[p,g,b]),S=useRef(false),R=qt(S.current?v:y,{stiffness:i?.stiffness??m.spring?.stiffness??100,damping:i?.damping??m.spring?.damping??15,mass:i?.mass??m.spring?.mass??1});Z(()=>{S.current||(S.current=true);},[]),Z(()=>{if(f&&f!==c.current){c.current=f,l.current=true;let T=f,x=a,M=i?.damping??15,P=i?.mass??1,w=Math.max(200,Math.min(2e3,8*P/M*1e3)),F=d+w,k=setTimeout(()=>{l.current=false,x?.(T);},F);return ()=>clearTimeout(k)}},[f,d,a,i?.stiffness,i?.damping,i?.mass]);let C=useCallback(T=>{c.current=T;},[]);return {values:{...p,...R},setVariant:C,currentVariant:c.current,isAnimating:l.current}}function bi({children:n,variant:e,custom:t,transition:r}){let o=useMemo(()=>({variant:e,custom:t,transition:r}),[e,t,r]);return it.createElement(sn.Provider,{value:o},n)}function yi(n){let{count:e,staggerChildren:t=100,delayChildren:r=0,staggerDirection:o=1}=n,s=useMemo(()=>At(e,{staggerChildren:t,delayChildren:r,staggerDirection:o}),[e,t,r,o]),i=useCallback(u=>s[u]||0,[s]),a=useCallback(u=>({style:{transitionDelay:`${i(u)}ms`}}),[i]);return {getDelay:i,getChildProps:a,delays:s}}function vi(n,e={}){throw new Error("createMotionComponent is not yet implemented. Use useVariants hook or Animated component instead.")}function xi(n=0,e={}){let{initial:t=n,onChange:r,...o}=e,[s,i]=useState(t),a=useRef(null),u=useRef(null);(a.current===null||a.current.isDestroyed())&&(a.current=O(t,{...o,onUpdate:l=>{i(l),r?.(l);}})),(u.current===null||u.current.isDestroyed())&&(u.current=$(t)),useEffect(()=>{let l=a.current?.subscribe(f=>{u.current?.jump(f);});return ()=>l?.()},[]),useEffect(()=>()=>{a.current?.destroy(),a.current=null;},[]);let c=useCallback(l=>{a.current?.set(l);},[]);return [s,c,u.current]}function Si(n={}){let{friction:e=.95,minVelocity:t=.01,bounds:r,onRest:o}=n,s=useRef(null),i=useRef(null),a=useRef(null),u=useRef(false);(s.current===null||s.current.isDestroyed())&&(s.current=$(0)),(i.current===null||i.current.isDestroyed())&&(i.current=$(0));let c=useCallback(m=>{if(!r)return m;let d=m;return r.min!==void 0&&(d=Math.max(r.min,d)),r.max!==void 0&&(d=Math.min(r.max,d)),d},[r]),l=useCallback(()=>{if(!u.current)return;let m=i.current?.get()??0,d=s.current?.get()??0,h=m*e,b=c(d+h);if(s.current?.jump(b),i.current?.jump(h),Math.abs(h)<t){u.current=false,i.current?.jump(0),o?.();return}if(r&&(r.min!==void 0&&b<=r.min||r.max!==void 0&&b>=r.max)){u.current=false,i.current?.jump(0),o?.();return}a.current=requestAnimationFrame(l);},[e,t,r,c,o]),f=useCallback(m=>{Number.isFinite(m)&&(i.current?.jump(m),u.current=true,a.current&&cancelAnimationFrame(a.current),a.current=requestAnimationFrame(l));},[l]),g=useCallback(()=>{u.current=false,a.current&&cancelAnimationFrame(a.current),i.current?.jump(0);},[]),p=useCallback(m=>{Number.isFinite(m)&&s.current?.jump(c(m));},[c]);return useEffect(()=>()=>{a.current&&cancelAnimationFrame(a.current),u.current=false;},[]),{value:s.current,velocity:i.current,push:f,stop:g,set:p,isActive:()=>u.current}}function Ri(n={}){let{elasticity:e=.5,maxStretch:t=100,spring:r={stiffness:300,damping:30}}=n,o=useRef(null),s=useRef(null);(o.current===null||o.current.isDestroyed())&&(o.current=$(0)),(s.current===null||s.current.isDestroyed())&&(s.current=O(0,{...r,onUpdate:f=>o.current?.jump(f)}));let i=useRef(0),a=useCallback(f=>{let g=f>=0?1:-1,p=Math.abs(f),m=1-p/(t*2)*(1-e);return g*p*Math.max(.1,m)},[e,t]),u=useCallback(f=>{if(!Number.isFinite(f))return;i.current=f;let g=a(f);o.current?.jump(g);},[a]),c=useCallback(()=>{i.current=0,s.current?.set(0);},[]),l=useCallback(f=>{Number.isFinite(f)&&(i.current=f,s.current?.set(f));},[]);return useEffect(()=>()=>{s.current?.stop();},[]),{value:o.current,stretch:u,release:c,set:l,getRaw:()=>i.current}}function Ti(n={}){let{dampening:e=.02,gravity:t=.5,floor:r=300,ceiling:o=0,restitution:s=.7}=n,i=useRef(null);(i.current===null||i.current.isDestroyed())&&(i.current=$(o));let a=i.current,u=useRef(0),c=useRef(null),l=useRef(false),f=useCallback(()=>{if(!l.current)return;let d=a.get();u.current+=t,u.current*=1-e;let h=d+u.current;if(h>=r&&(h=r,u.current=-u.current*s,Math.abs(u.current)<.5)){l.current=false,u.current=0,a.jump(r);return}h<=o&&(h=o,u.current=-u.current*s),a.jump(h),c.current=requestAnimationFrame(f);},[a,t,e,r,o,s]),g=useCallback((d=o,h=0)=>{let b=Number.isFinite(d)?d:o,y=Number.isFinite(h)?h:0;a.jump(b),u.current=y,l.current=true,c.current&&cancelAnimationFrame(c.current),c.current=requestAnimationFrame(f);},[a,o,f]),p=useCallback(d=>{Number.isFinite(d)&&(u.current=d,l.current=true,c.current&&cancelAnimationFrame(c.current),c.current=requestAnimationFrame(f));},[f]),m=useCallback(()=>{l.current=false,c.current&&cancelAnimationFrame(c.current),u.current=0;},[]);return useEffect(()=>()=>{c.current&&cancelAnimationFrame(c.current),l.current=false;},[]),{value:a,drop:g,bounce:p,stop:m,isActive:()=>l.current,getVelocity:()=>u.current}}function Mi(n={}){let{gravity:e={x:0,y:.5},mass:t=1,drag:r=.01,bounds:o,bounciness:s=.7}=n,i=useRef(null),a=useRef(null);(i.current===null||i.current.isDestroyed())&&(i.current=$(0)),(a.current===null||a.current.isDestroyed())&&(a.current=$(0));let u=i.current,c=a.current,l=useRef({x:0,y:0}),f=useRef(null),g=useRef(false),p=useCallback(()=>{if(!g.current)return;let y=u.get(),v=c.get();l.current.x+=e.x,l.current.y+=e.y,l.current.x*=1-r,l.current.y*=1-r;let S=y+l.current.x,R=v+l.current.y;o&&(o.left!==void 0&&S<=o.left&&(S=o.left,l.current.x=-l.current.x*s),o.right!==void 0&&S>=o.right&&(S=o.right,l.current.x=-l.current.x*s),o.top!==void 0&&R<=o.top&&(R=o.top,l.current.y=-l.current.y*s),o.bottom!==void 0&&R>=o.bottom&&(R=o.bottom,l.current.y=-l.current.y*s,Math.abs(l.current.y)<.5&&Math.abs(l.current.x)<.1&&(l.current.y=0))),u.jump(S),c.jump(R);let C=Math.abs(l.current.x)+Math.abs(l.current.y),T=o?.bottom!==void 0&&Math.abs(R-o.bottom)<.5&&C<.01;C>.01||!T?f.current=requestAnimationFrame(p):g.current=false;},[u,c,e,r,o,s]),m=useCallback(y=>{let v=Number.isFinite(y.x)?y.x:0,S=Number.isFinite(y.y)?y.y:0;l.current={x:v,y:S},g.current=true,f.current&&cancelAnimationFrame(f.current),f.current=requestAnimationFrame(p);},[p]),d=useCallback(y=>{let v=Number.isFinite(y.x)?y.x:u.get(),S=Number.isFinite(y.y)?y.y:c.get();u.jump(v),c.jump(S);},[u,c]),h=useCallback(()=>{g.current=false,f.current&&cancelAnimationFrame(f.current),f.current=null,l.current={x:0,y:0};},[]),b=useCallback(()=>{g.current||(g.current=true,f.current&&cancelAnimationFrame(f.current),f.current=requestAnimationFrame(p));},[p]);return useEffect(()=>()=>{f.current&&cancelAnimationFrame(f.current),g.current=false;},[]),{x:u,y:c,launch:m,setPosition:d,stop:h,start:b,isActive:()=>g.current,getVelocity:()=>({...l.current})}}function Pi(n,e={}){let t=useRef({}),r=useRef({}),[o,s]=useState(-1),[i,a]=useState(false),u=useRef(null);useEffect(()=>{let p=new Set;n.forEach(d=>{Object.keys(d.to).forEach(h=>p.add(h));}),p.forEach(d=>{if(!t.current[d]||t.current[d].isDestroyed()){let h=e[d]??0;t.current[d]=$(h),r.current[d]=O(h,{onUpdate:b=>t.current[d]?.jump(b)});}});let m=r.current;return ()=>{Object.values(m).forEach(d=>d.destroy()),u.current&&clearTimeout(u.current);}},[]);let c=useCallback(p=>{if(p>=n.length){a(false),s(-1);return}let m=n[p];if(!m)return;let d=()=>{s(p),Object.entries(m.to).forEach(([b,y])=>{let v=r.current[b];v&&(m.config&&v.setConfig(m.config),v.set(y));});let h=m.config?.stiffness?Math.max(300,1e3/(m.config.stiffness/100)):500;u.current=window.setTimeout(()=>{c(p+1);},h);};m.delay&&m.delay>0?u.current=window.setTimeout(d,m.delay):d();},[n]),l=useCallback(()=>{i||(a(true),c(0));},[i,c]),f=useCallback(()=>{u.current&&clearTimeout(u.current),a(false),s(-1),Object.keys(t.current).forEach(p=>{let m=e[p]??0;r.current[p]?.jump(m);});},[e]),g=useCallback(()=>{u.current&&clearTimeout(u.current),a(false);},[]);return useEffect(()=>()=>{u.current&&clearTimeout(u.current);},[]),{values:t.current,play:l,reset:f,stop:g,isPlaying:i,currentStep:o}}function Ci(n={}){let{target:e,smooth:t=0,hoverOnly:r=false}=n,o=useRef(null),s=useRef(null),i=useRef(0),a=useRef(0),[u,c]=useState(false),l=useRef(null);return (o.current===null||o.current.isDestroyed())&&(o.current=$(0)),(s.current===null||s.current.isDestroyed())&&(s.current=$(0)),useEffect(()=>{let f=e?.current??window,g=h=>{let b,y;if(e?.current){let v=e.current.getBoundingClientRect();b=h.clientX-v.left,y=h.clientY-v.top;}else b=h.clientX,y=h.clientY;i.current=b,a.current=y,t===0&&(o.current?.jump(b),s.current?.jump(y));},p=()=>c(true),m=()=>c(false);if(t>0){let h=()=>{let b=o.current?.get()??0,y=s.current?.get()??0,v=b+(i.current-b)*t,S=y+(a.current-y)*t;o.current?.jump(v),s.current?.jump(S),l.current=requestAnimationFrame(h);};l.current=requestAnimationFrame(h);}r&&e?.current?(e.current.addEventListener("pointermove",g),e.current.addEventListener("pointerenter",p),e.current.addEventListener("pointerleave",m)):(f.addEventListener("pointermove",g),e?.current&&(e.current.addEventListener("pointerenter",p),e.current.addEventListener("pointerleave",m)));let d=e?.current;return ()=>{l.current&&cancelAnimationFrame(l.current),r&&d?(d.removeEventListener("pointermove",g),d.removeEventListener("pointerenter",p),d.removeEventListener("pointerleave",m)):(f.removeEventListener("pointermove",g),d&&(d.removeEventListener("pointerenter",p),d.removeEventListener("pointerleave",m)));}},[e,t,r]),useEffect(()=>()=>{o.current?.stop(),s.current?.stop();},[]),{x:o.current,y:s.current,isHovering:u}}function Ei(n={}){let{multiplier:e=1,clamp:t=45,smooth:r=.1}=n,o=useRef(null),s=useRef(null),i=useRef(0),a=useRef(0),[u,c]=useState(false),l=useRef(null);(o.current===null||o.current.isDestroyed())&&(o.current=$(0)),(s.current===null||s.current.isDestroyed())&&(s.current=$(0));let f=useCallback(g=>Math.max(-t,Math.min(t,g*e)),[t,e]);return useEffect(()=>{let g="DeviceOrientationEvent"in window,p=()=>{let m=o.current?.get()??0,d=s.current?.get()??0,h=m+(i.current-m)*r,b=d+(a.current-d)*r;o.current?.jump(h),s.current?.jump(b),l.current=requestAnimationFrame(p);};if(l.current=requestAnimationFrame(p),g){let m=d=>{c(true),i.current=f(d.gamma??0),a.current=f(d.beta??0);};return window.addEventListener("deviceorientation",m),()=>{l.current&&cancelAnimationFrame(l.current),window.removeEventListener("deviceorientation",m);}}else {let m=d=>{let h=window.innerWidth/2,b=window.innerHeight/2;i.current=f((d.clientX-h)/h*45),a.current=f((d.clientY-b)/b*45);};return window.addEventListener("mousemove",m),()=>{l.current&&cancelAnimationFrame(l.current),window.removeEventListener("mousemove",m);}}},[f,r]),useEffect(()=>()=>{o.current?.stop(),s.current?.stop();},[]),{tiltX:o.current,tiltY:s.current,isSupported:u}}var Li=({from:n,to:e,config:t={},onRest:r,children:o})=>{let s=useRef(null),[i,a]=useState(n);return useEffect(()=>{let u=re(n,t);return u.subscribe(a),s.current=u,requestAnimationFrame(()=>{u.set(e,{...t,onRest:r});}),()=>u.destroy()},[]),useEffect(()=>{s.current?.set(e,{...t,onRest:r});},[e,t,r]),jsx(Fragment,{children:o(i)})};function an(n){let e={};for(let t in n)typeof n[t]=="number"&&(e[t]=n[t]);return e}function ot(n){let e={};for(let t in n)typeof n[t]=="string"&&(e[t]=n[t]);return e}function Y(n){let e=it.forwardRef(({children:t,style:r={},config:o={},initial:s,animate:i,exit:a,whileHover:u,whileTap:c,whileFocus:l,whileDrag:f,whileInView:g,viewport:p,onAnimationComplete:m,onHoverStart:d,onHoverEnd:h,onTapStart:b,onTap:y,onTapCancel:v,onMouseEnter:S,onMouseLeave:R,onPointerDown:C,onPointerUp:T,onPointerCancel:x,onFocus:M,onBlur:P,...w},F)=>{let k=useRef(null),D=useRef(null),N=useRef(null),[Q,ee]=useState({}),j=useRef(true),E=useRef(false),I=useRef(false),[L,G]=useState(false),[U,V]=useState(false),[q,J]=useState(false),[B,Ee]=useState(false),[te,be]=useState(false),ye=useRef(false),ct=useContext(me),we=ct?.isPresent??true,Pt=ct?.safeToRemove,pr=useCallback(A=>{N.current=A,typeof F=="function"?F(A):F&&(F.current=A);},[F]);useEffect(()=>{if(!g||!K)return;let A=N.current;if(!A)return;let ne=p?.amount==="all"?1:p?.amount==="some"?0:typeof p?.amount=="number"?p.amount:.5,xe=new IntersectionObserver(de=>{de.forEach(Ct=>{if(Ct.isIntersecting){if(p?.once&&ye.current)return;be(true),ye.current=true;}else p?.once||be(false);});},{rootMargin:p?.margin??"0px",threshold:ne});return xe.observe(A),()=>{A&&xe.unobserve(A),xe.disconnect();}},[g,p?.once,p?.margin,p?.amount]);let qe=useCallback(()=>{if(!we&&a)return a;let A=i?{...i}:{};return g&&te&&(A={...A,...g}),l&&q&&(A={...A,...l}),u&&L&&(A={...A,...u}),f&&B&&(A={...A,...f}),c&&U&&(A={...A,...c}),Object.keys(A).length===0?Object.fromEntries(Object.entries(r).filter(ne=>typeof ne[1]=="number")):A},[we,a,i,r,u,c,l,f,g,L,U,q,B,te]),dr=useCallback(()=>s===false?qe():s||qe(),[s,qe]);useEffect(()=>{let A=dr(),ne=an(A);if(Object.keys(ne).length===0)return;D.current&&(D.current(),D.current=null),k.current&&(k.current.destroy(),k.current=null),I.current=false;let xe=re(ne,o);if(D.current=xe.subscribe(de=>{I.current||ee(de);}),k.current=xe,s&&s!==false&&i){let de=an(i);Object.keys(de).some(bn=>ne[bn]!==de[bn])&&requestAnimationFrame(()=>{k.current&&!I.current&&k.current.set(de);});}return ()=>{I.current=true,D.current&&(D.current(),D.current=null),xe.destroy();}},[o.stiffness,o.damping]),useEffect(()=>{if(!k.current)return;if(j.current){j.current=false;return}let A=qe(),ne=an(A);k.current.set(ne);},[we,i,a,qe,s,L,U,q,te]),useEffect(()=>{if(!we&&a&&Pt&&!E.current){let A=null,ne=false,de=setTimeout(()=>{if(ne)return;k.current&&(A=setTimeout(()=>{!ne&&!E.current&&(E.current=true,Pt(),m?.());},500));},50);return ()=>{ne=true,clearTimeout(de),A!==null&&clearTimeout(A);}}},[we,a,Pt,m]),useEffect(()=>{we&&(E.current=false);},[we]);let gr=useCallback(A=>{u&&G(true),d?.(A),S?.(A);},[u,d,S]),hr=useCallback(A=>{u&&G(false),c&&V(false),h?.(A),R?.(A);},[u,c,h,R]),br=useCallback(A=>{c&&V(true),b?.(A),C?.(A);},[c,b,C]),yr=useCallback(A=>{c&&U&&(V(false),y?.(A)),T?.(A);},[c,U,y,T]),vr=useCallback(A=>{c&&U&&(V(false),v?.(A)),x?.(A);},[c,U,v,x]),xr=useCallback(A=>{l&&J(true),M?.(A);},[l,M]),Sr=useCallback(A=>{l&&J(false),P?.(A);},[l,P]),ze=useRef(false);useEffect(()=>{if(!c||!U){ze.current=false;return}ze.current=true;let A=()=>{V(false);};return window.addEventListener("pointerup",A),window.addEventListener("pointercancel",A),()=>{window.removeEventListener("pointerup",A),window.removeEventListener("pointercancel",A),ze.current=false;}},[c,U]),useEffect(()=>()=>{ze.current&&(ze.current=false);},[]);let Rr=Object.fromEntries(Object.entries(r).filter(([A,ne])=>typeof ne!="number")),Fe={};g&&te&&Object.assign(Fe,ot(g)),l&&q&&Object.assign(Fe,ot(l)),u&&L&&Object.assign(Fe,ot(u)),f&&B&&Object.assign(Fe,ot(f)),c&&U&&Object.assign(Fe,ot(c));let ve={};return (u||d||h)&&(ve.onMouseEnter=gr,ve.onMouseLeave=hr),(c||b||y||v)&&(ve.onPointerDown=br,ve.onPointerUp=yr,ve.onPointerCancel=vr),l&&(ve.onFocus=xr,ve.onBlur=Sr),it.createElement(n,{...w,...ve,ref:pr,style:{...Rr,...Q,...Fe}},t)});return e.displayName=`Animated.${String(n)}`,memo(e)}var ki={div:Y("div"),span:Y("span"),button:Y("button"),a:Y("a"),p:Y("p"),h1:Y("h1"),h2:Y("h2"),h3:Y("h3"),h4:Y("h4"),h5:Y("h5"),h6:Y("h6"),ul:Y("ul"),ol:Y("ol"),li:Y("li"),section:Y("section"),article:Y("article"),header:Y("header"),footer:Y("footer"),nav:Y("nav"),main:Y("main"),aside:Y("aside"),img:Y("img"),svg:Y("svg"),path:Y("path"),circle:Y("circle"),rect:Y("rect"),g:Y("g")};var Hi=({items:n,keys:e,from:t,to:r,config:o={},reverse:s=false,children:i})=>{let a=useRef(null),[u,c]=useState(()=>n.map(()=>({...t})));return useEffect(()=>{let l=Ot(n.length,o),f=l.subscribe(p=>{c(p.map(m=>({...r,x:m})));});a.current=l;let g=Object.values(r)[0];return l.set(g),()=>{f(),l.destroy();}},[n.length,o.stiffness,o.damping]),useEffect(()=>{let l=Object.values(r)[0];a.current?.set(l);},[r]),jsx(Fragment,{children:n.map((l,f)=>{let g=u[f];return g?jsx(it.Fragment,{children:i(g,l,s?n.length-1-f:f)},e(l,f)):(console.warn(`[SpringKit] Trail: No values found for item at index ${f}`),null)})})};var Ni=1e4;function xt({id:n,children:e,isPresent:t,onExitComplete:r,custom:o,exitTimeout:s=Ni}){let i=useRef(n);i.current=n;let a=useCallback(()=>{r(i.current);},[r]),u=useMemo(()=>({id:n,isPresent:t,safeToRemove:a,custom:o}),[n,t,a,o]),c=useRef(false),l=useRef(false);return useEffect(()=>{if(t){c.current=false,l.current=false;return}if(c.current||(c.current=true,s<=0))return;let f=setTimeout(()=>{l.current||(l.current=true,a());},s);return ()=>clearTimeout(f)},[t,a,s]),jsx(me.Provider,{value:u,children:e})}var zi=typeof window<"u"?useLayoutEffect:useEffect;function Jn(n){return n.key!==null?String(n.key):""}function Wi(n){let e={};return Children.forEach(n,t=>{if(isValidElement(t)){let r=Jn(t);r&&(e[r]=t);}}),e}function Ki({children:n,custom:e,initial:t=true,mode:r="sync",onExitComplete:o}){let s=useRef(true),[i,a]=useState({}),u=useRef({}),[,c]=useState(0),l=useRef(0),f=Wi(n);zi(()=>{let d=u.current,h={};for(let b in d)if(!(b in f)){let y=d[b];y&&(h[b]=y);}Object.keys(h).length>0&&(a(b=>({...b,...h})),l.current+=Object.keys(h).length),u.current=f,s.current&&(s.current=false);});let g=d=>{a(h=>{if(!(d in h))return h;let b={...h};return delete b[d],b}),l.current>0&&l.current--,l.current===0&&o&&o(),r==="wait"&&c(h=>h+1);},p=r!=="wait"||Object.keys(i).length===0,m=[];for(let d in i){let h=i[d];h&&m.push(jsx(xt,{id:d,isPresent:false,onExitComplete:g,custom:e,children:cloneElement(h,{key:d})},`presence-${d}`));}return p&&Children.forEach(n,d=>{if(isValidElement(d)){let h=Jn(d);if(!h){console.warn('AnimatePresence: Every child must have a unique "key" prop.');return}let b=!(s.current&&t===false);m.push(jsx(xt,{id:h,isPresent:true,onExitComplete:g,custom:e,children:cloneElement(d,{key:h,...b?{}:{"data-initial-skip":true}})},`presence-${h}`));}}),jsx(Fragment,{children:m})}var es={config:{},reducedMotion:"user",initial:true,isReducedMotion:false},fn=createContext(es);function ts(){return useContext(fn)}function ns(){return typeof window>"u"?false:window.matchMedia?.("(prefers-reduced-motion: reduce)").matches??false}function rs({config:n={},reducedMotion:e="user",initial:t=true,children:r}){let o=useContext(fn),s=useMemo(()=>{let i=false;switch(e){case "always":i=true;break;case "never":i=false;break;default:i=ns();}return {config:{...o.config,...n},reducedMotion:e,initial:t,isReducedMotion:i}},[n,e,t,o.config]);return jsx(fn.Provider,{value:s,children:r})}var tr=createContext(null);function us(){let n=useContext(tr);if(!n)throw new Error("Reorder.Item must be used within a Reorder.Group");return n}function cs({values:n,onReorder:e,axis:t="y",config:r={stiffness:300,damping:30},className:o,style:s,children:i,as:a="ul",layoutDuration:u=200},c){let l=useRef(new Map),f=useRef(new Map),[g,p]=useState(null),[m,d]=useState(new Map),h=useRef(-1),b=useRef(n);useEffect(()=>{b.current=n;},[n]);let y=useCallback((P,w)=>{l.current.set(P,w);let F=w.getBoundingClientRect();f.current.set(P,t==="y"?F.height:F.width);},[t]),v=useCallback(P=>{l.current.delete(P),f.current.delete(P);},[]),S=useCallback(P=>{p(P),h.current=b.current.indexOf(P);},[]),R=useCallback((P,w)=>{let F=b.current.indexOf(P);if(F===-1)return;let k=f.current,D=[...b.current],N=new Map,Q=0,ee=k.get(P)||0;if(w>0)for(let j=F+1;j<D.length;j++){let E=D[j];if(!E)continue;let I=k.get(E)||0;Q+=I,w>Q-I/2?N.set(E,-ee):N.set(E,0);}else if(w<0)for(let j=F-1;j>=0;j--){let E=D[j];if(!E)continue;let I=k.get(E)||0;Q-=I,w<Q+I/2?N.set(E,ee):N.set(E,0);}d(N);},[]),C=useCallback(P=>{let w=b.current.indexOf(P);if(w===-1){p(null),d(new Map);return}let F=[...b.current],k=w;if(m.forEach((D,N)=>{let Q=F.indexOf(N);D<0&&Q>w?k=Math.max(k,Q):D>0&&Q<w&&(k=Math.min(k,Q));}),k!==w){let D=[...F],[N]=D.splice(w,1);N!==void 0&&(D.splice(k,0,N),e(D));}p(null),d(new Map);},[m,e]),T=useCallback(()=>g,[g]),x=useCallback(P=>m.get(P)||0,[m]),M=useMemo(()=>({values:n,axis:t,config:r,registerItem:y,unregisterItem:v,onDragStart:S,onDrag:R,onDragEnd:C,getDraggingValue:T,getItemOffset:x,layoutDuration:u}),[n,t,r,y,v,S,R,C,T,x,u]);return it.createElement(tr.Provider,{value:M},it.createElement(a,{ref:c,className:o,role:"listbox","aria-label":"Reorderable list","aria-orientation":t==="x"?"horizontal":"vertical",style:{listStyle:"none",padding:0,margin:0,...s}},i))}function ls({value:n,className:e,style:t,children:r,as:o="li",dragEnabled:s=true,onDragStart:i,onDragEnd:a},u){let c=us(),l=useRef(null),f=useRef(null),[g,p]=useState(0),[m,d]=useState(false),h=useRef({x:0,y:0}),b=useRef(0),y=useCallback(x=>{l.current=x,typeof u=="function"?u(x):u&&(u.current=x),x?c.registerItem(n,x):c.unregisterItem(n);},[u,c,n]);useEffect(()=>()=>{c.unregisterItem(n),f.current?.destroy();},[c,n]),useEffect(()=>{if(m)return;let x=c.getItemOffset(n);f.current||(f.current=O(0,{...c.config,onUpdate:p})),f.current.set(x);},[c,n,m]);let v=useCallback(x=>{if(!s)return;x.preventDefault(),x.stopPropagation(),d(true),i?.(),c.onDragStart(n);let M=l.current?.getBoundingClientRect();h.current={x:x.clientX-(M?.left??0),y:x.clientY-(M?.top??0)},b.current=0,l.current&&l.current.setPointerCapture(x.pointerId);},[s,c,n,i]),S=useCallback(x=>{if(!m)return;let M=l.current?.getBoundingClientRect();if(!M)return;let P=c.axis==="y"?x.clientY:x.clientX,w=c.axis==="y"?(l.current?.offsetTop??0)+h.current.y:(l.current?.offsetLeft??0)+h.current.x;b.current=P-w-(c.axis==="y"?M.height/2:M.width/2),c.onDrag(n,b.current),p(b.current);},[m,c,n]),R=useCallback(x=>{m&&(l.current&&l.current.releasePointerCapture(x.pointerId),d(false),a?.(),c.onDragEnd(n),p(0),b.current=0);},[m,c,n,a]),C=c.axis==="y"?`translateY(${g}px)`:`translateX(${g}px)`,T=useCallback(x=>{if(!s)return;let M=c.values.indexOf(n);if(M===-1)return;let P=M,w=c.axis==="y";switch(x.key){case "ArrowUp":w&&M>0&&(P=M-1,x.preventDefault());break;case "ArrowDown":w&&M<c.values.length-1&&(P=M+1,x.preventDefault());break;case "ArrowLeft":!w&&M>0&&(P=M-1,x.preventDefault());break;case "ArrowRight":!w&&M<c.values.length-1&&(P=M+1,x.preventDefault());break;case "Home":P=0,x.preventDefault();break;case "End":P=c.values.length-1,x.preventDefault();break}if(P!==M){c.onDragStart(n);let F=(P-M)*50;c.onDrag(n,F),c.onDragEnd(n);}},[s,c,n]);return it.createElement(o,{ref:y,className:e,role:"option","aria-selected":m,"aria-grabbed":m,tabIndex:s?0:-1,style:{transform:C,transition:!m&&c.layoutDuration>0?`transform ${c.layoutDuration}ms ease-out`:void 0,cursor:s?m?"grabbing":"grab":void 0,userSelect:"none",touchAction:"none",zIndex:m?1:0,position:"relative",...t},onPointerDown:s?v:void 0,onPointerMove:s?S:void 0,onPointerUp:s?R:void 0,onPointerCancel:s?R:void 0,onKeyDown:s?T:void 0},r)}var fs=it.forwardRef(cs),ms=it.forwardRef(ls),ps={Group:fs,Item:ms};var gs=memo(function({children:e,mode:t="characters",stagger:r=30,from:o="bottom",config:s={stiffness:200,damping:20},initialOpacity:i=0,initialOffset:a=20,animateOnMount:u=true,trigger:c,onComplete:l,className:f,style:g}){let[p,m]=useState([]),[d,h]=useState([]),b=useRef([]),y=useRef(0);useEffect(()=>{let S;switch(t){case "words":S=e.split(/(\s+)/);break;case "lines":S=e.split(`
-`);break;default:S=e.split("");}m(S),h(new Array(S.length).fill(0));},[e,t]),useEffect(()=>{if(p.length===0)return;b.current.forEach(R=>R.destroy()),b.current=[],y.current=0;let S=p.map((R,C)=>O(0,{...s,onUpdate:x=>{h(M=>{let P=[...M];return P[C]=x,P});}}));return b.current=S,(u||c!==void 0)&&S.forEach((R,C)=>{setTimeout(()=>{R.set(1);let T=()=>{R.isAnimating()?requestAnimationFrame(T):(y.current++,y.current===p.length&&l?.());};setTimeout(T,50);},C*r);}),()=>{S.forEach(R=>R.destroy());}},[p,r,s,u,c,l]);let v=S=>{let R=(1-S)*a;switch(o){case "left":return `translateX(${-R}px)`;case "right":return `translateX(${R}px)`;case "top":return `translateY(${-R}px)`;case "bottom":return `translateY(${R}px)`;case "center":return `scale(${.5+S*.5})`;default:return `translateY(${R}px)`}};return jsx("span",{className:f,style:g,children:p.map((S,R)=>{let C=d[R]??0,T=i+(1-i)*C;return S.match(/^\s+$/)?jsx("span",{children:S},R):jsx("span",{style:{display:"inline-block",opacity:T,transform:v(C),whiteSpace:t==="lines"?"pre":void 0},children:S},R)})})}),hs=memo(function({value:e,decimals:t=0,format:r,config:o={stiffness:100,damping:20},prefix:s="",suffix:i="",className:a,style:u}){let[c,l]=useState(e),f=useRef(null),g=useRef(e);useEffect(()=>(f.current=O(e,{...o,onUpdate:l}),()=>{f.current?.destroy(),f.current=null;}),[]),useEffect(()=>{f.current&&e!==g.current&&(f.current.set(e),g.current=e);},[e]);let p=useMemo(()=>r?r(c):c.toFixed(t),[c,t,r]);return jsxs("span",{className:a,style:u,children:[s,p,i]})}),bs=memo(function({children:e,speed:t=50,delay:r=0,cursor:o=true,cursorChar:s="|",loop:i=false,pauseAtEnd:a=1e3,deleteSpeed:u=30,onComplete:c,className:l,style:f}){let[g,p]=useState(""),[m,d]=useState(o),[h,b]=useState(false),y=useRef(null);return useEffect(()=>{let v=0,S=false,R=()=>{S?v>0?(v--,p(e.slice(0,v)),y.current=window.setTimeout(R,u)):(S=false,b(false),y.current=window.setTimeout(R,t)):v<=e.length?(p(e.slice(0,v)),v++,y.current=window.setTimeout(R,t)):(c?.(),i&&(y.current=window.setTimeout(()=>{S=true,b(true),R();},a)));};return y.current=window.setTimeout(R,r),()=>{y.current&&clearTimeout(y.current);}},[e,t,r,i,a,u,c]),useEffect(()=>{if(!o)return;let v=setInterval(()=>{d(S=>!S);},500);return ()=>clearInterval(v)},[o]),jsxs("span",{className:l,style:f,children:[g,o&&jsx("span",{style:{opacity:m?1:0},children:s})]})}),ys=memo(function({children:e,mode:t="characters",render:r,className:o,style:s}){let i=useMemo(()=>{switch(t){case "words":return e.split(/(\s+)/);case "lines":return e.split(`
-`);default:return e.split("")}},[e,t]);return jsx("span",{className:o,style:s,children:i.map((a,u)=>jsx(it.Fragment,{children:r(a,u,i.length)},u))})});var xs=memo(forwardRef(function({children:e,strength:t=.3,range:r=100,config:o={stiffness:200,damping:20},enabled:s=true,scaleOnHover:i=1,maxOffset:a=50,className:u,style:c,onAttract:l,onRelease:f},g){let p=useRef(null),m=M=>{p.current=M,typeof g=="function"?g(M):g&&(g.current=M);},d=useRef(null),h=useRef(null),b=useRef(null),[y,v]=useState({x:0,y:0,scale:1}),S=useRef(false);useEffect(()=>(d.current=O(0,{...o,onUpdate:M=>v(P=>({...P,x:M}))}),h.current=O(0,{...o,onUpdate:M=>v(P=>({...P,y:M}))}),b.current=O(1,{...o,onUpdate:M=>v(P=>({...P,scale:M}))}),()=>{d.current?.destroy(),h.current?.destroy(),b.current?.destroy();}),[o]);let R=useRef(l),C=useRef(f);R.current=l,C.current=f;let T=useCallback(M=>{if(!s||!p.current)return;let P=p.current.getBoundingClientRect(),w=P.left+P.width/2,F=P.top+P.height/2,k=M.clientX-w,D=M.clientY-F,N=Math.sqrt(k*k+D*D);if(N<r){let Q=1-N/r,ee=k*t*Q,j=D*t*Q;if(ee=Math.max(-a,Math.min(a,ee)),j=Math.max(-a,Math.min(a,j)),d.current?.set(ee),h.current?.set(j),i!==1){let E=1+(i-1)*Q;b.current?.set(E);}S.current||(S.current=true,R.current?.());}else d.current?.set(0),h.current?.set(0),b.current?.set(1),S.current&&(S.current=false,C.current?.());},[s,r,t,a,i]),x=useCallback(()=>{d.current?.set(0),h.current?.set(0),b.current?.set(1),S.current&&(S.current=false,C.current?.());},[]);return useEffect(()=>{if(s)return window.addEventListener("mousemove",T,{passive:true}),window.addEventListener("mouseleave",x,{passive:true}),()=>{window.removeEventListener("mousemove",T),window.removeEventListener("mouseleave",x);}},[s,T,x]),jsx("div",{ref:m,className:u,style:{display:"inline-block",transform:`translate(${y.x}px, ${y.y}px) scale(${y.scale})`,willChange:"transform",...c},children:e})})),Ss=memo(function({children:e,repel:t=false,repelStrength:r=.2,className:o,style:s}){return jsx("div",{className:o,style:s,children:e})}),Rs=memo(function({children:e,size:t=30,config:r={stiffness:150,damping:15},offset:o={x:0,y:0},visible:s=true,zIndex:i=9999,className:a,style:u}){let[c,l]=useState({x:0,y:0}),f=useRef(null),g=useRef(null);return useEffect(()=>(f.current=O(0,{...r,onUpdate:p=>l(m=>({...m,x:p}))}),g.current=O(0,{...r,onUpdate:p=>l(m=>({...m,y:p}))}),()=>{f.current?.destroy(),g.current?.destroy();}),[r]),useEffect(()=>{let p=m=>{f.current?.set(m.clientX+o.x),g.current?.set(m.clientY+o.y);};return window.addEventListener("mousemove",p,{passive:true}),()=>window.removeEventListener("mousemove",p)},[o]),s?jsx("div",{className:a,style:{position:"fixed",left:c.x-t/2,top:c.y-t/2,width:t,height:t,pointerEvents:"none",zIndex:i,...u},children:e??jsx("div",{style:{width:"100%",height:"100%",borderRadius:"50%",border:"2px solid currentColor",opacity:.5}})}):null});function Ts(n={}){let{strength:e=.3,range:t=100,config:r={stiffness:200,damping:20},enabled:o=true,maxOffset:s=50}=n,i=useRef(null),a=useRef(null),u=useRef(null),[c,l]=useState({x:0,y:0}),f=useRef(false),[g,p]=useState(false);useEffect(()=>(a.current=O(0,{...r,onUpdate:d=>l(h=>({...h,x:d}))}),u.current=O(0,{...r,onUpdate:d=>l(h=>({...h,y:d}))}),()=>{a.current?.destroy(),u.current?.destroy();}),[r]),useEffect(()=>{if(!o)return;let d=b=>{if(!i.current)return;let y=i.current.getBoundingClientRect(),v=y.left+y.width/2,S=y.top+y.height/2,R=b.clientX-v,C=b.clientY-S,T=Math.sqrt(R*R+C*C);if(T<t){let x=1-T/t,M=R*e*x,P=C*e*x;M=Math.max(-s,Math.min(s,M)),P=Math.max(-s,Math.min(s,P)),a.current?.set(M),u.current?.set(P),f.current||(f.current=true,p(true));}else a.current?.set(0),u.current?.set(0),f.current&&(f.current=false,p(false));},h=()=>{a.current?.set(0),u.current?.set(0),f.current&&(f.current=false,p(false));};return window.addEventListener("mousemove",d,{passive:true}),window.addEventListener("mouseleave",h,{passive:true}),()=>{window.removeEventListener("mousemove",d),window.removeEventListener("mouseleave",h);}},[o,t,e,s]);let m=useCallback(()=>{a.current?.set(0),u.current?.set(0),f.current=false,p(false);},[]);return {ref:i,x:c.x,y:c.y,isAttracted:g,reset:m}}var Ps=memo(forwardRef(function({children:e,speed:t=.5,direction:r="vertical",config:o={stiffness:100,damping:20},enabled:s=true,offset:i={},rootMargin:a="100px",as:u="div",className:c,style:l},f){let g=useRef(null),p=R=>{g.current=R,typeof f=="function"?f(R):f&&(f.current=R);},m=useRef(null),d=useRef(null),[h,b]=useState({x:i.x??0,y:i.y??0}),[y,v]=useState(false);useEffect(()=>(m.current=O(i.x??0,{...o,onUpdate:R=>b(C=>({...C,x:R}))}),d.current=O(i.y??0,{...o,onUpdate:R=>b(C=>({...C,y:R}))}),()=>{m.current?.destroy(),d.current?.destroy();}),[o,i.x,i.y]),useEffect(()=>{if(!g.current)return;let R=new IntersectionObserver(([C])=>{v(C?.isIntersecting??false);},{rootMargin:a});return R.observe(g.current),()=>R.disconnect()},[a]),useEffect(()=>{if(!s||!y)return;let R=()=>{if(!g.current)return;let C=g.current.getBoundingClientRect(),T=window.innerHeight,x=window.innerWidth,M=(C.top+C.height/2-T/2)/T,P=(C.left+C.width/2-x/2)/x;if(r==="vertical"||r==="both"){let w=M*t*200+(i.y??0);d.current?.set(w);}if(r==="horizontal"||r==="both"){let w=P*t*200+(i.x??0);m.current?.set(w);}};return R(),window.addEventListener("scroll",R,{passive:true}),window.addEventListener("resize",R,{passive:true}),()=>{window.removeEventListener("scroll",R),window.removeEventListener("resize",R);}},[s,y,t,r,i]);let S=useMemo(()=>{let R=[];return (r==="vertical"||r==="both")&&R.push(`translateY(${h.y}px)`),(r==="horizontal"||r==="both")&&R.push(`translateX(${h.x}px)`),R.join(" ")||"none"},[r,h]);return it.createElement(u,{ref:p,className:c,style:{transform:S,willChange:"transform",...l}},e)})),Cs=memo(forwardRef(function({children:e,strength:t=20,inverted:r=false,config:o={stiffness:100,damping:15},enabled:s=true,container:i,resetOnLeave:a=true,as:u="div",className:c,style:l},f){let g=useRef(null),p=useRef(null),[m,d]=useState({x:0,y:0});return useEffect(()=>(g.current=O(0,{...o,onUpdate:h=>d(b=>({...b,x:h}))}),p.current=O(0,{...o,onUpdate:h=>d(b=>({...b,y:h}))}),()=>{g.current?.destroy(),p.current?.destroy();}),[o]),useEffect(()=>{if(!s)return;let h=i?.current??null,b=h===null,y=S=>{let R,C,T,x;if(h){let D=h.getBoundingClientRect();R=S.clientX-D.left-D.width/2,C=S.clientY-D.top-D.height/2,T=D.width,x=D.height;}else R=S.clientX-window.innerWidth/2,C=S.clientY-window.innerHeight/2,T=window.innerWidth,x=window.innerHeight;let M=R/T*2,P=C/x*2,w=r?-1:1,F=M*t*w,k=P*t*w;g.current?.set(F),p.current?.set(k);},v=()=>{a&&(g.current?.set(0),p.current?.set(0));};return b?(window.addEventListener("mousemove",y,{passive:true}),window.addEventListener("mouseleave",v,{passive:true})):(h.addEventListener("mousemove",y,{passive:true}),h.addEventListener("mouseleave",v,{passive:true})),()=>{b?(window.removeEventListener("mousemove",y),window.removeEventListener("mouseleave",v)):(h.removeEventListener("mousemove",y),h.removeEventListener("mouseleave",v));}},[s,i,t,r,a]),it.createElement(u,{ref:f,className:c,style:{transform:`translate(${m.x}px, ${m.y}px)`,willChange:"transform",...l}},e)})),Es=memo(forwardRef(function({children:e,maxTilt:t=20,perspective:r=1e3,scale:o=1,config:s={stiffness:300,damping:20},enabled:i=true,glare:a=false,glareOpacity:u=.2,className:c,style:l,onTilt:f},g){let p=useRef(null),m=T=>{p.current=T,typeof g=="function"?g(T):g&&(g.current=T);},d=useRef(null),h=useRef(null),b=useRef(null),y=useRef(null),[v,S]=useState({x:0,y:0,scale:1,glareX:50,glareY:50,glareOpacity:0});useEffect(()=>(d.current=O(0,{...s,onUpdate:T=>S(x=>({...x,x:T}))}),h.current=O(0,{...s,onUpdate:T=>S(x=>({...x,y:T}))}),b.current=O(1,{...s,onUpdate:T=>S(x=>({...x,scale:T}))}),y.current=O(0,{...s,onUpdate:T=>S(x=>({...x,glareOpacity:T}))}),()=>{d.current?.destroy(),h.current?.destroy(),b.current?.destroy(),y.current?.destroy();}),[s]);let R=useCallback(T=>{if(!i||!p.current)return;let x=p.current.getBoundingClientRect(),M=(T.clientX-x.left)/x.width-.5,P=(T.clientY-x.top)/x.height-.5,w=P*t*-1,F=M*t;d.current?.set(w),h.current?.set(F),b.current?.set(o),a&&(y.current?.set(u),S(k=>({...k,glareX:(M+.5)*100,glareY:(P+.5)*100}))),f?.(w,F);},[i,t,o,a,u,f]),C=useCallback(()=>{d.current?.set(0),h.current?.set(0),b.current?.set(1),y.current?.set(0);},[]);return jsx("div",{ref:m,className:c,style:{perspective:`${r}px`,...l},onMouseMove:R,onMouseLeave:C,children:jsxs("div",{style:{transform:`rotateX(${v.x}deg) rotateY(${v.y}deg) scale(${v.scale})`,transformStyle:"preserve-3d",width:"100%",height:"100%"},children:[e,a&&jsx("div",{style:{position:"absolute",inset:0,pointerEvents:"none",background:`radial-gradient(circle at ${v.glareX}% ${v.glareY}%, white, transparent)`,opacity:v.glareOpacity,borderRadius:"inherit"}})]})})})),hn=createContext(null),ws=memo(function({children:e,pages:t=1,className:r,style:o}){let s=useRef(null),[i,a]=useState(0);useEffect(()=>{let c=s.current;if(!c)return;let l=()=>{let f=s.current;if(!f)return;let g=f.scrollTop,p=f.scrollHeight-f.clientHeight;a(p>0?g/p:0);};return c.addEventListener("scroll",l,{passive:true}),()=>c.removeEventListener("scroll",l)},[]);let u=useMemo(()=>({scrollProgress:i,containerRef:s}),[i]);return jsx(hn.Provider,{value:u,children:jsx("div",{ref:s,className:r,style:{height:"100vh",overflow:"auto",position:"relative",...o},children:jsx("div",{style:{height:`${t*100}vh`,position:"relative"},children:e})})})}),Vs=memo(function({children:e,offset:t=0,speed:r=1,horizontal:o=false,sticky:s,className:i,style:a}){let u=useContext(hn),[c,l]=useState({x:0,y:0});return useEffect(()=>{if(!u)return;let f=u.scrollProgress,g=100;if(s){let p=s.end-s.start;if(f>=s.start&&f<=s.end&&p>0){(f-s.start)/p;l({x:0,y:s.start*g});}else f<s.start?l({x:0,y:t*g}):l({x:0,y:s.end*g});}else {let p=t*g,m=f*g*(1-r);l(o?{x:m,y:p}:{x:0,y:p+m});}},[u?.scrollProgress,t,r,o,s]),jsx("div",{className:i,style:{position:"absolute",top:0,left:0,width:"100%",height:"100vh",transform:`translate(${c.x}vh, ${c.y}vh)`,willChange:"transform",...a},children:e})});function Ls(){return useContext(hn)}var Fs={animations:true,gestures:true},cr={animations:true,gestures:true,layout:true,svg:true,scroll:true},Us={animations:true},lr=createContext({features:cr,isStrict:false,isLoaded:true});function fr(){return useContext(lr)}function mr(n){let{features:e,isLoaded:t}=fr();return t&&(e[n]??false)}function $s({features:n,strict:e=false,children:t}){let[r,o]=useState(typeof n=="function"?null:n),[s,i]=useState(typeof n!="function");useEffect(()=>{typeof n=="function"?n().then(u=>{o(u),i(true);}):(o(n),i(true));},[n]);let a=useMemo(()=>({features:r??{},isStrict:e,isLoaded:s}),[r,e,s]);return s?it.createElement(lr.Provider,{value:a},t):it.createElement(it.Fragment,null,null)}function Hs({feature:n,children:e,fallback:t=null}){let r=mr(n);return it.createElement(it.Fragment,null,r?e:t)}function js(n){return async()=>{let e={};return await Promise.all(Object.entries(n).map(async([t,r])=>{let o=t;typeof r=="function"?(await r(),e[o]=true):e[o]=r;})),e}}function Xs(...n){return n.reduce((e,t)=>({...e,...t}),{})}export{Ki as AnimatePresence,ki as Animated,Gn as LayoutGroupContext,fi as LayoutGroupProvider,$s as LazyMotion,xs as Magnetic,Rs as MagneticCursor,Ss as MagneticGroup,rs as MotionConfig,Hs as MotionFeatureGuard,Ze as MotionValue,Cs as MouseParallax,Ps as Parallax,ws as ParallaxContainer,Vs as ParallaxLayer,xt as PresenceChild,me as PresenceContext,ps as Reorder,Yn as SharedLayoutContextReact,mi as SharedLayoutProvider,ys as SplitText,Li as Spring,hs as SpringNumber,gs as SpringText,Es as TiltCard,Hi as Trail,bs as TypeWriter,sn as VariantContext,bi as VariantProvider,js as createAsyncFeatures,vi as createMotionComponent,$ as createMotionValue,Fs as domAnimation,cr as domMax,Us as domMin,qo as getReducedMotionPreference,K as isBrowser,Un as isServer,Or as mapRange,Xs as mergeFeatures,Do as safeCancelAnimationFrame,Oo as safeRequestAnimationFrame,Io as shouldSkipAnimation,Ln as transformValue,eo as useAnimate,mo as useAnimationFrame,li as useAutoLayout,Ti as useBounce,Pi as useChain,yo as useClamp,dt as useCombinedTransform,So as useDelay,bo as useDifference,qr as useDrag,Ro as useDragControls,Ri as useElastic,ci as useFlip,Go as useFocus,Eo as useForceUpdate,Wr as useGesture,No as useGestureAnimation,nn as useGestureState,Mi as useGravity,Ei as useGyroscope,jo as useHover,ko as useInView,Fo as useInViewCallback,Uo as useInViewMultiple,Co as useInstantTransition,Yo as useInteractionState,Qr as useIsPresent,Z as useIsomorphicLayoutEffect,ai as useLayoutGroup,ui as useLayoutId,wo as useLayoutMeasure,fr as useLazyMotion,Ts as useMagnetic,Si as useMomentum,oi as useMorph,si as useMorphRef,ii as useMorphSequence,ts as useMotionConfig,mr as useMotionFeature,lo as useMotionTemplate,kn as useMotionValue,ao as useMotionValueEvent,no as useMotionValueState,ro as useMotionValueSync,oo as useMotionValues,Qo as useParallax,Ls as useParallaxContext,Ci as usePointer,Zr as usePresence,Jr as usePresenceCustom,ho as useProduct,yt as useReducedMotion,zo as useReducedMotionConfig,Ko as useReducedMotionValue,$o as useScroll,ei as useScrollLinkedValue,Zo as useScrollProgress,Jo as useScrollTrigger,Ho as useScrollVelocity,Wo as useShouldAnimate,xo as useSmooth,vo as useSnap,qt as useSpring,xi as useSpringState,co as useSpringTransform,Hr as useSpringValue,Yr as useSprings,yi as useStaggerChildren,go as useSum,Xo as useTap,fo as useTime,ni as useTimeline,ri as useTimelineState,_r as useTrail,Zt as useTransform,Nn as useVariantContext,hi as useVariants,so as useVelocity,uo as useVelocityTransform,po as useWillChange};//# sourceMappingURL=react.mjs.map
-//# sourceMappingURL=react.mjs.map
+"use client";
+
+// src/adapters/react/hooks/useSpring.ts
+import { useEffect, useRef, useState, useCallback } from "react";
+import { createSpringGroup } from "@oxog/springkit";
+function shallowEqual(a, b) {
+  const keysA = Object.keys(a);
+  const keysB = Object.keys(b);
+  if (keysA.length !== keysB.length) return false;
+  for (const key of keysA) {
+    if (a[key] !== b[key]) return false;
+  }
+  return true;
+}
+function useSpring(values, config = {}) {
+  const springRef = useRef(null);
+  const isMounted = useRef(false);
+  const configRef = useRef(config);
+  const prevValuesRef = useRef(values);
+  configRef.current = config;
+  if (!springRef.current || springRef.current.isDestroyed()) {
+    springRef.current = createSpringGroup(values, config);
+    prevValuesRef.current = values;
+  }
+  const getSpringValues = useCallback(() => {
+    const spring = springRef.current;
+    if (!spring) return values;
+    return spring.get();
+  }, []);
+  const [currentValues, setCurrentValues] = useState(getSpringValues);
+  useEffect(() => {
+    isMounted.current = true;
+    const spring = springRef.current;
+    if (!spring) return;
+    const unsubscribe = spring.subscribe((newValues) => {
+      if (isMounted.current) {
+        setCurrentValues(newValues);
+      }
+    });
+    return () => {
+      isMounted.current = false;
+      unsubscribe();
+    };
+  }, []);
+  useEffect(() => {
+    const spring = springRef.current;
+    if (!spring) return;
+    if (!shallowEqual(values, prevValuesRef.current)) {
+      prevValuesRef.current = values;
+      spring.set(values, configRef.current);
+    }
+  });
+  useEffect(() => {
+    return () => {
+      springRef.current?.destroy();
+      springRef.current = null;
+    };
+  }, []);
+  return currentValues;
+}
+
+// src/adapters/react/hooks/useSpringValue.ts
+import { useEffect as useEffect2, useRef as useRef2 } from "react";
+import { createSpringValue } from "@oxog/springkit";
+function useSpringValue(initial, config = {}) {
+  const springRef = useRef2(null);
+  if (!springRef.current || springRef.current.isDestroyed()) {
+    springRef.current = createSpringValue(initial, config);
+  }
+  useEffect2(() => {
+    return () => springRef.current?.destroy();
+  }, []);
+  return springRef.current;
+}
+
+// src/adapters/react/hooks/useSprings.ts
+import { useEffect as useEffect3, useRef as useRef3, useState as useState2, useCallback as useCallback2 } from "react";
+import { createSpringGroup as createSpringGroup2 } from "@oxog/springkit";
+function useSprings(count, items, defaultConfig = {}) {
+  const springsRef = useRef3([]);
+  const isMountedRef = useRef3(false);
+  const itemsRef = useRef3(items);
+  itemsRef.current = items;
+  const getInitialValues = useCallback2(() => {
+    const result = [];
+    for (let i = 0; i < count; i++) {
+      const item = itemsRef.current(i);
+      result.push(item.from ?? item.values);
+    }
+    return result;
+  }, [count]);
+  const [currentValues, setCurrentValues] = useState2(getInitialValues);
+  useEffect3(() => {
+    isMountedRef.current = true;
+    springsRef.current.forEach((s) => s?.destroy());
+    springsRef.current = [];
+    const timeoutIds = [];
+    const unsubscribers = [];
+    for (let i = 0; i < count; i++) {
+      const item = itemsRef.current(i);
+      const initialValues = item.from ?? item.values;
+      const spring = createSpringGroup2(initialValues, {
+        ...defaultConfig,
+        ...item.config
+      });
+      springsRef.current.push(spring);
+      const index = i;
+      const unsubscribe = spring.subscribe((values) => {
+        if (isMountedRef.current) {
+          setCurrentValues((prev) => {
+            const prevValues = prev[index];
+            const newValues = values;
+            let hasChanged = false;
+            if (prevValues) {
+              for (const key in newValues) {
+                if (newValues[key] !== prevValues[key]) {
+                  hasChanged = true;
+                  break;
+                }
+              }
+            } else {
+              hasChanged = true;
+            }
+            if (!hasChanged) return prev;
+            const next = [...prev];
+            next[index] = newValues;
+            return next;
+          });
+        }
+      });
+      unsubscribers.push(unsubscribe);
+      const timeoutId = setTimeout(() => {
+        spring.set(item.values);
+      }, item.delay ?? 0);
+      timeoutIds.push(timeoutId);
+    }
+    return () => {
+      isMountedRef.current = false;
+      unsubscribers.forEach((unsub) => unsub());
+      timeoutIds.forEach(clearTimeout);
+      springsRef.current.forEach((s) => s?.destroy());
+    };
+  }, [count, defaultConfig]);
+  return currentValues;
+}
+
+// src/adapters/react/hooks/useTrail.ts
+import { useEffect as useEffect4, useRef as useRef4, useState as useState3 } from "react";
+import { createSpringValue as createSpringValue2 } from "@oxog/springkit";
+function useTrail(count, values, config = {}) {
+  const springsRef = useRef4(null);
+  const isMountedRef = useRef4(false);
+  const [currentValues, setCurrentValues] = useState3(
+    () => Array.from({ length: count }, () => ({ ...values }))
+  );
+  const isFirstRender = useRef4(true);
+  const prevValuesRef = useRef4(JSON.stringify(values));
+  const timeoutsRef = useRef4([]);
+  useEffect4(() => {
+    isMountedRef.current = true;
+    const keys = Object.keys(values);
+    const springs = /* @__PURE__ */ new Map();
+    const existingSprings = springsRef.current;
+    keys.forEach((key) => {
+      const propSprings = [];
+      const initialValue = values[key];
+      const existingPropSprings = existingSprings?.get(key);
+      for (let i = 0; i < count; i++) {
+        const existingSpring = existingPropSprings?.[i];
+        const spring = existingSpring && !existingSpring.isDestroyed() ? existingSpring : createSpringValue2(initialValue, config);
+        propSprings.push(spring);
+      }
+      springs.set(key, propSprings);
+    });
+    springsRef.current = springs;
+    const unsubscribers = [];
+    springs.forEach((propSprings, _key) => {
+      propSprings.forEach((spring, index) => {
+        const unsub = spring.subscribe(() => {
+          if (!isMountedRef.current) return;
+          setCurrentValues((prev) => {
+            const next = [...prev];
+            if (!next[index]) {
+              next[index] = { ...values };
+            }
+            const newItem = { ...next[index] };
+            springs.forEach((ps, k) => {
+              newItem[k] = ps[index].get();
+            });
+            next[index] = newItem;
+            return next;
+          });
+        });
+        unsubscribers.push(unsub);
+      });
+    });
+    return () => {
+      isMountedRef.current = false;
+      unsubscribers.forEach((unsub) => unsub());
+      springs.forEach((propSprings) => {
+        propSprings.forEach((spring) => spring.destroy());
+      });
+      springs.clear();
+      springsRef.current = null;
+    };
+  }, [count, config.stiffness, config.damping, config.mass]);
+  useEffect4(() => {
+    if (!springsRef.current) return;
+    const currentValuesString = JSON.stringify(values);
+    if (isFirstRender.current) {
+      isFirstRender.current = false;
+      prevValuesRef.current = currentValuesString;
+      return;
+    }
+    if (currentValuesString === prevValuesRef.current) return;
+    prevValuesRef.current = currentValuesString;
+    const keys = Object.keys(values);
+    const staggerDelay = 50;
+    timeoutsRef.current.forEach(clearTimeout);
+    timeoutsRef.current = [];
+    keys.forEach((key) => {
+      const propSprings = springsRef.current?.get(key);
+      if (!propSprings) return;
+      const targetValue = values[key];
+      propSprings.forEach((spring, index) => {
+        const timeoutId = setTimeout(() => {
+          spring.set(targetValue, config);
+        }, index * staggerDelay);
+        timeoutsRef.current.push(timeoutId);
+      });
+    });
+    return () => {
+      timeoutsRef.current.forEach(clearTimeout);
+      timeoutsRef.current = [];
+    };
+  }, [JSON.stringify(values), config.stiffness, config.damping]);
+  return currentValues;
+}
+
+// src/adapters/react/hooks/useDrag.ts
+import { useEffect as useEffect5, useRef as useRef5, useState as useState4 } from "react";
+import { createDragSpring } from "@oxog/springkit";
+function useDrag(config = {}) {
+  const dragSpringRef = useRef5(null);
+  const positionRef = useRef5({ x: 0, y: 0 });
+  const [element, setElement] = useState4(null);
+  const [isDragging, setIsDragging] = useState4(false);
+  const [, forceUpdate] = useState4({});
+  const configRef = useRef5(config);
+  const rafIdRef = useRef5(null);
+  const pendingUpdateRef = useRef5(false);
+  configRef.current = config;
+  const refCallback = (el) => {
+    setElement(el);
+  };
+  const throttledUpdate = () => {
+    if (rafIdRef.current === null) {
+      rafIdRef.current = requestAnimationFrame(() => {
+        rafIdRef.current = null;
+        if (pendingUpdateRef.current) {
+          pendingUpdateRef.current = false;
+          forceUpdate({});
+        }
+      });
+    }
+  };
+  useEffect5(() => {
+    let isActive = true;
+    if (dragSpringRef.current) {
+      dragSpringRef.current.destroy();
+      dragSpringRef.current = null;
+    }
+    if (rafIdRef.current !== null) {
+      cancelAnimationFrame(rafIdRef.current);
+      rafIdRef.current = null;
+    }
+    if (element) {
+      dragSpringRef.current = createDragSpring(element, {
+        ...configRef.current,
+        onDragStart: (e) => {
+          if (!isActive) return;
+          setIsDragging(true);
+          configRef.current.onDragStart?.(e);
+        },
+        onDragEnd: (x, y, velocity) => {
+          if (!isActive) return;
+          setIsDragging(false);
+          configRef.current.onDragEnd?.(x, y, velocity);
+        },
+        onUpdate: (x, y) => {
+          if (!isActive) return;
+          positionRef.current = { x, y };
+          pendingUpdateRef.current = true;
+          throttledUpdate();
+          configRef.current.onUpdate?.(x, y);
+        }
+      });
+    }
+    return () => {
+      isActive = false;
+      dragSpringRef.current?.destroy();
+      dragSpringRef.current = null;
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+    };
+  }, [element]);
+  const set = (values) => {
+    const rawX = values.x ?? positionRef.current.x;
+    const rawY = values.y ?? positionRef.current.y;
+    const x = Number.isFinite(rawX) ? rawX : positionRef.current.x;
+    const y = Number.isFinite(rawY) ? rawY : positionRef.current.y;
+    dragSpringRef.current?.setPosition(x, y);
+  };
+  const reset = () => {
+    dragSpringRef.current?.reset();
+    positionRef.current = { x: 0, y: 0 };
+    forceUpdate({});
+  };
+  return [positionRef.current, { ref: refCallback, set, reset, isDragging }];
+}
+
+// src/adapters/react/hooks/useGesture.ts
+import { useRef as useRef6 } from "react";
+function useGesture(handlers) {
+  const stateRef = useRef6({
+    isDragging: false,
+    startX: 0,
+    startY: 0,
+    currentX: 0,
+    currentY: 0
+  });
+  const onPointerDown = (e) => {
+    stateRef.current = {
+      isDragging: true,
+      startX: e.clientX,
+      startY: e.clientY,
+      currentX: e.clientX,
+      currentY: e.clientY
+    };
+    try {
+      handlers.onDragStart?.(e);
+    } catch (error) {
+      console.error("[SpringKit] Gesture onDragStart error:", error);
+    }
+  };
+  const onPointerMove = (e) => {
+    if (!stateRef.current.isDragging) return;
+    const deltaX = e.clientX - stateRef.current.startX;
+    const deltaY = e.clientY - stateRef.current.startY;
+    try {
+      handlers.onDrag?.({ x: deltaX, y: deltaY });
+    } catch (error) {
+      console.error("[SpringKit] Gesture onDrag error:", error);
+    }
+    stateRef.current.currentX = e.clientX;
+    stateRef.current.currentY = e.clientY;
+  };
+  const onPointerUp = () => {
+    stateRef.current.isDragging = false;
+  };
+  const onPointerCancel = () => {
+    stateRef.current.isDragging = false;
+  };
+  return {
+    onPointerDown,
+    onPointerMove,
+    onPointerUp,
+    onPointerCancel
+  };
+}
+
+// src/adapters/react/hooks/usePresence.ts
+import { useContext } from "react";
+
+// src/adapters/react/context/PresenceContext.ts
+import { createContext } from "react";
+var PresenceContext = createContext(null);
+PresenceContext.displayName = "PresenceContext";
+
+// src/adapters/react/hooks/usePresence.ts
+function usePresence() {
+  const context = useContext(PresenceContext);
+  if (context === null) {
+    return [true, () => {
+    }];
+  }
+  return [context.isPresent, context.safeToRemove];
+}
+function useIsPresent() {
+  const context = useContext(PresenceContext);
+  return context === null ? true : context.isPresent;
+}
+function usePresenceCustom() {
+  const context = useContext(PresenceContext);
+  return context?.custom;
+}
+
+// src/adapters/react/hooks/useAnimate.ts
+import { useRef as useRef7, useCallback as useCallback3, useEffect as useEffect6 } from "react";
+import { createSpringValue as createSpringValue3 } from "@oxog/springkit";
+function useAnimate() {
+  const scopeRef = useRef7(null);
+  const springsRef = useRef7(/* @__PURE__ */ new Map());
+  const valuesRef = useRef7(/* @__PURE__ */ new Map());
+  const isAnimatingRef = useRef7(false);
+  const cleanupRef = useRef7([]);
+  const rafIdsRef = useRef7(/* @__PURE__ */ new Set());
+  const timeoutIdsRef = useRef7(/* @__PURE__ */ new Set());
+  const isDestroyedRef = useRef7(false);
+  useEffect6(() => {
+    isDestroyedRef.current = false;
+  }, []);
+  const _getPropertyStyle = useCallback3((_property, _value) => {
+    return null;
+  }, []);
+  const applyStyles = useCallback3(() => {
+    const element = scopeRef.current;
+    if (!element) return;
+    const transforms = [];
+    const styles = {};
+    valuesRef.current.forEach((value, property) => {
+      switch (property) {
+        case "x":
+          transforms.push(`translateX(${value}px)`);
+          break;
+        case "y":
+          transforms.push(`translateY(${value}px)`);
+          break;
+        case "z":
+          transforms.push(`translateZ(${value}px)`);
+          break;
+        case "scale":
+          transforms.push(`scale(${value})`);
+          break;
+        case "scaleX":
+          transforms.push(`scaleX(${value})`);
+          break;
+        case "scaleY":
+          transforms.push(`scaleY(${value})`);
+          break;
+        case "rotate":
+        case "rotateZ":
+          transforms.push(`rotate(${value}deg)`);
+          break;
+        case "rotateX":
+          transforms.push(`rotateX(${value}deg)`);
+          break;
+        case "rotateY":
+          transforms.push(`rotateY(${value}deg)`);
+          break;
+        case "opacity":
+          styles.opacity = String(value);
+          break;
+        default:
+          styles[property] = `${value}px`;
+      }
+    });
+    if (transforms.length > 0) {
+      element.style.transform = transforms.join(" ");
+    }
+    Object.entries(styles).forEach(([prop, val]) => {
+      element.style.setProperty(prop, val);
+    });
+  }, []);
+  const animate = useCallback3(async (target, options = {}) => {
+    const { config = {}, delay = 0, onComplete } = options;
+    try {
+      if (delay > 0) {
+        await new Promise((resolve) => {
+          const timeoutId = setTimeout(() => {
+            timeoutIdsRef.current.delete(timeoutId);
+            resolve();
+          }, delay);
+          timeoutIdsRef.current.add(timeoutId);
+        });
+      }
+      if (isDestroyedRef.current) return;
+      isAnimatingRef.current = true;
+      const promises = [];
+      for (const [property, value] of Object.entries(target)) {
+        const targetValues = Array.isArray(value) ? value : [value];
+        let animationPromise = Promise.resolve();
+        for (const targetValue of targetValues) {
+          animationPromise = animationPromise.then(() => {
+            return new Promise((resolve) => {
+              if (isDestroyedRef.current) {
+                resolve();
+                return;
+              }
+              try {
+                let spring = springsRef.current.get(property);
+                if (!spring) {
+                  spring = createSpringValue3(valuesRef.current.get(property) ?? 0, config);
+                  springsRef.current.set(property, spring);
+                  const unsubscribe = spring.subscribe((v) => {
+                    if (!isDestroyedRef.current) {
+                      valuesRef.current.set(property, v);
+                      applyStyles();
+                    }
+                  });
+                  cleanupRef.current.push(unsubscribe);
+                }
+                if (config.stiffness || config.damping || config.mass) {
+                  spring.setConfig(config);
+                }
+                spring.set(targetValue);
+                let rafId = null;
+                const checkComplete = () => {
+                  if (rafId !== null) {
+                    rafIdsRef.current.delete(rafId);
+                  }
+                  if (isDestroyedRef.current || !spring || !spring.isAnimating()) {
+                    resolve();
+                  } else {
+                    rafId = requestAnimationFrame(checkComplete);
+                    rafIdsRef.current.add(rafId);
+                  }
+                };
+                rafId = requestAnimationFrame(checkComplete);
+                rafIdsRef.current.add(rafId);
+              } catch (error) {
+                console.error("[SpringKit] Animation failed:", error);
+                resolve();
+              }
+            });
+          });
+        }
+        promises.push(animationPromise);
+      }
+      await Promise.all(promises);
+      if (!isDestroyedRef.current) {
+        isAnimatingRef.current = false;
+        onComplete?.();
+      }
+    } catch (error) {
+      console.error("[SpringKit] animate() error:", error);
+      isAnimatingRef.current = false;
+    }
+  }, [applyStyles]);
+  const controls = {
+    stop: useCallback3(() => {
+      springsRef.current.forEach((spring) => {
+        spring.stop();
+      });
+      isAnimatingRef.current = false;
+    }, []),
+    get: useCallback3((property) => {
+      return valuesRef.current.get(property);
+    }, []),
+    isAnimating: useCallback3(() => {
+      return isAnimatingRef.current;
+    }, [])
+  };
+  useEffect6(() => {
+    const rafIds = rafIdsRef.current;
+    const timeoutIds = timeoutIdsRef.current;
+    const cleanup = cleanupRef.current;
+    const springs = springsRef.current;
+    return () => {
+      isDestroyedRef.current = true;
+      rafIds.forEach((id) => cancelAnimationFrame(id));
+      rafIds.clear();
+      timeoutIds.forEach((id) => clearTimeout(id));
+      timeoutIds.clear();
+      cleanup.forEach((c) => c());
+      springs.forEach((spring) => spring.destroy());
+      springs.clear();
+    };
+  }, []);
+  return [scopeRef, animate, controls];
+}
+
+// src/adapters/react/hooks/useMotionValue.ts
+import { useRef as useRef8, useEffect as useEffect7, useState as useState5 } from "react";
+import { createMotionValue } from "@oxog/springkit";
+function useMotionValue(initialValue, options) {
+  const motionValueRef = useRef8(null);
+  if (motionValueRef.current === null || motionValueRef.current.isDestroyed()) {
+    motionValueRef.current = createMotionValue(initialValue, options);
+  }
+  useEffect7(() => {
+    return () => {
+      motionValueRef.current?.destroy();
+    };
+  }, []);
+  return motionValueRef.current;
+}
+function useMotionValueState(motionValue) {
+  const [value, setValue] = useState5(() => motionValue?.get());
+  useEffect7(() => {
+    if (!motionValue) return;
+    setValue(motionValue.get());
+    const unsubscribe = motionValue.subscribe((newValue) => {
+      setValue(newValue);
+    });
+    return unsubscribe;
+  }, [motionValue]);
+  return value;
+}
+function useMotionValueSync(externalValue, options) {
+  const motionValue = useMotionValue(externalValue, options);
+  useEffect7(() => {
+    motionValue.set(externalValue);
+  }, [externalValue, motionValue]);
+  return motionValue;
+}
+function useMotionValues(initialValues, options) {
+  const motionValuesRef = useRef8(null);
+  const needsRecreate = motionValuesRef.current === null || Object.values(motionValuesRef.current).some((mv) => mv.isDestroyed());
+  if (needsRecreate) {
+    const values = {};
+    for (const key in initialValues) {
+      if (Object.prototype.hasOwnProperty.call(initialValues, key)) {
+        const value = initialValues[key];
+        values[key] = createMotionValue(value, options);
+      }
+    }
+    motionValuesRef.current = values;
+  }
+  useEffect7(() => {
+    return () => {
+      if (motionValuesRef.current) {
+        const current = motionValuesRef.current;
+        for (const key in current) {
+          if (Object.prototype.hasOwnProperty.call(current, key)) {
+            current[key].destroy();
+          }
+        }
+      }
+    };
+  }, []);
+  return motionValuesRef.current;
+}
+
+// src/adapters/react/hooks/useTransform.ts
+import { useRef as useRef9, useEffect as useEffect8, useMemo, useCallback as useCallback4 } from "react";
+import { createMotionValue as createMotionValue2 } from "@oxog/springkit";
+function useVelocity(source) {
+  const velocityRef = useRef9(null);
+  const frameRef = useRef9(null);
+  const lastVelocityRef = useRef9(0);
+  const isRunningRef = useRef9(false);
+  if (velocityRef.current === null || velocityRef.current.isDestroyed()) {
+    velocityRef.current = createMotionValue2(source.getVelocity());
+  }
+  useEffect8(() => {
+    const startLoop = () => {
+      if (isRunningRef.current) return;
+      isRunningRef.current = true;
+      const update = () => {
+        if (!isRunningRef.current) return;
+        const velocity = source.getVelocity();
+        if (Math.abs(velocity - lastVelocityRef.current) > 1e-3) {
+          velocityRef.current?.jump(velocity);
+          lastVelocityRef.current = velocity;
+        }
+        if (source.isAnimating() || Math.abs(velocity) > 1e-3) {
+          frameRef.current = requestAnimationFrame(update);
+        } else {
+          isRunningRef.current = false;
+          frameRef.current = null;
+        }
+      };
+      frameRef.current = requestAnimationFrame(update);
+    };
+    const unsubscribe = source.on("animationStart", startLoop);
+    if (source.isAnimating()) {
+      startLoop();
+    }
+    return () => {
+      unsubscribe();
+      isRunningRef.current = false;
+      if (frameRef.current) {
+        cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      }
+    };
+  }, [source]);
+  useEffect8(() => {
+    return () => {
+      velocityRef.current?.destroy();
+    };
+  }, []);
+  return velocityRef.current;
+}
+function useMotionValueEvent(value, event, callback) {
+  const callbackRef = useRef9(callback);
+  callbackRef.current = callback;
+  useEffect8(() => {
+    if (event === "change") {
+      return value.subscribe((v) => callbackRef.current(v));
+    }
+    return value.on(event, () => callbackRef.current(value.get()));
+  }, [value, event]);
+}
+function useTransform(source, inputRangeOrTransform, outputRange, options) {
+  const derivedRef = useRef9(null);
+  const unsubscribeRef = useRef9(null);
+  const transformFn = useMemo(() => {
+    if (typeof inputRangeOrTransform === "function") {
+      return inputRangeOrTransform;
+    }
+    if (!outputRange) {
+      throw new Error("useTransform: outputRange is required when using range mapping");
+    }
+    const inputRange = inputRangeOrTransform;
+    if (typeof outputRange[0] === "number") {
+      return (value) => {
+        let i = 0;
+        for (; i < inputRange.length - 1; i++) {
+          const nextVal = inputRange[i + 1];
+          if (nextVal !== void 0 && value <= nextVal) break;
+        }
+        const inputMin = inputRange[i] ?? 0;
+        const inputMax = inputRange[Math.min(i + 1, inputRange.length - 1)] ?? 1;
+        const outputMin = outputRange[i] ?? 0;
+        const outputMax = outputRange[Math.min(i + 1, outputRange.length - 1)] ?? 1;
+        let t = inputMax !== inputMin ? (value - inputMin) / (inputMax - inputMin) : 0;
+        if (options?.ease) {
+          t = options.ease(t);
+        }
+        if (options?.clamp) {
+          t = Math.max(0, Math.min(1, t));
+        }
+        return outputMin + t * (outputMax - outputMin);
+      };
+    }
+    return (value) => {
+      let i = 0;
+      for (; i < inputRange.length - 1; i++) {
+        const nextVal = inputRange[i + 1];
+        if (nextVal !== void 0 && value <= nextVal) break;
+      }
+      const inCurr = inputRange[i] ?? 0;
+      const inNext = inputRange[i + 1] ?? 1;
+      const t = inNext !== inCurr ? (value - inCurr) / (inNext - inCurr) : 0;
+      return t < 0.5 ? outputRange[i] : outputRange[i + 1];
+    };
+  }, [inputRangeOrTransform, outputRange, options?.clamp, options?.ease]);
+  if (derivedRef.current === null) {
+    derivedRef.current = createMotionValue2(transformFn(source.get()));
+  }
+  useEffect8(() => {
+    unsubscribeRef.current = source.subscribe((value) => {
+      derivedRef.current?.jump(transformFn(value));
+    });
+    return () => {
+      unsubscribeRef.current?.();
+    };
+  }, [source, transformFn]);
+  useEffect8(() => {
+    return () => {
+      derivedRef.current?.destroy();
+    };
+  }, []);
+  return derivedRef.current;
+}
+function useCombinedTransform(sources, transform) {
+  const derivedRef = useRef9(null);
+  const unsubscribesRef = useRef9([]);
+  const getCurrentValues = () => {
+    return sources.map((source) => source.get());
+  };
+  if (derivedRef.current === null) {
+    derivedRef.current = createMotionValue2(transform(getCurrentValues()));
+  }
+  useEffect8(() => {
+    unsubscribesRef.current = sources.map(
+      (source) => source.subscribe(() => {
+        derivedRef.current?.jump(transform(getCurrentValues()));
+      })
+    );
+    return () => {
+      unsubscribesRef.current.forEach((unsub) => unsub());
+    };
+  }, [sources, transform]);
+  useEffect8(() => {
+    return () => {
+      derivedRef.current?.destroy();
+    };
+  }, []);
+  return derivedRef.current;
+}
+function useVelocityTransform(source, transform) {
+  const derivedRef = useRef9(null);
+  const frameRef = useRef9(null);
+  const isRunningRef = useRef9(false);
+  if (derivedRef.current === null || derivedRef.current.isDestroyed()) {
+    derivedRef.current = createMotionValue2(transform(source.getVelocity()));
+  }
+  useEffect8(() => {
+    const startLoop = () => {
+      if (isRunningRef.current) return;
+      isRunningRef.current = true;
+      const update = () => {
+        if (!isRunningRef.current) return;
+        const velocity = source.getVelocity();
+        derivedRef.current?.jump(transform(velocity));
+        if (source.isAnimating() || Math.abs(velocity) > 1e-3) {
+          frameRef.current = requestAnimationFrame(update);
+        } else {
+          isRunningRef.current = false;
+          frameRef.current = null;
+        }
+      };
+      frameRef.current = requestAnimationFrame(update);
+    };
+    const unsubscribe = source.on("animationStart", startLoop);
+    if (source.isAnimating()) {
+      startLoop();
+    }
+    return () => {
+      unsubscribe();
+      isRunningRef.current = false;
+      if (frameRef.current) {
+        cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      }
+    };
+  }, [source, transform]);
+  useEffect8(() => {
+    return () => {
+      derivedRef.current?.destroy();
+    };
+  }, []);
+  return derivedRef.current;
+}
+function useSpringTransform(source, inputRange, outputRange, springConfig) {
+  const derivedRef = useRef9(null);
+  const unsubscribeRef = useRef9(null);
+  const transform = useMemo(() => {
+    return (value) => {
+      let i = 0;
+      for (; i < inputRange.length - 1; i++) {
+        const nextVal = inputRange[i + 1];
+        if (nextVal !== void 0 && value <= nextVal) break;
+      }
+      const inCurr = inputRange[i] ?? 0;
+      const inNext = inputRange[i + 1] ?? 1;
+      const outCurr = outputRange[i] ?? 0;
+      const outNext = outputRange[i + 1] ?? 1;
+      const t = (value - inCurr) / (inNext - inCurr);
+      return outCurr + t * (outNext - outCurr);
+    };
+  }, [inputRange, outputRange]);
+  if (derivedRef.current === null) {
+    derivedRef.current = createMotionValue2(transform(source.get()), {
+      spring: springConfig
+    });
+  }
+  useEffect8(() => {
+    unsubscribeRef.current = source.subscribe((value) => {
+      derivedRef.current?.set(transform(value));
+    });
+    return () => {
+      unsubscribeRef.current?.();
+    };
+  }, [source, transform]);
+  useEffect8(() => {
+    return () => {
+      derivedRef.current?.destroy();
+    };
+  }, []);
+  return derivedRef.current;
+}
+function useMotionTemplate(strings, ...values) {
+  const templateRef = useRef9(null);
+  const unsubscribesRef = useRef9([]);
+  const valuesRef = useRef9(values);
+  valuesRef.current = values;
+  const stringsRef = useRef9(strings);
+  stringsRef.current = strings;
+  const buildString = useCallback4(() => {
+    let result = "";
+    stringsRef.current.forEach((str, i) => {
+      result += str;
+      if (i < valuesRef.current.length) {
+        result += String(valuesRef.current[i]?.get() ?? "");
+      }
+    });
+    return result;
+  }, []);
+  if (templateRef.current === null) {
+    templateRef.current = createMotionValue2(buildString());
+  }
+  const valuesLength = values.length;
+  useEffect8(() => {
+    unsubscribesRef.current.forEach((unsub) => unsub());
+    unsubscribesRef.current = valuesRef.current.map(
+      (value) => value.subscribe(() => {
+        templateRef.current?.jump(buildString());
+      })
+    );
+    return () => {
+      unsubscribesRef.current.forEach((unsub) => unsub());
+      unsubscribesRef.current = [];
+    };
+  }, [valuesLength, buildString]);
+  useEffect8(() => {
+    return () => {
+      templateRef.current?.destroy();
+    };
+  }, []);
+  return templateRef.current;
+}
+function useTime() {
+  const timeRef = useRef9(null);
+  const frameRef = useRef9(null);
+  const startTimeRef = useRef9(null);
+  if (timeRef.current === null) {
+    timeRef.current = createMotionValue2(0);
+  }
+  useEffect8(() => {
+    let isActive = true;
+    const update = (timestamp) => {
+      if (!isActive) return;
+      if (startTimeRef.current === null) {
+        startTimeRef.current = timestamp;
+      }
+      const elapsed = timestamp - startTimeRef.current;
+      timeRef.current?.jump(elapsed);
+      frameRef.current = requestAnimationFrame(update);
+    };
+    frameRef.current = requestAnimationFrame(update);
+    return () => {
+      isActive = false;
+      if (frameRef.current) {
+        cancelAnimationFrame(frameRef.current);
+      }
+    };
+  }, []);
+  useEffect8(() => {
+    return () => {
+      timeRef.current?.destroy();
+    };
+  }, []);
+  return timeRef.current;
+}
+function useAnimationFrame(callback) {
+  const callbackRef = useRef9(callback);
+  const frameRef = useRef9(null);
+  const lastTimeRef = useRef9(null);
+  callbackRef.current = callback;
+  useEffect8(() => {
+    const update = (timestamp) => {
+      const delta = lastTimeRef.current !== null ? timestamp - lastTimeRef.current : 0;
+      lastTimeRef.current = timestamp;
+      callbackRef.current(timestamp, delta);
+      frameRef.current = requestAnimationFrame(update);
+    };
+    frameRef.current = requestAnimationFrame(update);
+    return () => {
+      if (frameRef.current) {
+        cancelAnimationFrame(frameRef.current);
+      }
+    };
+  }, []);
+}
+function useWillChange(sources, properties = ["transform", "opacity"]) {
+  const willChangeRef = useRef9(null);
+  const frameRef = useRef9(null);
+  const wasAnimatingRef = useRef9(false);
+  const isDestroyedRef = useRef9(false);
+  const sourcesRef = useRef9(sources);
+  sourcesRef.current = sources;
+  const propertiesRef = useRef9(properties);
+  propertiesRef.current = properties;
+  if (willChangeRef.current === null) {
+    willChangeRef.current = createMotionValue2("auto");
+  }
+  const sourcesLength = sources.length;
+  useEffect8(() => {
+    isDestroyedRef.current = false;
+    const checkAnimating = () => {
+      if (isDestroyedRef.current) return;
+      const isAnimating = sourcesRef.current.some((source) => source.isAnimating());
+      if (isAnimating && !wasAnimatingRef.current) {
+        ;
+        willChangeRef.current?.jump(propertiesRef.current.join(", "));
+        wasAnimatingRef.current = true;
+      } else if (!isAnimating && wasAnimatingRef.current) {
+        ;
+        willChangeRef.current?.jump("auto");
+        wasAnimatingRef.current = false;
+      }
+      if (!isDestroyedRef.current) {
+        frameRef.current = requestAnimationFrame(checkAnimating);
+      }
+    };
+    frameRef.current = requestAnimationFrame(checkAnimating);
+    return () => {
+      isDestroyedRef.current = true;
+      if (frameRef.current) {
+        cancelAnimationFrame(frameRef.current);
+        frameRef.current = null;
+      }
+    };
+  }, [sourcesLength]);
+  useEffect8(() => {
+    return () => {
+      willChangeRef.current?.destroy();
+    };
+  }, []);
+  return willChangeRef.current;
+}
+function useSum(...sources) {
+  return useCombinedTransform(
+    sources,
+    (values) => values.reduce((sum, v) => sum + v, 0)
+  );
+}
+function useProduct(...sources) {
+  return useCombinedTransform(
+    sources,
+    (values) => values.reduce((product, v) => product * v, 1)
+  );
+}
+function useDifference(a, b) {
+  return useCombinedTransform([a, b], ([aVal, bVal]) => aVal - bVal);
+}
+function useClamp(source, min, max) {
+  return useTransform(source, (v) => Math.max(min, Math.min(max, v)));
+}
+function useSnap(source, step) {
+  return useTransform(source, (v) => Math.round(v / step) * step);
+}
+function useSmooth(source, factor = 0.1) {
+  const smoothedRef = useRef9(null);
+  const currentRef = useRef9(source.get());
+  if (smoothedRef.current === null) {
+    smoothedRef.current = createMotionValue2(source.get());
+  }
+  useEffect8(() => {
+    const unsub = source.subscribe((target) => {
+      currentRef.current = currentRef.current + (target - currentRef.current) * factor;
+      smoothedRef.current?.jump(currentRef.current);
+    });
+    return unsub;
+  }, [source, factor]);
+  useEffect8(() => {
+    return () => {
+      smoothedRef.current?.destroy();
+    };
+  }, []);
+  return smoothedRef.current;
+}
+function useDelay(source, frames) {
+  const delayedRef = useRef9(null);
+  const bufferRef = useRef9([]);
+  if (delayedRef.current === null) {
+    delayedRef.current = createMotionValue2(source.get());
+    bufferRef.current = Array(frames).fill(source.get());
+  }
+  useEffect8(() => {
+    const unsub = source.subscribe((value) => {
+      bufferRef.current.push(value);
+      const delayed = bufferRef.current.shift();
+      if (delayed !== void 0) {
+        delayedRef.current?.jump(delayed);
+      }
+    });
+    return unsub;
+  }, [source, frames]);
+  useEffect8(() => {
+    return () => {
+      delayedRef.current?.destroy();
+    };
+  }, []);
+  return delayedRef.current;
+}
+
+// src/adapters/react/hooks/useDragControls.ts
+import { useRef as useRef10, useCallback as useCallback5 } from "react";
+function useDragControls() {
+  const isDraggingRef = useRef10(false);
+  const listenerRef = useRef10(null);
+  const stopRef = useRef10(null);
+  const start = useCallback5((event, options) => {
+    isDraggingRef.current = true;
+    event.preventDefault();
+    if (listenerRef.current) {
+      const pointerEvent = "nativeEvent" in event ? event.nativeEvent : event;
+      listenerRef.current(pointerEvent, options);
+    }
+  }, []);
+  const stop = useCallback5(() => {
+    isDraggingRef.current = false;
+    if (stopRef.current) {
+      stopRef.current();
+    }
+  }, []);
+  const isDragging = useCallback5(() => {
+    return isDraggingRef.current;
+  }, []);
+  const controls = {
+    start,
+    stop,
+    isDragging,
+    _setDragHandler: (handler) => {
+      listenerRef.current = handler;
+    },
+    _setStopHandler: (handler) => {
+      stopRef.current = handler;
+    },
+    _notifyDragEnd: () => {
+      isDraggingRef.current = false;
+    }
+  };
+  return controls;
+}
+
+// src/adapters/react/hooks/useInstantTransition.ts
+import { useCallback as useCallback6, useRef as useRef11, useTransition, startTransition } from "react";
+import { useState as useState6 } from "react";
+function useInstantTransition() {
+  const [isPending, _setIsPending] = useTransition();
+  const startInstantTransition = useCallback6((callback) => {
+    startTransition(() => {
+      callback();
+    });
+  }, []);
+  return [startInstantTransition, isPending];
+}
+function useForceUpdate() {
+  const [, setTick] = useState6(0);
+  return useCallback6(() => {
+    setTick((t) => t + 1);
+  }, []);
+}
+function useLayoutMeasure() {
+  const beforeRef = useRef11(null);
+  const measureBefore = useCallback6((element) => {
+    if (element) {
+      beforeRef.current = element.getBoundingClientRect();
+    }
+  }, []);
+  const measureAfter = useCallback6((element) => {
+    if (element) {
+      return element.getBoundingClientRect();
+    }
+    return null;
+  }, []);
+  const getLayoutDelta = useCallback6((element) => {
+    if (!element || !beforeRef.current) {
+      return { x: 0, y: 0, scaleX: 1, scaleY: 1 };
+    }
+    const after = element.getBoundingClientRect();
+    const before = beforeRef.current;
+    return {
+      x: before.left - after.left,
+      y: before.top - after.top,
+      scaleX: before.width / after.width,
+      scaleY: before.height / after.height
+    };
+  }, []);
+  return { measureBefore, measureAfter, getLayoutDelta };
+}
+
+// src/adapters/react/hooks/useInView.ts
+import { useState as useState7, useRef as useRef12, useEffect as useEffect10 } from "react";
+
+// src/adapters/react/utils/ssr.ts
+import { useLayoutEffect, useEffect as useEffect9 } from "react";
+var isBrowser = typeof window !== "undefined";
+var isServer = !isBrowser;
+var useIsomorphicLayoutEffect = isBrowser ? useLayoutEffect : useEffect9;
+function shouldSkipAnimation() {
+  if (isServer) return true;
+  return false;
+}
+function safeRequestAnimationFrame(callback) {
+  if (isBrowser && typeof requestAnimationFrame !== "undefined") {
+    return requestAnimationFrame(callback);
+  }
+  return 0;
+}
+function safeCancelAnimationFrame(id) {
+  if (isBrowser && typeof cancelAnimationFrame !== "undefined") {
+    cancelAnimationFrame(id);
+  }
+}
+
+// src/adapters/react/hooks/useInView.ts
+function useInView(options = {}) {
+  const {
+    once = false,
+    amount = "some",
+    margin = "0px",
+    root
+  } = options;
+  const ref = useRef12(null);
+  const [inView, setInView] = useState7(false);
+  const [entry, setEntry] = useState7();
+  const hasTriggered = useRef12(false);
+  useEffect10(() => {
+    if (!isBrowser) return;
+    const element = ref.current;
+    if (!element) return;
+    if (once && hasTriggered.current) return;
+    let threshold;
+    if (amount === "some") {
+      threshold = 0;
+    } else if (amount === "all") {
+      threshold = 1;
+    } else {
+      threshold = amount;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const [observerEntry] = entries;
+        if (observerEntry) {
+          const isIntersecting = observerEntry.isIntersecting;
+          setEntry(observerEntry);
+          setInView(isIntersecting);
+          if (isIntersecting && once) {
+            hasTriggered.current = true;
+            observer.disconnect();
+          }
+        }
+      },
+      {
+        root: root?.current ?? null,
+        rootMargin: margin,
+        threshold
+      }
+    );
+    observer.observe(element);
+    return () => {
+      observer.disconnect();
+    };
+  }, [once, amount, margin, root]);
+  return { ref, inView, entry };
+}
+function useInViewCallback(callback, options = {}) {
+  const ref = useRef12(null);
+  const callbackRef = useRef12(callback);
+  const hasTriggered = useRef12(false);
+  callbackRef.current = callback;
+  const { once = false, amount = "some", margin = "0px", root } = options;
+  useEffect10(() => {
+    if (!isBrowser) return;
+    const element = ref.current;
+    if (!element) return;
+    if (once && hasTriggered.current) return;
+    let threshold;
+    if (amount === "some") {
+      threshold = 0;
+    } else if (amount === "all") {
+      threshold = 1;
+    } else {
+      threshold = amount;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const [entry] = entries;
+        if (entry?.isIntersecting) {
+          callbackRef.current(entry);
+          if (once) {
+            hasTriggered.current = true;
+            observer.disconnect();
+          }
+        }
+      },
+      {
+        root: root?.current ?? null,
+        rootMargin: margin,
+        threshold
+      }
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [once, amount, margin, root]);
+  return ref;
+}
+function useInViewMultiple(options = {}) {
+  const elementsRef = useRef12(/* @__PURE__ */ new Map());
+  const [inViewMap, setInViewMap] = useState7(/* @__PURE__ */ new Map());
+  const observerRef = useRef12(null);
+  const { once = false, amount = "some", margin = "0px", root } = options;
+  useEffect10(() => {
+    if (!isBrowser) return;
+    let threshold;
+    if (amount === "some") {
+      threshold = 0;
+    } else if (amount === "all") {
+      threshold = 1;
+    } else {
+      threshold = amount;
+    }
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        setInViewMap((prev) => {
+          const next = new Map(prev);
+          entries.forEach((entry) => {
+            const id = entry.target.dataset.inviewId;
+            if (id) {
+              next.set(id, entry.isIntersecting);
+              if (entry.isIntersecting && once) {
+                observerRef.current?.unobserve(entry.target);
+              }
+            }
+          });
+          return next;
+        });
+      },
+      {
+        root: root?.current ?? null,
+        rootMargin: margin,
+        threshold
+      }
+    );
+    elementsRef.current.forEach((element) => {
+      observerRef.current?.observe(element);
+    });
+    return () => {
+      observerRef.current?.disconnect();
+    };
+  }, [once, amount, margin, root]);
+  const setRef = (id, element) => {
+    if (element) {
+      element.dataset.inviewId = id;
+      elementsRef.current.set(id, element);
+      observerRef.current?.observe(element);
+    } else {
+      const existing = elementsRef.current.get(id);
+      if (existing) {
+        observerRef.current?.unobserve(existing);
+        elementsRef.current.delete(id);
+        setInViewMap((prev) => {
+          const next = new Map(prev);
+          next.delete(id);
+          return next;
+        });
+      }
+    }
+  };
+  const getInView = (id) => {
+    return inViewMap.get(id) ?? false;
+  };
+  return { setRef, getInView, inViewMap };
+}
+
+// src/adapters/react/hooks/useScroll.ts
+import { useRef as useRef13, useEffect as useEffect11 } from "react";
+import { createMotionValue as createMotionValue3 } from "@oxog/springkit";
+function useScroll(options = {}) {
+  const { target, container, offset = ["start start", "end end"], axis = "y" } = options;
+  const scrollXRef = useRef13(null);
+  const scrollYRef = useRef13(null);
+  const scrollXProgressRef = useRef13(null);
+  const scrollYProgressRef = useRef13(null);
+  if (scrollXRef.current === null || scrollXRef.current.isDestroyed()) {
+    scrollXRef.current = createMotionValue3(0);
+    scrollYRef.current = createMotionValue3(0);
+    scrollXProgressRef.current = createMotionValue3(0);
+    scrollYProgressRef.current = createMotionValue3(0);
+  }
+  useEffect11(() => {
+    if (!isBrowser) return;
+    const scrollX = scrollXRef.current;
+    const scrollY = scrollYRef.current;
+    const scrollXProgress = scrollXProgressRef.current;
+    const scrollYProgress = scrollYProgressRef.current;
+    const scrollContainer = container?.current ?? (target?.current ?? window);
+    const isWindow = scrollContainer === window;
+    const getScrollPosition = () => {
+      if (isWindow) {
+        return {
+          x: window.scrollX || window.pageXOffset,
+          y: window.scrollY || window.pageYOffset
+        };
+      }
+      const el = scrollContainer;
+      return {
+        x: el.scrollLeft,
+        y: el.scrollTop
+      };
+    };
+    const getScrollSize = () => {
+      if (isWindow) {
+        return {
+          width: document.documentElement.scrollWidth - window.innerWidth,
+          height: document.documentElement.scrollHeight - window.innerHeight
+        };
+      }
+      const el = scrollContainer;
+      return {
+        width: el.scrollWidth - el.clientWidth,
+        height: el.scrollHeight - el.clientHeight
+      };
+    };
+    const calculateProgress = () => {
+      const position = getScrollPosition();
+      const size = getScrollSize();
+      scrollX.jump(position.x);
+      scrollY.jump(position.y);
+      scrollXProgress.jump(size.width > 0 ? position.x / size.width : 0);
+      scrollYProgress.jump(size.height > 0 ? position.y / size.height : 0);
+    };
+    const calculateTargetProgress = () => {
+      const targetEl = target?.current;
+      if (!targetEl) {
+        calculateProgress();
+        return;
+      }
+      const position = getScrollPosition();
+      scrollX.jump(position.x);
+      scrollY.jump(position.y);
+      const rect = targetEl.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      const viewportWidth = window.innerWidth;
+      const [startOffset, endOffset] = offset;
+      const startPoint = parseOffset(startOffset, rect, viewportHeight, viewportWidth, "start");
+      const endPoint = parseOffset(endOffset, rect, viewportHeight, viewportWidth, "end");
+      const current = axis === "y" ? rect.top : rect.left;
+      const range = endPoint - startPoint;
+      const progress = range !== 0 ? (startPoint - current) / range : 0;
+      const clampedProgress = Math.max(0, Math.min(1, progress));
+      if (axis === "y") {
+        scrollYProgress.jump(clampedProgress);
+      } else {
+        scrollXProgress.jump(clampedProgress);
+      }
+    };
+    let rafId = null;
+    let isActive = true;
+    const handleScroll = () => {
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        if (!isActive) return;
+        if (target?.current) {
+          calculateTargetProgress();
+        } else {
+          calculateProgress();
+        }
+        rafId = null;
+      });
+    };
+    handleScroll();
+    const scrollTarget = isWindow ? window : scrollContainer;
+    scrollTarget.addEventListener("scroll", handleScroll, { passive: true });
+    window.addEventListener("resize", handleScroll, { passive: true });
+    return () => {
+      isActive = false;
+      scrollTarget.removeEventListener("scroll", handleScroll);
+      window.removeEventListener("resize", handleScroll);
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+    };
+  }, [target, container, offset, axis]);
+  useEffect11(() => {
+    return () => {
+      scrollXRef.current?.destroy();
+      scrollYRef.current?.destroy();
+      scrollXProgressRef.current?.destroy();
+      scrollYProgressRef.current?.destroy();
+    };
+  }, []);
+  return {
+    scrollX: scrollXRef.current,
+    scrollY: scrollYRef.current,
+    scrollXProgress: scrollXProgressRef.current,
+    scrollYProgress: scrollYProgressRef.current
+  };
+}
+function parseOffset(offset, rect, viewportHeight, _viewportWidth, _type) {
+  const parts = offset.split(" ");
+  const elementPart = parts[0] || "start";
+  const viewportPart = parts[1] || "start";
+  let elementPos;
+  if (elementPart === "start") {
+    elementPos = rect.top;
+  } else if (elementPart === "center") {
+    elementPos = rect.top + rect.height / 2;
+  } else if (elementPart === "end") {
+    elementPos = rect.bottom;
+  } else if (elementPart.endsWith("px")) {
+    elementPos = rect.top + parseFloat(elementPart);
+  } else if (elementPart.endsWith("%")) {
+    elementPos = rect.top + rect.height * parseFloat(elementPart) / 100;
+  } else {
+    elementPos = rect.top;
+  }
+  let viewportPos;
+  if (viewportPart === "start") {
+    viewportPos = 0;
+  } else if (viewportPart === "center") {
+    viewportPos = viewportHeight / 2;
+  } else if (viewportPart === "end") {
+    viewportPos = viewportHeight;
+  } else if (viewportPart.endsWith("px")) {
+    viewportPos = parseFloat(viewportPart);
+  } else if (viewportPart.endsWith("%")) {
+    viewportPos = viewportHeight * parseFloat(viewportPart) / 100;
+  } else {
+    viewportPos = 0;
+  }
+  return viewportPos - elementPos;
+}
+function useScrollVelocity(axis = "y") {
+  const velocityRef = useRef13(null);
+  const lastScrollRef = useRef13(0);
+  const lastTimeRef = useRef13(Date.now());
+  if (velocityRef.current === null || velocityRef.current.isDestroyed()) {
+    velocityRef.current = createMotionValue3(0);
+  }
+  useEffect11(() => {
+    if (!isBrowser) return;
+    const velocity = velocityRef.current;
+    const handleScroll = () => {
+      const now = Date.now();
+      const currentScroll = axis === "y" ? window.scrollY || window.pageYOffset : window.scrollX || window.pageXOffset;
+      const deltaTime = now - lastTimeRef.current;
+      const deltaScroll = currentScroll - lastScrollRef.current;
+      if (deltaTime > 0) {
+        velocity.jump(deltaScroll / deltaTime * 1e3);
+      }
+      lastScrollRef.current = currentScroll;
+      lastTimeRef.current = now;
+    };
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", handleScroll);
+    };
+  }, [axis]);
+  useEffect11(() => {
+    return () => {
+      velocityRef.current?.destroy();
+    };
+  }, []);
+  return velocityRef.current;
+}
+
+// src/adapters/react/hooks/useGestureState.ts
+import {
+  useState as useState8,
+  useRef as useRef14,
+  useEffect as useEffect12
+} from "react";
+function useGestureState(options = {}) {
+  const {
+    hover = true,
+    press = true,
+    focus = true,
+    drag = false
+  } = options;
+  const ref = useRef14(null);
+  const [state, setState] = useState8({
+    isHovered: false,
+    isPressed: false,
+    isFocused: false,
+    isDragging: false
+  });
+  const handlers = {
+    ...hover && {
+      onMouseEnter: () => setState((s) => ({ ...s, isHovered: true })),
+      onMouseLeave: () => setState((s) => ({ ...s, isHovered: false, isPressed: false }))
+    },
+    ...press && {
+      onMouseDown: () => setState((s) => ({ ...s, isPressed: true })),
+      onMouseUp: () => setState((s) => ({ ...s, isPressed: false })),
+      onTouchStart: () => setState((s) => ({ ...s, isPressed: true })),
+      onTouchEnd: () => setState((s) => ({ ...s, isPressed: false }))
+    },
+    ...focus && {
+      onFocus: () => setState((s) => ({ ...s, isFocused: true })),
+      onBlur: () => setState((s) => ({ ...s, isFocused: false }))
+    },
+    ...drag && {
+      onDragStart: () => setState((s) => ({ ...s, isDragging: true })),
+      onDragEnd: () => setState((s) => ({ ...s, isDragging: false }))
+    }
+  };
+  useEffect12(() => {
+    if (!press || !isBrowser) return;
+    const handleGlobalMouseUp = () => {
+      setState((s) => s.isPressed ? { ...s, isPressed: false } : s);
+    };
+    window.addEventListener("mouseup", handleGlobalMouseUp);
+    window.addEventListener("touchend", handleGlobalMouseUp);
+    return () => {
+      window.removeEventListener("mouseup", handleGlobalMouseUp);
+      window.removeEventListener("touchend", handleGlobalMouseUp);
+    };
+  }, [press]);
+  return {
+    ref,
+    ...state,
+    handlers
+  };
+}
+function useHover() {
+  const ref = useRef14(null);
+  const [isHovered, setIsHovered] = useState8(false);
+  const handlers = {
+    onMouseEnter: () => setIsHovered(true),
+    onMouseLeave: () => setIsHovered(false)
+  };
+  return { ref, isHovered, handlers };
+}
+function useTap() {
+  const ref = useRef14(null);
+  const [isPressed, setIsPressed] = useState8(false);
+  const handlers = {
+    onMouseDown: () => setIsPressed(true),
+    onMouseUp: () => setIsPressed(false),
+    onMouseLeave: () => setIsPressed(false),
+    onTouchStart: () => setIsPressed(true),
+    onTouchEnd: () => setIsPressed(false)
+  };
+  useEffect12(() => {
+    if (!isBrowser) return;
+    const handleUp = () => setIsPressed(false);
+    window.addEventListener("mouseup", handleUp);
+    window.addEventListener("touchend", handleUp);
+    return () => {
+      window.removeEventListener("mouseup", handleUp);
+      window.removeEventListener("touchend", handleUp);
+    };
+  }, []);
+  return { ref, isPressed, handlers };
+}
+function useFocus() {
+  const ref = useRef14(null);
+  const [isFocused, setIsFocused] = useState8(false);
+  const handlers = {
+    onFocus: () => setIsFocused(true),
+    onBlur: () => setIsFocused(false)
+  };
+  return { ref, isFocused, handlers };
+}
+function useInteractionState() {
+  const { ref, isHovered, isPressed, isFocused, handlers } = useGestureState({
+    hover: true,
+    press: true,
+    focus: true
+  });
+  const activeState = isPressed ? "pressed" : isHovered ? "hovered" : isFocused ? "focused" : "default";
+  return { ref, isHovered, isPressed, isFocused, activeState, handlers };
+}
+function useGestureAnimation(states) {
+  const { ref, isHovered, isPressed, isFocused, handlers } = useGestureState({
+    hover: !!states.hover,
+    press: !!states.press,
+    focus: !!states.focus
+  });
+  const currentValues = { ...states.default };
+  if (isFocused && states.focus) {
+    Object.assign(currentValues, states.focus);
+  }
+  if (isHovered && states.hover) {
+    Object.assign(currentValues, states.hover);
+  }
+  if (isPressed && states.press) {
+    Object.assign(currentValues, states.press);
+  }
+  return {
+    ref,
+    handlers,
+    isHovered,
+    isPressed,
+    isFocused,
+    ...currentValues
+  };
+}
+
+// src/adapters/react/hooks/useReducedMotion.ts
+import { useState as useState9, useEffect as useEffect13 } from "react";
+function useReducedMotion() {
+  const [prefersReducedMotion, setPrefersReducedMotion] = useState9(false);
+  useEffect13(() => {
+    if (!isBrowser) return;
+    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    setPrefersReducedMotion(mediaQuery.matches);
+    const handleChange = (event) => {
+      setPrefersReducedMotion(event.matches);
+    };
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener("change", handleChange);
+      return () => mediaQuery.removeEventListener("change", handleChange);
+    }
+    mediaQuery.addListener(handleChange);
+    return () => mediaQuery.removeListener(handleChange);
+  }, []);
+  return prefersReducedMotion;
+}
+function getReducedMotionPreference() {
+  if (!isBrowser) return false;
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+function useReducedMotionConfig(configs) {
+  const prefersReducedMotion = useReducedMotion();
+  return prefersReducedMotion ? configs.reduced : configs.default;
+}
+function useShouldAnimate() {
+  return !useReducedMotion();
+}
+function useReducedMotionValue(animatedValue, reducedValue) {
+  const prefersReducedMotion = useReducedMotion();
+  return prefersReducedMotion ? reducedValue : animatedValue;
+}
+
+// src/adapters/react/hooks/useScrollLinked.ts
+import { useRef as useRef15, useState as useState10 } from "react";
+import {
+  createScrollProgress,
+  createParallax,
+  createScrollTrigger,
+  createScrollLinkedValue
+} from "@oxog/springkit";
+function useScrollProgress(options = {}) {
+  const { target, offset, smooth } = options;
+  const [progress, setProgress] = useState10(0);
+  const [info, setInfo] = useState10({
+    progress: 0,
+    scrollY: 0,
+    velocity: 0,
+    direction: 0,
+    isInView: true,
+    visibleRatio: 1
+  });
+  const scrollProgressRef = useRef15(null);
+  useIsomorphicLayoutEffect(() => {
+    const element = target?.current ?? null;
+    const scrollProgress = createScrollProgress(element, { offset, smooth });
+    scrollProgressRef.current = scrollProgress;
+    const unsubscribe = scrollProgress.subscribe((scrollInfo) => {
+      setProgress(scrollInfo.progress);
+      setInfo(scrollInfo);
+    });
+    return () => {
+      unsubscribe();
+      scrollProgress.destroy();
+    };
+  }, [target?.current, offset?.[0], offset?.[1], smooth]);
+  return {
+    progress,
+    info,
+    scrollProgress: scrollProgressRef.current
+  };
+}
+function useParallax(options = {}) {
+  const ref = useRef15(null);
+  const [offset, setOffset] = useState10(0);
+  useIsomorphicLayoutEffect(() => {
+    if (!ref.current) return;
+    const parallax = createParallax(ref.current, options);
+    let rafId = null;
+    let isActive = true;
+    const update = () => {
+      if (!isActive) return;
+      setOffset(parallax.getOffset());
+      rafId = requestAnimationFrame(update);
+    };
+    rafId = requestAnimationFrame(update);
+    return () => {
+      isActive = false;
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+      }
+      parallax.destroy();
+    };
+  }, [options.speed, options.direction, options.rootMargin]);
+  return { ref, offset };
+}
+function useScrollTrigger(options = {}) {
+  const ref = useRef15(null);
+  const [isActive, setIsActive] = useState10(false);
+  const [progress, setProgress] = useState10(0);
+  const [hasEntered, setHasEntered] = useState10(false);
+  useIsomorphicLayoutEffect(() => {
+    if (!ref.current) return;
+    const trigger = createScrollTrigger(ref.current, {
+      ...options,
+      onEnter: () => setHasEntered(true),
+      onProgress: (info) => {
+        setIsActive(info.progress > 0 && info.progress < 1);
+        setProgress(info.progress);
+      }
+    });
+    return () => trigger.destroy();
+  }, [
+    options.start,
+    options.end,
+    options.startOffset,
+    options.endOffset,
+    options.once,
+    options.scrub
+  ]);
+  return { ref, isActive, progress, hasEntered };
+}
+function useScrollLinkedValue(scrollProgress, config) {
+  const [value, setValue] = useState10(config.outputRange[0] ?? 0);
+  useIsomorphicLayoutEffect(() => {
+    if (!scrollProgress) return;
+    const linkedValue = createScrollLinkedValue(scrollProgress, config);
+    const unsubscribe = linkedValue.subscribe((newValue) => {
+      setValue(newValue);
+    });
+    return () => {
+      unsubscribe();
+      linkedValue.destroy();
+    };
+  }, [scrollProgress, config.inputRange, config.outputRange, config.clamp, config.smooth]);
+  return value;
+}
+
+// src/adapters/react/hooks/useTimeline.ts
+import { useRef as useRef16, useCallback as useCallback7, useMemo as useMemo2 } from "react";
+import {
+  createTimeline
+} from "@oxog/springkit";
+function useTimeline(options = {}) {
+  const timelineRef = useRef16(null);
+  useIsomorphicLayoutEffect(() => {
+    const timeline = createTimeline(options);
+    timelineRef.current = timeline;
+    return () => {
+      timeline.kill();
+    };
+  }, []);
+  const play = useCallback7(() => {
+    timelineRef.current?.play();
+  }, []);
+  const pause = useCallback7(() => {
+    timelineRef.current?.pause();
+  }, []);
+  const resume = useCallback7(() => {
+    timelineRef.current?.resume();
+  }, []);
+  const reverse = useCallback7(() => {
+    timelineRef.current?.reverse();
+  }, []);
+  const restart = useCallback7(() => {
+    timelineRef.current?.restart();
+  }, []);
+  const seek = useCallback7((progress) => {
+    timelineRef.current?.seek(progress);
+  }, []);
+  const kill = useCallback7(() => {
+    timelineRef.current?.kill();
+  }, []);
+  const returnValue = useMemo2(() => {
+    const result = {
+      timeline: timelineRef.current,
+      play,
+      pause,
+      resume,
+      reverse,
+      restart,
+      seek,
+      kill,
+      get isPlaying() {
+        return timelineRef.current?.isPlaying() ?? false;
+      },
+      get isPaused() {
+        return !(timelineRef.current?.isPlaying() ?? false);
+      },
+      get progress() {
+        return timelineRef.current?.progress() ?? 0;
+      },
+      to: (target, props, position) => {
+        timelineRef.current?.to(target, props, position);
+        return result;
+      },
+      from: (target, props, position) => {
+        timelineRef.current?.from(target, props, position);
+        return result;
+      },
+      fromTo: (target, fromProps, toProps, position) => {
+        timelineRef.current?.fromTo(target, fromProps, toProps, position);
+        return result;
+      },
+      addLabel: (label, position) => {
+        timelineRef.current?.addLabel(label, position);
+        return result;
+      }
+    };
+    return result;
+  }, [play, pause, resume, reverse, restart, seek, kill]);
+  return returnValue;
+}
+function useTimelineState(timeline) {
+  const progressRef = useRef16(0);
+  const isPlayingRef = useRef16(false);
+  const isPausedRef = useRef16(true);
+  const isReversedRef = useRef16(false);
+  useIsomorphicLayoutEffect(() => {
+    if (!timeline) return;
+    const updateState = () => {
+      progressRef.current = timeline.progress();
+      isPlayingRef.current = timeline.isPlaying();
+      isPausedRef.current = !timeline.isPlaying();
+      isReversedRef.current = timeline.isReversed();
+    };
+    updateState();
+    let currentRafId = null;
+    let isActive = true;
+    const tick = () => {
+      if (!isActive) return;
+      updateState();
+      currentRafId = requestAnimationFrame(tick);
+    };
+    currentRafId = requestAnimationFrame(tick);
+    return () => {
+      isActive = false;
+      if (currentRafId !== null) {
+        cancelAnimationFrame(currentRafId);
+        currentRafId = null;
+      }
+    };
+  }, [timeline]);
+  return {
+    get progress() {
+      return progressRef.current;
+    },
+    get isPlaying() {
+      return isPlayingRef.current;
+    },
+    get isPaused() {
+      return isPausedRef.current;
+    },
+    get isReversed() {
+      return isReversedRef.current;
+    }
+  };
+}
+
+// src/adapters/react/hooks/useMorph.ts
+import { useState as useState11, useRef as useRef17, useCallback as useCallback8 } from "react";
+import {
+  createMorph,
+  createMorphSequence
+} from "@oxog/springkit";
+function useMorph(initialPath, options = {}) {
+  const [path, setPath] = useState11(initialPath);
+  const [progress, setProgressState] = useState11(0);
+  const morphRef = useRef17(null);
+  const isMountedRef = useRef17(false);
+  const optionsRef = useRef17(options);
+  optionsRef.current = options;
+  useIsomorphicLayoutEffect(() => {
+    isMountedRef.current = true;
+    const currentOptions = optionsRef.current;
+    const morph = createMorph(initialPath, {
+      ...currentOptions,
+      onProgress: (p) => {
+        if (!isMountedRef.current) return;
+        setProgressState(p);
+        currentOptions.onProgress?.(p);
+      }
+    });
+    const unsubscribe = morph.subscribe((newPath) => {
+      if (!isMountedRef.current) return;
+      setPath(newPath);
+    });
+    morphRef.current = morph;
+    return () => {
+      isMountedRef.current = false;
+      unsubscribe();
+      morph.destroy();
+    };
+  }, [initialPath]);
+  const morphTo = useCallback8((targetPath) => {
+    morphRef.current?.morphTo(targetPath);
+  }, []);
+  const setProgress = useCallback8((p) => {
+    morphRef.current?.setProgress(p);
+  }, []);
+  return {
+    path,
+    progress,
+    morphTo,
+    setProgress,
+    controller: morphRef.current
+  };
+}
+function useMorphSequence(paths, options = {}) {
+  const [path, setPath] = useState11(paths[0] ?? "");
+  const [currentIndex, setCurrentIndex] = useState11(0);
+  const isMountedRef = useRef17(false);
+  const sequenceRef = useRef17(null);
+  const optionsRef = useRef17(options);
+  optionsRef.current = options;
+  const pathsKey = paths.join("|");
+  useIsomorphicLayoutEffect(() => {
+    if (paths.length === 0) return;
+    isMountedRef.current = true;
+    const sequence = createMorphSequence(paths, optionsRef.current);
+    const unsubscribe = sequence.subscribe((newPath) => {
+      if (!isMountedRef.current) return;
+      setPath(newPath);
+      setCurrentIndex(sequence.getCurrentIndex());
+    });
+    sequenceRef.current = sequence;
+    return () => {
+      isMountedRef.current = false;
+      unsubscribe();
+      sequence.destroy();
+    };
+  }, [pathsKey]);
+  const morphToIndex = useCallback8((index) => {
+    sequenceRef.current?.morphToIndex(index);
+  }, []);
+  const morphToNext = useCallback8(() => {
+    sequenceRef.current?.morphToNext();
+  }, []);
+  const morphToPrevious = useCallback8(() => {
+    sequenceRef.current?.morphToPrevious();
+  }, []);
+  return {
+    path,
+    currentIndex,
+    morphToIndex,
+    morphToNext,
+    morphToPrevious
+  };
+}
+function useMorphRef(initialPath, options = {}) {
+  const [progress, setProgressState] = useState11(0);
+  const morphRef = useRef17(null);
+  const elementRef = useRef17(null);
+  const unsubscribeRef = useRef17(null);
+  const pathRef = useCallback8(
+    (element) => {
+      unsubscribeRef.current?.();
+      unsubscribeRef.current = null;
+      if (!element) {
+        morphRef.current?.destroy();
+        morphRef.current = null;
+        elementRef.current = null;
+        return;
+      }
+      elementRef.current = element;
+      const morph = createMorph(initialPath, {
+        ...options,
+        onProgress: (p) => {
+          setProgressState(p);
+          options.onProgress?.(p);
+        }
+      });
+      unsubscribeRef.current = morph.subscribe((path) => {
+        element.setAttribute("d", path);
+      });
+      morphRef.current = morph;
+    },
+    // options used only on initialization
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [initialPath]
+  );
+  const morphTo = useCallback8((targetPath) => {
+    morphRef.current?.morphTo(targetPath);
+  }, []);
+  const setProgress = useCallback8((p) => {
+    morphRef.current?.setProgress(p);
+  }, []);
+  return {
+    pathRef,
+    morphTo,
+    setProgress,
+    progress
+  };
+}
+
+// src/adapters/react/hooks/useLayoutAnimation.ts
+import { useRef as useRef18, useCallback as useCallback9, createContext as createContext2 } from "react";
+import * as React from "react";
+import {
+  createLayoutGroup,
+  createSharedLayoutContext,
+  createAutoLayout,
+  measureElement,
+  flip
+} from "@oxog/springkit";
+var LayoutGroupContext = createContext2(null);
+var SharedLayoutContextReact = createContext2(null);
+function useLayoutGroup(options = {}) {
+  const layoutGroupRef = useRef18(null);
+  useIsomorphicLayoutEffect(() => {
+    const layoutGroup = createLayoutGroup(options);
+    layoutGroupRef.current = layoutGroup;
+    return () => {
+      layoutGroup.destroy();
+    };
+  }, []);
+  const register = useCallback9((id, element) => {
+    layoutGroupRef.current?.register(id, element);
+  }, []);
+  const unregister = useCallback9((id, element) => {
+    layoutGroupRef.current?.unregister(id, element);
+  }, []);
+  const update = useCallback9(() => {
+    layoutGroupRef.current?.update();
+  }, []);
+  const forceUpdate = useCallback9(() => {
+    layoutGroupRef.current?.forceUpdate();
+  }, []);
+  return {
+    register,
+    unregister,
+    update,
+    forceUpdate,
+    layoutGroup: layoutGroupRef.current
+  };
+}
+function useLayoutId(layoutId, options = {}) {
+  const { group, ...config } = options;
+  const elementRef = useRef18(null);
+  const localGroupRef = useRef18(null);
+  useIsomorphicLayoutEffect(() => {
+    if (!group) {
+      localGroupRef.current = createLayoutGroup(config);
+      return () => {
+        localGroupRef.current?.destroy();
+      };
+    }
+  }, [group]);
+  const ref = useCallback9(
+    (element) => {
+      const activeGroup = group ?? localGroupRef.current;
+      if (elementRef.current && activeGroup) {
+        activeGroup.unregister(layoutId, elementRef.current);
+      }
+      elementRef.current = element;
+      if (element && activeGroup) {
+        activeGroup.register(layoutId, element);
+      }
+    },
+    [layoutId, group]
+  );
+  const update = useCallback9(() => {
+    const activeGroup = group ?? localGroupRef.current;
+    activeGroup?.update();
+  }, [group]);
+  return { ref, update };
+}
+function useFlip(options = {}) {
+  const elementRef = useRef18(null);
+  const lastMeasurementRef = useRef18(null);
+  const ref = useCallback9((element) => {
+    if (element) {
+      lastMeasurementRef.current = measureElement(element);
+    }
+    elementRef.current = element;
+  }, []);
+  const flipFn = useCallback9(async (mutate) => {
+    if (!elementRef.current) return;
+    await flip(elementRef.current, mutate ?? (() => {
+    }), options);
+    lastMeasurementRef.current = measureElement(elementRef.current);
+  }, [options]);
+  const measure = useCallback9(() => {
+    if (!elementRef.current) return null;
+    return measureElement(elementRef.current);
+  }, []);
+  return { ref, flip: flipFn, measure };
+}
+function useAutoLayout(options = {}) {
+  const autoLayoutRef = useRef18(null);
+  const containerRef = useCallback9((element) => {
+    if (autoLayoutRef.current) {
+      autoLayoutRef.current.destroy();
+      autoLayoutRef.current = null;
+    }
+    if (element) {
+      autoLayoutRef.current = createAutoLayout(options);
+    }
+  }, []);
+  const update = useCallback9(() => {
+    autoLayoutRef.current?.update();
+  }, []);
+  const forceUpdate = useCallback9(() => {
+    autoLayoutRef.current?.forceUpdate();
+  }, []);
+  return { containerRef, update, forceUpdate };
+}
+function LayoutGroupProvider({
+  children,
+  config
+}) {
+  const layoutGroupRef = useRef18(null);
+  useIsomorphicLayoutEffect(() => {
+    layoutGroupRef.current = createLayoutGroup(config);
+    return () => {
+      layoutGroupRef.current?.destroy();
+    };
+  }, []);
+  return React.createElement(
+    LayoutGroupContext.Provider,
+    { value: layoutGroupRef.current },
+    children
+  );
+}
+function SharedLayoutProvider({
+  children
+}) {
+  const sharedContextRef = useRef18(null);
+  useIsomorphicLayoutEffect(() => {
+    sharedContextRef.current = createSharedLayoutContext();
+    return () => {
+      sharedContextRef.current?.destroy();
+    };
+  }, []);
+  return React.createElement(
+    SharedLayoutContextReact.Provider,
+    { value: sharedContextRef.current },
+    children
+  );
+}
+
+// src/adapters/react/hooks/useVariants.ts
+import { useRef as useRef19, useCallback as useCallback10, useMemo as useMemo3, createContext as createContext3, useContext as useContext2 } from "react";
+import * as React2 from "react";
+import {
+  getVariant,
+  calculateStaggerDelays
+} from "@oxog/springkit";
+var VariantContext = createContext3({
+  variant: void 0
+});
+function useVariantContext() {
+  return useContext2(VariantContext);
+}
+function useVariants(options) {
+  const {
+    variants,
+    animate,
+    initial,
+    custom,
+    inherit = true,
+    spring: springConfig,
+    onAnimationComplete
+  } = options;
+  const parentContext = useVariantContext();
+  const currentVariantRef = useRef19(void 0);
+  const isAnimatingRef = useRef19(false);
+  const targetVariant = useMemo3(() => {
+    if (typeof animate === "string") {
+      return animate;
+    }
+    if (inherit && parentContext.variant) {
+      return parentContext.variant;
+    }
+    return void 0;
+  }, [animate, inherit, parentContext.variant]);
+  const initialValues = useMemo3(() => {
+    if (initial === false) {
+      return getVariant(variants, targetVariant, custom).values;
+    }
+    if (typeof initial === "string") {
+      return getVariant(variants, initial, custom).values;
+    }
+    if (typeof initial === "object") {
+      return initial;
+    }
+    return {};
+  }, [initial, variants, targetVariant, custom]);
+  const targetValues = useMemo3(() => {
+    if (typeof animate === "object") {
+      return animate;
+    }
+    if (targetVariant && variants) {
+      return getVariant(variants, targetVariant, custom).values;
+    }
+    return initialValues;
+  }, [animate, targetVariant, variants, custom, initialValues]);
+  const transition = useMemo3(() => {
+    if (targetVariant && variants) {
+      return getVariant(variants, targetVariant, custom).transition;
+    }
+    return parentContext.transition || {};
+  }, [targetVariant, variants, custom, parentContext.transition]);
+  const staggerDelay = useMemo3(() => {
+    if (parentContext.staggerIndex !== void 0 && transition.staggerChildren) {
+      return parentContext.staggerIndex * transition.staggerChildren + (transition.delayChildren || 0);
+    }
+    return transition.delay || 0;
+  }, [parentContext.staggerIndex, transition]);
+  const toNumber = (val, fallback) => {
+    if (val === void 0) return fallback;
+    if (typeof val === "number") return val;
+    const parsed = parseFloat(val);
+    return isNaN(parsed) ? fallback : parsed;
+  };
+  const computeSpringValues = useCallback10((values, fallbackValues) => ({
+    x: toNumber(values.x ?? fallbackValues?.x, 0),
+    y: toNumber(values.y ?? fallbackValues?.y, 0),
+    scale: values.scale ?? fallbackValues?.scale ?? 1,
+    scaleX: values.scaleX ?? fallbackValues?.scaleX ?? 1,
+    scaleY: values.scaleY ?? fallbackValues?.scaleY ?? 1,
+    rotate: values.rotate ?? fallbackValues?.rotate ?? 0,
+    opacity: values.opacity ?? fallbackValues?.opacity ?? 1
+  }), []);
+  const initialSpringValues = useMemo3(
+    () => computeSpringValues(initialValues),
+    [initialValues, computeSpringValues]
+  );
+  const animatedTargetValues = useMemo3(
+    () => computeSpringValues(targetValues, initialValues),
+    [targetValues, initialValues, computeSpringValues]
+  );
+  const hasInitializedRef = useRef19(false);
+  const springValues = useSpring(
+    hasInitializedRef.current ? animatedTargetValues : initialSpringValues,
+    {
+      stiffness: springConfig?.stiffness ?? transition.spring?.stiffness ?? 100,
+      damping: springConfig?.damping ?? transition.spring?.damping ?? 15,
+      mass: springConfig?.mass ?? transition.spring?.mass ?? 1
+    }
+  );
+  useIsomorphicLayoutEffect(() => {
+    if (!hasInitializedRef.current) {
+      hasInitializedRef.current = true;
+    }
+  }, []);
+  useIsomorphicLayoutEffect(() => {
+    if (targetVariant && targetVariant !== currentVariantRef.current) {
+      currentVariantRef.current = targetVariant;
+      isAnimatingRef.current = true;
+      const capturedVariant = targetVariant;
+      const capturedCallback = onAnimationComplete;
+      const damping = springConfig?.damping ?? 15;
+      const mass = springConfig?.mass ?? 1;
+      const estimatedDuration = Math.max(200, Math.min(2e3, 8 * mass / damping * 1e3));
+      const totalDelay = staggerDelay + estimatedDuration;
+      const timer = setTimeout(() => {
+        isAnimatingRef.current = false;
+        capturedCallback?.(capturedVariant);
+      }, totalDelay);
+      return () => clearTimeout(timer);
+    }
+  }, [targetVariant, staggerDelay, onAnimationComplete, springConfig?.stiffness, springConfig?.damping, springConfig?.mass]);
+  const setVariant = useCallback10((name) => {
+    currentVariantRef.current = name;
+  }, []);
+  return {
+    values: {
+      ...targetValues,
+      ...springValues
+    },
+    setVariant,
+    currentVariant: currentVariantRef.current,
+    isAnimating: isAnimatingRef.current
+  };
+}
+function VariantProvider({
+  children,
+  variant,
+  custom,
+  transition
+}) {
+  const value = useMemo3(
+    () => ({ variant, custom, transition }),
+    [variant, custom, transition]
+  );
+  return React2.createElement(VariantContext.Provider, { value }, children);
+}
+function useStaggerChildren(options) {
+  const {
+    count,
+    staggerChildren = 100,
+    delayChildren = 0,
+    staggerDirection = 1
+  } = options;
+  const delays = useMemo3(() => {
+    return calculateStaggerDelays(count, {
+      staggerChildren,
+      delayChildren,
+      staggerDirection
+    });
+  }, [count, staggerChildren, delayChildren, staggerDirection]);
+  const getDelay = useCallback10(
+    (index) => delays[index] || 0,
+    [delays]
+  );
+  const getChildProps = useCallback10(
+    (index) => ({
+      style: { transitionDelay: `${getDelay(index)}ms` }
+    }),
+    [getDelay]
+  );
+  return { getDelay, getChildProps, delays };
+}
+function createMotionComponent(_element, _options = {}) {
+  throw new Error(
+    "createMotionComponent is not yet implemented. Use useVariants hook or Animated component instead."
+  );
+}
+
+// src/adapters/react/hooks/usePhysics.ts
+import { useRef as useRef20, useEffect as useEffect14, useCallback as useCallback11, useState as useState12 } from "react";
+import { createMotionValue as createMotionValue4 } from "@oxog/springkit";
+import { createSpringValue as createSpringValue4 } from "@oxog/springkit";
+function useSpringState(initialValue = 0, options = {}) {
+  const { initial = initialValue, onChange, ...springConfig } = options;
+  const [state, setState] = useState12(initial);
+  const springRef = useRef20(null);
+  const motionValueRef = useRef20(null);
+  if (springRef.current === null || springRef.current.isDestroyed()) {
+    springRef.current = createSpringValue4(initial, {
+      ...springConfig,
+      onUpdate: (value) => {
+        setState(value);
+        onChange?.(value);
+      }
+    });
+  }
+  if (motionValueRef.current === null || motionValueRef.current.isDestroyed()) {
+    motionValueRef.current = createMotionValue4(initial);
+  }
+  useEffect14(() => {
+    const unsub = springRef.current?.subscribe((v) => {
+      motionValueRef.current?.jump(v);
+    });
+    return () => unsub?.();
+  }, []);
+  useEffect14(() => {
+    return () => {
+      springRef.current?.destroy();
+      springRef.current = null;
+    };
+  }, []);
+  const setValue = useCallback11((value) => {
+    springRef.current?.set(value);
+  }, []);
+  return [state, setValue, motionValueRef.current];
+}
+function useMomentum(options = {}) {
+  const {
+    friction = 0.95,
+    minVelocity = 0.01,
+    bounds,
+    onRest
+  } = options;
+  const valueRef = useRef20(null);
+  const velocityRef = useRef20(null);
+  const frameRef = useRef20(null);
+  const isActiveRef = useRef20(false);
+  if (valueRef.current === null || valueRef.current.isDestroyed()) {
+    valueRef.current = createMotionValue4(0);
+  }
+  if (velocityRef.current === null || velocityRef.current.isDestroyed()) {
+    velocityRef.current = createMotionValue4(0);
+  }
+  const applyBounds = useCallback11((val) => {
+    if (!bounds) return val;
+    let result = val;
+    if (bounds.min !== void 0) result = Math.max(bounds.min, result);
+    if (bounds.max !== void 0) result = Math.min(bounds.max, result);
+    return result;
+  }, [bounds]);
+  const tick = useCallback11(() => {
+    if (!isActiveRef.current) return;
+    const currentVelocity = velocityRef.current?.get() ?? 0;
+    const currentValue = valueRef.current?.get() ?? 0;
+    const newVelocity = currentVelocity * friction;
+    const newValue = applyBounds(currentValue + newVelocity);
+    valueRef.current?.jump(newValue);
+    velocityRef.current?.jump(newVelocity);
+    if (Math.abs(newVelocity) < minVelocity) {
+      isActiveRef.current = false;
+      velocityRef.current?.jump(0);
+      onRest?.();
+      return;
+    }
+    if (bounds) {
+      if (bounds.min !== void 0 && newValue <= bounds.min || bounds.max !== void 0 && newValue >= bounds.max) {
+        isActiveRef.current = false;
+        velocityRef.current?.jump(0);
+        onRest?.();
+        return;
+      }
+    }
+    frameRef.current = requestAnimationFrame(tick);
+  }, [friction, minVelocity, bounds, applyBounds, onRest]);
+  const push = useCallback11((velocity) => {
+    if (!Number.isFinite(velocity)) return;
+    velocityRef.current?.jump(velocity);
+    isActiveRef.current = true;
+    if (frameRef.current) cancelAnimationFrame(frameRef.current);
+    frameRef.current = requestAnimationFrame(tick);
+  }, [tick]);
+  const stop = useCallback11(() => {
+    isActiveRef.current = false;
+    if (frameRef.current) {
+      cancelAnimationFrame(frameRef.current);
+    }
+    velocityRef.current?.jump(0);
+  }, []);
+  const set = useCallback11((value) => {
+    if (!Number.isFinite(value)) return;
+    valueRef.current?.jump(applyBounds(value));
+  }, [applyBounds]);
+  useEffect14(() => {
+    return () => {
+      if (frameRef.current) cancelAnimationFrame(frameRef.current);
+      isActiveRef.current = false;
+    };
+  }, []);
+  return {
+    value: valueRef.current,
+    velocity: velocityRef.current,
+    push,
+    stop,
+    set,
+    isActive: () => isActiveRef.current
+  };
+}
+function useElastic(options = {}) {
+  const {
+    elasticity = 0.5,
+    maxStretch = 100,
+    spring = { stiffness: 300, damping: 30 }
+  } = options;
+  const motionValueRef = useRef20(null);
+  const springRef = useRef20(null);
+  if (motionValueRef.current === null || motionValueRef.current.isDestroyed()) {
+    motionValueRef.current = createMotionValue4(0);
+  }
+  if (springRef.current === null || springRef.current.isDestroyed()) {
+    springRef.current = createSpringValue4(0, {
+      ...spring,
+      onUpdate: (v) => motionValueRef.current?.jump(v)
+    });
+  }
+  const rawValueRef = useRef20(0);
+  const applyElasticity = useCallback11((input) => {
+    const sign = input >= 0 ? 1 : -1;
+    const absInput = Math.abs(input);
+    const factor = 1 - absInput / (maxStretch * 2) * (1 - elasticity);
+    return sign * absInput * Math.max(0.1, factor);
+  }, [elasticity, maxStretch]);
+  const stretch = useCallback11((amount) => {
+    if (!Number.isFinite(amount)) return;
+    rawValueRef.current = amount;
+    const elasticValue = applyElasticity(amount);
+    motionValueRef.current?.jump(elasticValue);
+  }, [applyElasticity]);
+  const release = useCallback11(() => {
+    rawValueRef.current = 0;
+    springRef.current?.set(0);
+  }, []);
+  const set = useCallback11((value) => {
+    if (!Number.isFinite(value)) return;
+    rawValueRef.current = value;
+    springRef.current?.set(value);
+  }, []);
+  useEffect14(() => {
+    return () => {
+      springRef.current?.stop();
+    };
+  }, []);
+  return {
+    value: motionValueRef.current,
+    stretch,
+    release,
+    set,
+    getRaw: () => rawValueRef.current
+  };
+}
+function useBounce(options = {}) {
+  const {
+    dampening = 0.02,
+    gravity = 0.5,
+    floor = 300,
+    ceiling = 0,
+    restitution = 0.7
+  } = options;
+  const motionValueRef = useRef20(null);
+  if (motionValueRef.current === null || motionValueRef.current.isDestroyed()) {
+    motionValueRef.current = createMotionValue4(ceiling);
+  }
+  const motionValue = motionValueRef.current;
+  const velocityRef = useRef20(0);
+  const frameRef = useRef20(null);
+  const isActiveRef = useRef20(false);
+  const tick = useCallback11(() => {
+    if (!isActiveRef.current) return;
+    const currentValue = motionValue.get();
+    velocityRef.current += gravity;
+    velocityRef.current *= 1 - dampening;
+    let newValue = currentValue + velocityRef.current;
+    if (newValue >= floor) {
+      newValue = floor;
+      velocityRef.current = -velocityRef.current * restitution;
+      if (Math.abs(velocityRef.current) < 0.5) {
+        isActiveRef.current = false;
+        velocityRef.current = 0;
+        motionValue.jump(floor);
+        return;
+      }
+    }
+    if (newValue <= ceiling) {
+      newValue = ceiling;
+      velocityRef.current = -velocityRef.current * restitution;
+    }
+    motionValue.jump(newValue);
+    frameRef.current = requestAnimationFrame(tick);
+  }, [motionValue, gravity, dampening, floor, ceiling, restitution]);
+  const drop = useCallback11((fromY = ceiling, initialVelocity = 0) => {
+    const safeFromY = Number.isFinite(fromY) ? fromY : ceiling;
+    const safeVelocity = Number.isFinite(initialVelocity) ? initialVelocity : 0;
+    motionValue.jump(safeFromY);
+    velocityRef.current = safeVelocity;
+    isActiveRef.current = true;
+    if (frameRef.current) cancelAnimationFrame(frameRef.current);
+    frameRef.current = requestAnimationFrame(tick);
+  }, [motionValue, ceiling, tick]);
+  const bounce = useCallback11((velocity) => {
+    if (!Number.isFinite(velocity)) return;
+    velocityRef.current = velocity;
+    isActiveRef.current = true;
+    if (frameRef.current) cancelAnimationFrame(frameRef.current);
+    frameRef.current = requestAnimationFrame(tick);
+  }, [tick]);
+  const stop = useCallback11(() => {
+    isActiveRef.current = false;
+    if (frameRef.current) cancelAnimationFrame(frameRef.current);
+    velocityRef.current = 0;
+  }, []);
+  useEffect14(() => {
+    return () => {
+      if (frameRef.current) cancelAnimationFrame(frameRef.current);
+      isActiveRef.current = false;
+    };
+  }, []);
+  return {
+    value: motionValue,
+    drop,
+    bounce,
+    stop,
+    isActive: () => isActiveRef.current,
+    getVelocity: () => velocityRef.current
+  };
+}
+function useGravity(options = {}) {
+  const {
+    gravity = { x: 0, y: 0.5 },
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    mass: _mass = 1,
+    drag = 0.01,
+    bounds,
+    bounciness = 0.7
+  } = options;
+  const xRef = useRef20(null);
+  const yRef = useRef20(null);
+  if (xRef.current === null || xRef.current.isDestroyed()) {
+    xRef.current = createMotionValue4(0);
+  }
+  if (yRef.current === null || yRef.current.isDestroyed()) {
+    yRef.current = createMotionValue4(0);
+  }
+  const xMotion = xRef.current;
+  const yMotion = yRef.current;
+  const velocityRef = useRef20({ x: 0, y: 0 });
+  const frameRef = useRef20(null);
+  const isActiveRef = useRef20(false);
+  const tick = useCallback11(() => {
+    if (!isActiveRef.current) return;
+    const currentX = xMotion.get();
+    const currentY = yMotion.get();
+    velocityRef.current.x += gravity.x;
+    velocityRef.current.y += gravity.y;
+    velocityRef.current.x *= 1 - drag;
+    velocityRef.current.y *= 1 - drag;
+    let newX = currentX + velocityRef.current.x;
+    let newY = currentY + velocityRef.current.y;
+    if (bounds) {
+      if (bounds.left !== void 0 && newX <= bounds.left) {
+        newX = bounds.left;
+        velocityRef.current.x = -velocityRef.current.x * bounciness;
+      }
+      if (bounds.right !== void 0 && newX >= bounds.right) {
+        newX = bounds.right;
+        velocityRef.current.x = -velocityRef.current.x * bounciness;
+      }
+      if (bounds.top !== void 0 && newY <= bounds.top) {
+        newY = bounds.top;
+        velocityRef.current.y = -velocityRef.current.y * bounciness;
+      }
+      if (bounds.bottom !== void 0 && newY >= bounds.bottom) {
+        newY = bounds.bottom;
+        velocityRef.current.y = -velocityRef.current.y * bounciness;
+        if (Math.abs(velocityRef.current.y) < 0.5 && Math.abs(velocityRef.current.x) < 0.1) {
+          velocityRef.current.y = 0;
+        }
+      }
+    }
+    xMotion.jump(newX);
+    yMotion.jump(newY);
+    const totalVelocity = Math.abs(velocityRef.current.x) + Math.abs(velocityRef.current.y);
+    const isAtRestOnGround = bounds?.bottom !== void 0 && Math.abs(newY - bounds.bottom) < 0.5 && totalVelocity < 0.01;
+    if (totalVelocity > 0.01 || !isAtRestOnGround) {
+      frameRef.current = requestAnimationFrame(tick);
+    } else {
+      isActiveRef.current = false;
+    }
+  }, [xMotion, yMotion, gravity, drag, bounds, bounciness]);
+  const launch = useCallback11((velocity) => {
+    const safeX = Number.isFinite(velocity.x) ? velocity.x : 0;
+    const safeY = Number.isFinite(velocity.y) ? velocity.y : 0;
+    velocityRef.current = { x: safeX, y: safeY };
+    isActiveRef.current = true;
+    if (frameRef.current) cancelAnimationFrame(frameRef.current);
+    frameRef.current = requestAnimationFrame(tick);
+  }, [tick]);
+  const setPosition = useCallback11((pos) => {
+    const safeX = Number.isFinite(pos.x) ? pos.x : xMotion.get();
+    const safeY = Number.isFinite(pos.y) ? pos.y : yMotion.get();
+    xMotion.jump(safeX);
+    yMotion.jump(safeY);
+  }, [xMotion, yMotion]);
+  const stop = useCallback11(() => {
+    isActiveRef.current = false;
+    if (frameRef.current) cancelAnimationFrame(frameRef.current);
+    frameRef.current = null;
+    velocityRef.current = { x: 0, y: 0 };
+  }, []);
+  const start = useCallback11(() => {
+    if (!isActiveRef.current) {
+      isActiveRef.current = true;
+      if (frameRef.current) cancelAnimationFrame(frameRef.current);
+      frameRef.current = requestAnimationFrame(tick);
+    }
+  }, [tick]);
+  useEffect14(() => {
+    return () => {
+      if (frameRef.current) cancelAnimationFrame(frameRef.current);
+      isActiveRef.current = false;
+    };
+  }, []);
+  return {
+    x: xMotion,
+    y: yMotion,
+    launch,
+    setPosition,
+    stop,
+    start,
+    isActive: () => isActiveRef.current,
+    getVelocity: () => ({ ...velocityRef.current })
+  };
+}
+function useChain(steps, initialValues = {}) {
+  const valuesRef = useRef20({});
+  const springsRef = useRef20({});
+  const [currentStep, setCurrentStep] = useState12(-1);
+  const [isPlaying, setIsPlaying] = useState12(false);
+  const timeoutRef = useRef20(null);
+  useEffect14(() => {
+    const allKeys = /* @__PURE__ */ new Set();
+    steps.forEach((step) => {
+      Object.keys(step.to).forEach((key) => allKeys.add(key));
+    });
+    allKeys.forEach((key) => {
+      if (!valuesRef.current[key] || valuesRef.current[key].isDestroyed()) {
+        const initial = initialValues[key] ?? 0;
+        valuesRef.current[key] = createMotionValue4(initial);
+        springsRef.current[key] = createSpringValue4(initial, {
+          onUpdate: (v) => valuesRef.current[key]?.jump(v)
+        });
+      }
+    });
+    const springs = springsRef.current;
+    return () => {
+      Object.values(springs).forEach((s) => s.destroy());
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, []);
+  const runStep = useCallback11((stepIndex) => {
+    if (stepIndex >= steps.length) {
+      setIsPlaying(false);
+      setCurrentStep(-1);
+      return;
+    }
+    const step = steps[stepIndex];
+    if (!step) return;
+    const execute = () => {
+      setCurrentStep(stepIndex);
+      Object.entries(step.to).forEach(([key, value]) => {
+        const spring = springsRef.current[key];
+        if (spring) {
+          if (step.config) {
+            spring.setConfig(step.config);
+          }
+          spring.set(value);
+        }
+      });
+      const estimatedDuration = step.config?.stiffness ? Math.max(300, 1e3 / (step.config.stiffness / 100)) : 500;
+      timeoutRef.current = window.setTimeout(() => {
+        runStep(stepIndex + 1);
+      }, estimatedDuration);
+    };
+    if (step.delay && step.delay > 0) {
+      timeoutRef.current = window.setTimeout(execute, step.delay);
+    } else {
+      execute();
+    }
+  }, [steps]);
+  const play = useCallback11(() => {
+    if (isPlaying) return;
+    setIsPlaying(true);
+    runStep(0);
+  }, [isPlaying, runStep]);
+  const reset = useCallback11(() => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+    setIsPlaying(false);
+    setCurrentStep(-1);
+    Object.keys(valuesRef.current).forEach((key) => {
+      const initial = initialValues[key] ?? 0;
+      springsRef.current[key]?.jump(initial);
+    });
+  }, [initialValues]);
+  const stop = useCallback11(() => {
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+    setIsPlaying(false);
+  }, []);
+  useEffect14(() => {
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, []);
+  return {
+    values: valuesRef.current,
+    play,
+    reset,
+    stop,
+    isPlaying,
+    currentStep
+  };
+}
+function usePointer(options = {}) {
+  const { target, smooth = 0, hoverOnly = false } = options;
+  const xRef = useRef20(null);
+  const yRef = useRef20(null);
+  const rawXRef = useRef20(0);
+  const rawYRef = useRef20(0);
+  const [isHovering, setIsHovering] = useState12(false);
+  const frameRef = useRef20(null);
+  if (xRef.current === null || xRef.current.isDestroyed()) xRef.current = createMotionValue4(0);
+  if (yRef.current === null || yRef.current.isDestroyed()) yRef.current = createMotionValue4(0);
+  useEffect14(() => {
+    const element = target?.current ?? window;
+    const handleMove = (e) => {
+      let newX;
+      let newY;
+      if (target?.current) {
+        const rect = target.current.getBoundingClientRect();
+        newX = e.clientX - rect.left;
+        newY = e.clientY - rect.top;
+      } else {
+        newX = e.clientX;
+        newY = e.clientY;
+      }
+      rawXRef.current = newX;
+      rawYRef.current = newY;
+      if (smooth === 0) {
+        xRef.current?.jump(newX);
+        yRef.current?.jump(newY);
+      }
+    };
+    const handleEnter = () => setIsHovering(true);
+    const handleLeave = () => setIsHovering(false);
+    if (smooth > 0) {
+      const smoothLoop = () => {
+        const currentX = xRef.current?.get() ?? 0;
+        const currentY = yRef.current?.get() ?? 0;
+        const newX = currentX + (rawXRef.current - currentX) * smooth;
+        const newY = currentY + (rawYRef.current - currentY) * smooth;
+        xRef.current?.jump(newX);
+        yRef.current?.jump(newY);
+        frameRef.current = requestAnimationFrame(smoothLoop);
+      };
+      frameRef.current = requestAnimationFrame(smoothLoop);
+    }
+    if (hoverOnly && target?.current) {
+      target.current.addEventListener("pointermove", handleMove);
+      target.current.addEventListener("pointerenter", handleEnter);
+      target.current.addEventListener("pointerleave", handleLeave);
+    } else {
+      element.addEventListener("pointermove", handleMove);
+      if (target?.current) {
+        target.current.addEventListener("pointerenter", handleEnter);
+        target.current.addEventListener("pointerleave", handleLeave);
+      }
+    }
+    const targetElement = target?.current;
+    return () => {
+      if (frameRef.current) cancelAnimationFrame(frameRef.current);
+      if (hoverOnly && targetElement) {
+        targetElement.removeEventListener("pointermove", handleMove);
+        targetElement.removeEventListener("pointerenter", handleEnter);
+        targetElement.removeEventListener("pointerleave", handleLeave);
+      } else {
+        element.removeEventListener("pointermove", handleMove);
+        if (targetElement) {
+          targetElement.removeEventListener("pointerenter", handleEnter);
+          targetElement.removeEventListener("pointerleave", handleLeave);
+        }
+      }
+    };
+  }, [target, smooth, hoverOnly]);
+  useEffect14(() => {
+    return () => {
+      xRef.current?.stop();
+      yRef.current?.stop();
+    };
+  }, []);
+  return {
+    x: xRef.current,
+    y: yRef.current,
+    isHovering
+  };
+}
+function useGyroscope(options = {}) {
+  const { multiplier = 1, clamp = 45, smooth = 0.1 } = options;
+  const tiltXRef = useRef20(null);
+  const tiltYRef = useRef20(null);
+  const rawXRef = useRef20(0);
+  const rawYRef = useRef20(0);
+  const [isSupported, setIsSupported] = useState12(false);
+  const frameRef = useRef20(null);
+  if (tiltXRef.current === null || tiltXRef.current.isDestroyed()) tiltXRef.current = createMotionValue4(0);
+  if (tiltYRef.current === null || tiltYRef.current.isDestroyed()) tiltYRef.current = createMotionValue4(0);
+  const clampValue = useCallback11((value) => {
+    return Math.max(-clamp, Math.min(clamp, value * multiplier));
+  }, [clamp, multiplier]);
+  useEffect14(() => {
+    const hasOrientation = "DeviceOrientationEvent" in window;
+    const smoothLoop = () => {
+      const currentX = tiltXRef.current?.get() ?? 0;
+      const currentY = tiltYRef.current?.get() ?? 0;
+      const newX = currentX + (rawXRef.current - currentX) * smooth;
+      const newY = currentY + (rawYRef.current - currentY) * smooth;
+      tiltXRef.current?.jump(newX);
+      tiltYRef.current?.jump(newY);
+      frameRef.current = requestAnimationFrame(smoothLoop);
+    };
+    frameRef.current = requestAnimationFrame(smoothLoop);
+    if (hasOrientation) {
+      const handleOrientation = (e) => {
+        setIsSupported(true);
+        rawXRef.current = clampValue(e.gamma ?? 0);
+        rawYRef.current = clampValue(e.beta ?? 0);
+      };
+      window.addEventListener("deviceorientation", handleOrientation);
+      return () => {
+        if (frameRef.current) cancelAnimationFrame(frameRef.current);
+        window.removeEventListener("deviceorientation", handleOrientation);
+      };
+    } else {
+      const handleMouse = (e) => {
+        const centerX = window.innerWidth / 2;
+        const centerY = window.innerHeight / 2;
+        rawXRef.current = clampValue((e.clientX - centerX) / centerX * 45);
+        rawYRef.current = clampValue((e.clientY - centerY) / centerY * 45);
+      };
+      window.addEventListener("mousemove", handleMouse);
+      return () => {
+        if (frameRef.current) cancelAnimationFrame(frameRef.current);
+        window.removeEventListener("mousemove", handleMouse);
+      };
+    }
+  }, [clampValue, smooth]);
+  useEffect14(() => {
+    return () => {
+      tiltXRef.current?.stop();
+      tiltYRef.current?.stop();
+    };
+  }, []);
+  return {
+    tiltX: tiltXRef.current,
+    tiltY: tiltYRef.current,
+    isSupported
+  };
+}
+
+// src/adapters/react/components/Spring.tsx
+import { useEffect as useEffect15, useRef as useRef21, useState as useState13 } from "react";
+import { createSpringGroup as createSpringGroup3 } from "@oxog/springkit";
+import { Fragment, jsx } from "react/jsx-runtime";
+var Spring = ({
+  from,
+  to,
+  config = {},
+  onRest,
+  children
+}) => {
+  const springRef = useRef21(null);
+  const [values, setValues] = useState13(from);
+  useEffect15(() => {
+    const spring = createSpringGroup3(from, config);
+    spring.subscribe(setValues);
+    springRef.current = spring;
+    requestAnimationFrame(() => {
+      spring.set(to, { ...config, onRest });
+    });
+    return () => spring.destroy();
+  }, []);
+  useEffect15(() => {
+    springRef.current?.set(to, { ...config, onRest });
+  }, [to, config, onRest]);
+  return /* @__PURE__ */ jsx(Fragment, { children: children(values) });
+};
+
+// src/adapters/react/components/Animated.tsx
+import * as React3 from "react";
+import { useEffect as useEffect16, useRef as useRef22, useState as useState14, useContext as useContext3, useCallback as useCallback12, memo } from "react";
+import { createSpringGroup as createSpringGroup4 } from "@oxog/springkit";
+function extractNumericValues(style) {
+  const result = {};
+  for (const key in style) {
+    if (typeof style[key] === "number") {
+      result[key] = style[key];
+    }
+  }
+  return result;
+}
+function extractStringValues(style) {
+  const result = {};
+  for (const key in style) {
+    if (typeof style[key] === "string") {
+      result[key] = style[key];
+    }
+  }
+  return result;
+}
+function createAnimatedComponent(tag) {
+  const AnimatedComponent = React3.forwardRef(
+    ({
+      children,
+      style = {},
+      config = {},
+      initial,
+      animate,
+      exit,
+      whileHover,
+      whileTap,
+      whileFocus,
+      whileDrag,
+      whileInView,
+      viewport,
+      onAnimationComplete,
+      onHoverStart,
+      onHoverEnd,
+      onTapStart,
+      onTap,
+      onTapCancel,
+      onMouseEnter: propsOnMouseEnter,
+      onMouseLeave: propsOnMouseLeave,
+      onPointerDown: propsOnPointerDown,
+      onPointerUp: propsOnPointerUp,
+      onPointerCancel: propsOnPointerCancel,
+      onFocus: propsOnFocus,
+      onBlur: propsOnBlur,
+      ...props
+    }, forwardedRef) => {
+      const springRef = useRef22(null);
+      const unsubscribeRef = useRef22(null);
+      const elementRef = useRef22(null);
+      const [animatedStyle, setAnimatedStyle] = useState14({});
+      const isFirstRender = useRef22(true);
+      const hasCalledSafeToRemove = useRef22(false);
+      const isDestroyedRef = useRef22(false);
+      const [isHovered, setIsHovered] = useState14(false);
+      const [isPressed, setIsPressed] = useState14(false);
+      const [isFocused, setIsFocused] = useState14(false);
+      const [isDragging, _setIsDragging] = useState14(false);
+      const [isInViewport, setIsInViewport] = useState14(false);
+      const hasTriggeredInView = useRef22(false);
+      const presenceContext = useContext3(PresenceContext);
+      const isPresent = presenceContext?.isPresent ?? true;
+      const safeToRemove = presenceContext?.safeToRemove;
+      const setRef = useCallback12((node) => {
+        elementRef.current = node;
+        if (typeof forwardedRef === "function") {
+          forwardedRef(node);
+        } else if (forwardedRef) {
+          forwardedRef.current = node;
+        }
+      }, [forwardedRef]);
+      useEffect16(() => {
+        if (!whileInView || !isBrowser) return;
+        const element = elementRef.current;
+        if (!element) return;
+        const threshold = viewport?.amount === "all" ? 1 : viewport?.amount === "some" ? 0 : typeof viewport?.amount === "number" ? viewport.amount : 0.5;
+        const observer = new IntersectionObserver(
+          (entries) => {
+            entries.forEach((entry) => {
+              if (entry.isIntersecting) {
+                if (viewport?.once && hasTriggeredInView.current) return;
+                setIsInViewport(true);
+                hasTriggeredInView.current = true;
+              } else if (!viewport?.once) {
+                setIsInViewport(false);
+              }
+            });
+          },
+          {
+            rootMargin: viewport?.margin ?? "0px",
+            threshold
+          }
+        );
+        observer.observe(element);
+        return () => {
+          if (element) {
+            observer.unobserve(element);
+          }
+          observer.disconnect();
+        };
+      }, [whileInView, viewport?.once, viewport?.margin, viewport?.amount]);
+      const getTargetStyle = useCallback12(() => {
+        if (!isPresent && exit) {
+          return exit;
+        }
+        let target = animate ? { ...animate } : {};
+        if (whileInView && isInViewport) {
+          target = { ...target, ...whileInView };
+        }
+        if (whileFocus && isFocused) {
+          target = { ...target, ...whileFocus };
+        }
+        if (whileHover && isHovered) {
+          target = { ...target, ...whileHover };
+        }
+        if (whileDrag && isDragging) {
+          target = { ...target, ...whileDrag };
+        }
+        if (whileTap && isPressed) {
+          target = { ...target, ...whileTap };
+        }
+        if (Object.keys(target).length === 0) {
+          return Object.fromEntries(
+            Object.entries(style).filter((entry) => typeof entry[1] === "number")
+          );
+        }
+        return target;
+      }, [isPresent, exit, animate, style, whileHover, whileTap, whileFocus, whileDrag, whileInView, isHovered, isPressed, isFocused, isDragging, isInViewport]);
+      const getInitialStyle = useCallback12(() => {
+        if (initial === false) {
+          return getTargetStyle();
+        }
+        if (initial) {
+          return initial;
+        }
+        return getTargetStyle();
+      }, [initial, getTargetStyle]);
+      useEffect16(() => {
+        const initialStyle = getInitialStyle();
+        const numericInitial = extractNumericValues(initialStyle);
+        if (Object.keys(numericInitial).length === 0) {
+          return;
+        }
+        if (unsubscribeRef.current) {
+          unsubscribeRef.current();
+          unsubscribeRef.current = null;
+        }
+        if (springRef.current) {
+          springRef.current.destroy();
+          springRef.current = null;
+        }
+        isDestroyedRef.current = false;
+        const spring = createSpringGroup4(numericInitial, config);
+        unsubscribeRef.current = spring.subscribe((values) => {
+          if (!isDestroyedRef.current) {
+            setAnimatedStyle(values);
+          }
+        });
+        springRef.current = spring;
+        if (initial && initial !== false && animate) {
+          const numericAnimate = extractNumericValues(animate);
+          const needsAnimation = Object.keys(numericAnimate).some(
+            (key) => numericInitial[key] !== numericAnimate[key]
+          );
+          if (needsAnimation) {
+            requestAnimationFrame(() => {
+              if (springRef.current && !isDestroyedRef.current) {
+                springRef.current.set(numericAnimate);
+              }
+            });
+          }
+        }
+        return () => {
+          isDestroyedRef.current = true;
+          if (unsubscribeRef.current) {
+            unsubscribeRef.current();
+            unsubscribeRef.current = null;
+          }
+          spring.destroy();
+        };
+      }, [config.stiffness, config.damping]);
+      useEffect16(() => {
+        if (!springRef.current) return;
+        if (isFirstRender.current) {
+          isFirstRender.current = false;
+          return;
+        }
+        const targetStyle = getTargetStyle();
+        const numericTarget = extractNumericValues(targetStyle);
+        springRef.current.set(numericTarget);
+      }, [isPresent, animate, exit, getTargetStyle, initial, isHovered, isPressed, isFocused, isInViewport]);
+      useEffect16(() => {
+        if (!isPresent && exit && safeToRemove && !hasCalledSafeToRemove.current) {
+          let innerTimeout = null;
+          let cancelled = false;
+          const checkComplete = () => {
+            if (cancelled) return;
+            const values = springRef.current;
+            if (values) {
+              innerTimeout = setTimeout(() => {
+                if (!cancelled && !hasCalledSafeToRemove.current) {
+                  hasCalledSafeToRemove.current = true;
+                  safeToRemove();
+                  onAnimationComplete?.();
+                }
+              }, 500);
+            }
+          };
+          const timeout = setTimeout(checkComplete, 50);
+          return () => {
+            cancelled = true;
+            clearTimeout(timeout);
+            if (innerTimeout !== null) {
+              clearTimeout(innerTimeout);
+            }
+          };
+        }
+      }, [isPresent, exit, safeToRemove, onAnimationComplete]);
+      useEffect16(() => {
+        if (isPresent) {
+          hasCalledSafeToRemove.current = false;
+        }
+      }, [isPresent]);
+      const handleMouseEnter = useCallback12((e) => {
+        if (whileHover) setIsHovered(true);
+        onHoverStart?.(e);
+        propsOnMouseEnter?.(e);
+      }, [whileHover, onHoverStart, propsOnMouseEnter]);
+      const handleMouseLeave = useCallback12((e) => {
+        if (whileHover) setIsHovered(false);
+        if (whileTap) setIsPressed(false);
+        onHoverEnd?.(e);
+        propsOnMouseLeave?.(e);
+      }, [whileHover, whileTap, onHoverEnd, propsOnMouseLeave]);
+      const handlePointerDown = useCallback12((e) => {
+        if (whileTap) setIsPressed(true);
+        onTapStart?.(e);
+        propsOnPointerDown?.(e);
+      }, [whileTap, onTapStart, propsOnPointerDown]);
+      const handlePointerUp = useCallback12((e) => {
+        if (whileTap && isPressed) {
+          setIsPressed(false);
+          onTap?.(e);
+        }
+        propsOnPointerUp?.(e);
+      }, [whileTap, isPressed, onTap, propsOnPointerUp]);
+      const handlePointerCancel = useCallback12((e) => {
+        if (whileTap && isPressed) {
+          setIsPressed(false);
+          onTapCancel?.(e);
+        }
+        propsOnPointerCancel?.(e);
+      }, [whileTap, isPressed, onTapCancel, propsOnPointerCancel]);
+      const handleFocus = useCallback12((e) => {
+        if (whileFocus) setIsFocused(true);
+        propsOnFocus?.(e);
+      }, [whileFocus, propsOnFocus]);
+      const handleBlur = useCallback12((e) => {
+        if (whileFocus) setIsFocused(false);
+        propsOnBlur?.(e);
+      }, [whileFocus, propsOnBlur]);
+      const globalListenersActiveRef = useRef22(false);
+      useEffect16(() => {
+        if (!whileTap || !isPressed) {
+          globalListenersActiveRef.current = false;
+          return;
+        }
+        globalListenersActiveRef.current = true;
+        const handleGlobalPointerUp = () => {
+          setIsPressed(false);
+        };
+        window.addEventListener("pointerup", handleGlobalPointerUp);
+        window.addEventListener("pointercancel", handleGlobalPointerUp);
+        return () => {
+          window.removeEventListener("pointerup", handleGlobalPointerUp);
+          window.removeEventListener("pointercancel", handleGlobalPointerUp);
+          globalListenersActiveRef.current = false;
+        };
+      }, [whileTap, isPressed]);
+      useEffect16(() => {
+        return () => {
+          if (globalListenersActiveRef.current) {
+            globalListenersActiveRef.current = false;
+          }
+        };
+      }, []);
+      const staticStyle = Object.fromEntries(
+        Object.entries(style).filter(([_, v]) => typeof v !== "number")
+      );
+      const gestureStringStyles = {};
+      if (whileInView && isInViewport) {
+        Object.assign(gestureStringStyles, extractStringValues(whileInView));
+      }
+      if (whileFocus && isFocused) {
+        Object.assign(gestureStringStyles, extractStringValues(whileFocus));
+      }
+      if (whileHover && isHovered) {
+        Object.assign(gestureStringStyles, extractStringValues(whileHover));
+      }
+      if (whileDrag && isDragging) {
+        Object.assign(gestureStringStyles, extractStringValues(whileDrag));
+      }
+      if (whileTap && isPressed) {
+        Object.assign(gestureStringStyles, extractStringValues(whileTap));
+      }
+      const eventHandlers = {};
+      if (whileHover || onHoverStart || onHoverEnd) {
+        eventHandlers.onMouseEnter = handleMouseEnter;
+        eventHandlers.onMouseLeave = handleMouseLeave;
+      }
+      if (whileTap || onTapStart || onTap || onTapCancel) {
+        eventHandlers.onPointerDown = handlePointerDown;
+        eventHandlers.onPointerUp = handlePointerUp;
+        eventHandlers.onPointerCancel = handlePointerCancel;
+      }
+      if (whileFocus) {
+        eventHandlers.onFocus = handleFocus;
+        eventHandlers.onBlur = handleBlur;
+      }
+      return React3.createElement(
+        tag,
+        {
+          ...props,
+          ...eventHandlers,
+          ref: setRef,
+          style: { ...staticStyle, ...animatedStyle, ...gestureStringStyles }
+        },
+        children
+      );
+    }
+  );
+  AnimatedComponent.displayName = `Animated.${String(tag)}`;
+  return memo(AnimatedComponent);
+}
+var Animated = {
+  div: createAnimatedComponent("div"),
+  span: createAnimatedComponent("span"),
+  button: createAnimatedComponent("button"),
+  a: createAnimatedComponent("a"),
+  p: createAnimatedComponent("p"),
+  h1: createAnimatedComponent("h1"),
+  h2: createAnimatedComponent("h2"),
+  h3: createAnimatedComponent("h3"),
+  h4: createAnimatedComponent("h4"),
+  h5: createAnimatedComponent("h5"),
+  h6: createAnimatedComponent("h6"),
+  ul: createAnimatedComponent("ul"),
+  ol: createAnimatedComponent("ol"),
+  li: createAnimatedComponent("li"),
+  section: createAnimatedComponent("section"),
+  article: createAnimatedComponent("article"),
+  header: createAnimatedComponent("header"),
+  footer: createAnimatedComponent("footer"),
+  nav: createAnimatedComponent("nav"),
+  main: createAnimatedComponent("main"),
+  aside: createAnimatedComponent("aside"),
+  img: createAnimatedComponent("img"),
+  svg: createAnimatedComponent("svg"),
+  path: createAnimatedComponent("path"),
+  circle: createAnimatedComponent("circle"),
+  rect: createAnimatedComponent("rect"),
+  g: createAnimatedComponent("g")
+};
+
+// src/adapters/react/components/Trail.tsx
+import * as React4 from "react";
+import { useEffect as useEffect17, useRef as useRef23, useState as useState15 } from "react";
+import { createTrail } from "@oxog/springkit";
+import { Fragment as Fragment3, jsx as jsx2 } from "react/jsx-runtime";
+var Trail = ({
+  items,
+  keys,
+  from,
+  to,
+  config = {},
+  reverse = false,
+  children
+}) => {
+  const trailRef = useRef23(null);
+  const [values, setValues] = useState15(
+    () => items.map(() => ({ ...from }))
+  );
+  useEffect17(() => {
+    const trail = createTrail(items.length, config);
+    const unsubscribe = trail.subscribe((vals) => {
+      setValues(vals.map((v) => ({ ...to, x: v })));
+    });
+    trailRef.current = trail;
+    const firstValue = Object.values(to)[0];
+    trail.set(firstValue);
+    return () => {
+      unsubscribe();
+      trail.destroy();
+    };
+  }, [items.length, config.stiffness, config.damping]);
+  useEffect17(() => {
+    const firstValue = Object.values(to)[0];
+    trailRef.current?.set(firstValue);
+  }, [to]);
+  return /* @__PURE__ */ jsx2(Fragment3, { children: items.map((item, index) => {
+    const itemValues = values[index];
+    if (!itemValues) {
+      console.warn(`[SpringKit] Trail: No values found for item at index ${index}`);
+      return null;
+    }
+    return /* @__PURE__ */ jsx2(React4.Fragment, { children: children(itemValues, item, reverse ? items.length - 1 - index : index) }, keys(item, index));
+  }) });
+};
+
+// src/adapters/react/components/AnimatePresence.tsx
+import {
+  useRef as useRef25,
+  useState as useState16,
+  useLayoutEffect as useLayoutEffect2,
+  useEffect as useEffect19,
+  Children,
+  isValidElement,
+  cloneElement
+} from "react";
+
+// src/adapters/react/components/PresenceChild.tsx
+import { useMemo as useMemo4, useCallback as useCallback13, useRef as useRef24, useEffect as useEffect18 } from "react";
+import { jsx as jsx3 } from "react/jsx-runtime";
+var DEFAULT_EXIT_TIMEOUT = 1e4;
+function PresenceChild({
+  id,
+  children,
+  isPresent,
+  onExitComplete,
+  custom,
+  exitTimeout = DEFAULT_EXIT_TIMEOUT
+}) {
+  const presenceIdRef = useRef24(id);
+  presenceIdRef.current = id;
+  const safeToRemove = useCallback13(() => {
+    onExitComplete(presenceIdRef.current);
+  }, [onExitComplete]);
+  const contextValue = useMemo4(
+    () => ({
+      id,
+      isPresent,
+      safeToRemove,
+      custom
+    }),
+    [id, isPresent, safeToRemove, custom]
+  );
+  const hasExitedRef = useRef24(false);
+  const hasCalledRemoveRef = useRef24(false);
+  useEffect18(() => {
+    if (isPresent) {
+      hasExitedRef.current = false;
+      hasCalledRemoveRef.current = false;
+      return;
+    }
+    if (hasExitedRef.current) return;
+    hasExitedRef.current = true;
+    if (exitTimeout <= 0) return;
+    const timeout = setTimeout(() => {
+      if (!hasCalledRemoveRef.current) {
+        hasCalledRemoveRef.current = true;
+        safeToRemove();
+      }
+    }, exitTimeout);
+    return () => clearTimeout(timeout);
+  }, [isPresent, safeToRemove, exitTimeout]);
+  return /* @__PURE__ */ jsx3(PresenceContext.Provider, { value: contextValue, children });
+}
+
+// src/adapters/react/components/AnimatePresence.tsx
+import { Fragment as Fragment4, jsx as jsx4 } from "react/jsx-runtime";
+var useIsomorphicLayoutEffect2 = typeof window !== "undefined" ? useLayoutEffect2 : useEffect19;
+function getChildKey(child) {
+  return child.key !== null ? String(child.key) : "";
+}
+function getChildrenMap(children) {
+  const map = {};
+  Children.forEach(children, (child) => {
+    if (isValidElement(child)) {
+      const key = getChildKey(child);
+      if (key) {
+        map[key] = child;
+      }
+    }
+  });
+  return map;
+}
+function AnimatePresence({
+  children,
+  custom,
+  initial = true,
+  mode = "sync",
+  onExitComplete
+}) {
+  const isInitialMount = useRef25(true);
+  const [exitingChildren, setExitingChildren] = useState16({});
+  const prevChildrenRef = useRef25({});
+  const [, forceUpdate] = useState16(0);
+  const pendingExitCount = useRef25(0);
+  const currentChildren = getChildrenMap(children);
+  useIsomorphicLayoutEffect2(() => {
+    const prevChildren = prevChildrenRef.current;
+    const newExiting = {};
+    for (const key in prevChildren) {
+      if (!(key in currentChildren)) {
+        const prevChild = prevChildren[key];
+        if (prevChild) {
+          newExiting[key] = prevChild;
+        }
+      }
+    }
+    if (Object.keys(newExiting).length > 0) {
+      setExitingChildren((prev) => ({ ...prev, ...newExiting }));
+      pendingExitCount.current += Object.keys(newExiting).length;
+    }
+    prevChildrenRef.current = currentChildren;
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+    }
+  });
+  const handleExitComplete = (key) => {
+    setExitingChildren((prev) => {
+      if (!(key in prev)) return prev;
+      const next = { ...prev };
+      delete next[key];
+      return next;
+    });
+    if (pendingExitCount.current > 0) {
+      pendingExitCount.current--;
+    }
+    if (pendingExitCount.current === 0 && onExitComplete) {
+      onExitComplete();
+    }
+    if (mode === "wait") {
+      forceUpdate((n) => n + 1);
+    }
+  };
+  const showEntering = mode !== "wait" || Object.keys(exitingChildren).length === 0;
+  const allChildren = [];
+  for (const key in exitingChildren) {
+    const exitingChild = exitingChildren[key];
+    if (!exitingChild) continue;
+    allChildren.push(
+      /* @__PURE__ */ jsx4(
+        PresenceChild,
+        {
+          id: key,
+          isPresent: false,
+          onExitComplete: handleExitComplete,
+          custom,
+          children: cloneElement(exitingChild, {
+            key
+          })
+        },
+        `presence-${key}`
+      )
+    );
+  }
+  if (showEntering) {
+    Children.forEach(children, (child) => {
+      if (isValidElement(child)) {
+        const key = getChildKey(child);
+        if (!key) {
+          console.warn(
+            'AnimatePresence: Every child must have a unique "key" prop.'
+          );
+          return;
+        }
+        const shouldAnimate = !(isInitialMount.current && initial === false);
+        allChildren.push(
+          /* @__PURE__ */ jsx4(
+            PresenceChild,
+            {
+              id: key,
+              isPresent: true,
+              onExitComplete: handleExitComplete,
+              custom,
+              children: cloneElement(child, {
+                key,
+                // Pass down animation state - child components can use this
+                ...shouldAnimate ? {} : { "data-initial-skip": true }
+              })
+            },
+            `presence-${key}`
+          )
+        );
+      }
+    });
+  }
+  return /* @__PURE__ */ jsx4(Fragment4, { children: allChildren });
+}
+
+// src/adapters/react/components/MotionConfig.tsx
+import { createContext as createContext4, useContext as useContext4, useMemo as useMemo5 } from "react";
+import { jsx as jsx5 } from "react/jsx-runtime";
+var defaultContext = {
+  config: {},
+  reducedMotion: "user",
+  initial: true,
+  isReducedMotion: false
+};
+var MotionContext = createContext4(defaultContext);
+function useMotionConfig() {
+  return useContext4(MotionContext);
+}
+function checkReducedMotion() {
+  if (typeof window === "undefined") return false;
+  return window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false;
+}
+function MotionConfig({
+  config = {},
+  reducedMotion = "user",
+  initial = true,
+  children
+}) {
+  const parentContext = useContext4(MotionContext);
+  const value = useMemo5(() => {
+    let isReducedMotion = false;
+    switch (reducedMotion) {
+      case "always":
+        isReducedMotion = true;
+        break;
+      case "never":
+        isReducedMotion = false;
+        break;
+      case "user":
+      default:
+        isReducedMotion = checkReducedMotion();
+    }
+    return {
+      config: { ...parentContext.config, ...config },
+      reducedMotion,
+      initial,
+      isReducedMotion
+    };
+  }, [config, reducedMotion, initial, parentContext.config]);
+  return /* @__PURE__ */ jsx5(MotionContext.Provider, { value, children });
+}
+
+// src/adapters/react/components/Reorder.tsx
+import * as React5 from "react";
+import {
+  createContext as createContext5,
+  useContext as useContext5,
+  useRef as useRef26,
+  useState as useState17,
+  useEffect as useEffect20,
+  useCallback as useCallback14,
+  useMemo as useMemo6
+} from "react";
+import { createSpringValue as createSpringValue5 } from "@oxog/springkit";
+var ReorderContext = createContext5(null);
+function useReorderContext() {
+  const context = useContext5(ReorderContext);
+  if (!context) {
+    throw new Error("Reorder.Item must be used within a Reorder.Group");
+  }
+  return context;
+}
+function ReorderGroupComponent({
+  values,
+  onReorder,
+  axis = "y",
+  config = { stiffness: 300, damping: 30 },
+  className,
+  style,
+  children,
+  as: Component = "ul",
+  layoutDuration = 200
+}, ref) {
+  const itemsRef = useRef26(/* @__PURE__ */ new Map());
+  const sizesRef = useRef26(/* @__PURE__ */ new Map());
+  const [draggingValue, setDraggingValue] = useState17(null);
+  const [offsets, setOffsets] = useState17(/* @__PURE__ */ new Map());
+  const dragStartIndexRef = useRef26(-1);
+  const currentOrderRef = useRef26(values);
+  useEffect20(() => {
+    currentOrderRef.current = values;
+  }, [values]);
+  const registerItem = useCallback14((value, element) => {
+    itemsRef.current.set(value, element);
+    const rect = element.getBoundingClientRect();
+    sizesRef.current.set(value, axis === "y" ? rect.height : rect.width);
+  }, [axis]);
+  const unregisterItem = useCallback14((value) => {
+    itemsRef.current.delete(value);
+    sizesRef.current.delete(value);
+  }, []);
+  const handleDragStart = useCallback14((value) => {
+    setDraggingValue(value);
+    dragStartIndexRef.current = currentOrderRef.current.indexOf(value);
+  }, []);
+  const handleDrag = useCallback14((value, offset) => {
+    const currentIndex = currentOrderRef.current.indexOf(value);
+    if (currentIndex === -1) return;
+    const sizes = sizesRef.current;
+    const order = [...currentOrderRef.current];
+    const newOffsets = /* @__PURE__ */ new Map();
+    let accumulatedOffset = 0;
+    const itemSize = sizes.get(value) || 0;
+    if (offset > 0) {
+      for (let i = currentIndex + 1; i < order.length; i++) {
+        const otherValue = order[i];
+        if (!otherValue) continue;
+        const otherSize = sizes.get(otherValue) || 0;
+        accumulatedOffset += otherSize;
+        if (offset > accumulatedOffset - otherSize / 2) {
+          newOffsets.set(otherValue, -itemSize);
+        } else {
+          newOffsets.set(otherValue, 0);
+        }
+      }
+    } else if (offset < 0) {
+      for (let i = currentIndex - 1; i >= 0; i--) {
+        const otherValue = order[i];
+        if (!otherValue) continue;
+        const otherSize = sizes.get(otherValue) || 0;
+        accumulatedOffset -= otherSize;
+        if (offset < accumulatedOffset + otherSize / 2) {
+          newOffsets.set(otherValue, itemSize);
+        } else {
+          newOffsets.set(otherValue, 0);
+        }
+      }
+    }
+    setOffsets(newOffsets);
+  }, []);
+  const handleDragEnd = useCallback14((value) => {
+    const currentIndex = currentOrderRef.current.indexOf(value);
+    if (currentIndex === -1) {
+      setDraggingValue(null);
+      setOffsets(/* @__PURE__ */ new Map());
+      return;
+    }
+    const order = [...currentOrderRef.current];
+    let targetIndex = currentIndex;
+    offsets.forEach((offset, otherValue) => {
+      const otherIndex = order.indexOf(otherValue);
+      if (offset < 0 && otherIndex > currentIndex) {
+        targetIndex = Math.max(targetIndex, otherIndex);
+      } else if (offset > 0 && otherIndex < currentIndex) {
+        targetIndex = Math.min(targetIndex, otherIndex);
+      }
+    });
+    if (targetIndex !== currentIndex) {
+      const newOrder = [...order];
+      const [removed] = newOrder.splice(currentIndex, 1);
+      if (removed !== void 0) {
+        newOrder.splice(targetIndex, 0, removed);
+        onReorder(newOrder);
+      }
+    }
+    setDraggingValue(null);
+    setOffsets(/* @__PURE__ */ new Map());
+  }, [offsets, onReorder]);
+  const getDraggingValue = useCallback14(() => draggingValue, [draggingValue]);
+  const getItemOffset = useCallback14((value) => offsets.get(value) || 0, [offsets]);
+  const contextValue = useMemo6(() => ({
+    values,
+    axis,
+    config,
+    registerItem,
+    unregisterItem,
+    onDragStart: handleDragStart,
+    onDrag: handleDrag,
+    onDragEnd: handleDragEnd,
+    getDraggingValue,
+    getItemOffset,
+    layoutDuration
+  }), [
+    values,
+    axis,
+    config,
+    registerItem,
+    unregisterItem,
+    handleDragStart,
+    handleDrag,
+    handleDragEnd,
+    getDraggingValue,
+    getItemOffset,
+    layoutDuration
+  ]);
+  return React5.createElement(
+    ReorderContext.Provider,
+    { value: contextValue },
+    React5.createElement(
+      Component,
+      {
+        ref,
+        className,
+        role: "listbox",
+        "aria-label": "Reorderable list",
+        "aria-orientation": axis === "x" ? "horizontal" : "vertical",
+        style: {
+          listStyle: "none",
+          padding: 0,
+          margin: 0,
+          ...style
+        }
+      },
+      children
+    )
+  );
+}
+function ReorderItemComponent({
+  value,
+  className,
+  style,
+  children,
+  as: Component = "li",
+  dragEnabled = true,
+  onDragStart,
+  onDragEnd
+}, ref) {
+  const context = useReorderContext();
+  const elementRef = useRef26(null);
+  const springRef = useRef26(null);
+  const [offset, setOffset] = useState17(0);
+  const [isDragging, setIsDragging] = useState17(false);
+  const dragStartPos = useRef26({ x: 0, y: 0 });
+  const dragOffset = useRef26(0);
+  const setRef = useCallback14((node) => {
+    elementRef.current = node;
+    if (typeof ref === "function") {
+      ref(node);
+    } else if (ref) {
+      ref.current = node;
+    }
+    if (node) {
+      context.registerItem(value, node);
+    } else {
+      context.unregisterItem(value);
+    }
+  }, [ref, context, value]);
+  useEffect20(() => {
+    return () => {
+      context.unregisterItem(value);
+      springRef.current?.destroy();
+    };
+  }, [context, value]);
+  useEffect20(() => {
+    if (isDragging) return;
+    const targetOffset = context.getItemOffset(value);
+    if (!springRef.current) {
+      springRef.current = createSpringValue5(0, {
+        ...context.config,
+        onUpdate: setOffset
+      });
+    }
+    springRef.current.set(targetOffset);
+  }, [context, value, isDragging]);
+  const handlePointerDown = useCallback14((e) => {
+    if (!dragEnabled) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+    onDragStart?.();
+    context.onDragStart(value);
+    const rect = elementRef.current?.getBoundingClientRect();
+    dragStartPos.current = {
+      x: e.clientX - (rect?.left ?? 0),
+      y: e.clientY - (rect?.top ?? 0)
+    };
+    dragOffset.current = 0;
+    if (elementRef.current) {
+      elementRef.current.setPointerCapture(e.pointerId);
+    }
+  }, [dragEnabled, context, value, onDragStart]);
+  const handlePointerMove = useCallback14((e) => {
+    if (!isDragging) return;
+    const rect = elementRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    const currentPos = context.axis === "y" ? e.clientY : e.clientX;
+    const startPos = context.axis === "y" ? (elementRef.current?.offsetTop ?? 0) + dragStartPos.current.y : (elementRef.current?.offsetLeft ?? 0) + dragStartPos.current.x;
+    dragOffset.current = currentPos - startPos - (context.axis === "y" ? rect.height / 2 : rect.width / 2);
+    context.onDrag(value, dragOffset.current);
+    setOffset(dragOffset.current);
+  }, [isDragging, context, value]);
+  const handlePointerUp = useCallback14((e) => {
+    if (!isDragging) return;
+    if (elementRef.current) {
+      elementRef.current.releasePointerCapture(e.pointerId);
+    }
+    setIsDragging(false);
+    onDragEnd?.();
+    context.onDragEnd(value);
+    setOffset(0);
+    dragOffset.current = 0;
+  }, [isDragging, context, value, onDragEnd]);
+  const transformProp = context.axis === "y" ? `translateY(${offset}px)` : `translateX(${offset}px)`;
+  const handleKeyDown = useCallback14((e) => {
+    if (!dragEnabled) return;
+    const currentIndex = context.values.indexOf(value);
+    if (currentIndex === -1) return;
+    let newIndex = currentIndex;
+    const isVertical = context.axis === "y";
+    switch (e.key) {
+      case "ArrowUp":
+        if (isVertical && currentIndex > 0) {
+          newIndex = currentIndex - 1;
+          e.preventDefault();
+        }
+        break;
+      case "ArrowDown":
+        if (isVertical && currentIndex < context.values.length - 1) {
+          newIndex = currentIndex + 1;
+          e.preventDefault();
+        }
+        break;
+      case "ArrowLeft":
+        if (!isVertical && currentIndex > 0) {
+          newIndex = currentIndex - 1;
+          e.preventDefault();
+        }
+        break;
+      case "ArrowRight":
+        if (!isVertical && currentIndex < context.values.length - 1) {
+          newIndex = currentIndex + 1;
+          e.preventDefault();
+        }
+        break;
+      case "Home":
+        newIndex = 0;
+        e.preventDefault();
+        break;
+      case "End":
+        newIndex = context.values.length - 1;
+        e.preventDefault();
+        break;
+    }
+    if (newIndex !== currentIndex) {
+      context.onDragStart(value);
+      const offset2 = (newIndex - currentIndex) * 50;
+      context.onDrag(value, offset2);
+      context.onDragEnd(value);
+    }
+  }, [dragEnabled, context, value]);
+  return React5.createElement(
+    Component,
+    {
+      ref: setRef,
+      className,
+      role: "option",
+      "aria-selected": isDragging,
+      "aria-grabbed": isDragging,
+      tabIndex: dragEnabled ? 0 : -1,
+      style: {
+        transform: transformProp,
+        transition: !isDragging && context.layoutDuration > 0 ? `transform ${context.layoutDuration}ms ease-out` : void 0,
+        cursor: dragEnabled ? isDragging ? "grabbing" : "grab" : void 0,
+        userSelect: "none",
+        touchAction: "none",
+        zIndex: isDragging ? 1 : 0,
+        position: "relative",
+        ...style
+      },
+      onPointerDown: dragEnabled ? handlePointerDown : void 0,
+      onPointerMove: dragEnabled ? handlePointerMove : void 0,
+      onPointerUp: dragEnabled ? handlePointerUp : void 0,
+      onPointerCancel: dragEnabled ? handlePointerUp : void 0,
+      onKeyDown: dragEnabled ? handleKeyDown : void 0
+    },
+    children
+  );
+}
+var ReorderGroup = React5.forwardRef(ReorderGroupComponent);
+var ReorderItem = React5.forwardRef(ReorderItemComponent);
+var Reorder = {
+  Group: ReorderGroup,
+  Item: ReorderItem
+};
+
+// src/adapters/react/components/SpringText.tsx
+import * as React6 from "react";
+import { useRef as useRef27, useEffect as useEffect21, useState as useState18, useMemo as useMemo7, memo as memo2 } from "react";
+import { createSpringValue as createSpringValue6 } from "@oxog/springkit";
+import { jsx as jsx6, jsxs } from "react/jsx-runtime";
+var SpringText = memo2(function SpringText2({
+  children,
+  mode = "characters",
+  stagger = 30,
+  from = "bottom",
+  config = { stiffness: 200, damping: 20 },
+  initialOpacity = 0,
+  initialOffset = 20,
+  animateOnMount = true,
+  trigger,
+  onComplete,
+  className,
+  style
+}) {
+  const [elements, setElements] = useState18([]);
+  const [animatedValues, setAnimatedValues] = useState18([]);
+  const springsRef = useRef27([]);
+  const completedRef = useRef27(0);
+  useEffect21(() => {
+    let parts;
+    switch (mode) {
+      case "words":
+        parts = children.split(/(\s+)/);
+        break;
+      case "lines":
+        parts = children.split("\n");
+        break;
+      case "characters":
+      default:
+        parts = children.split("");
+    }
+    setElements(parts);
+    setAnimatedValues(new Array(parts.length).fill(0));
+  }, [children, mode]);
+  useEffect21(() => {
+    if (elements.length === 0) return;
+    springsRef.current.forEach((s) => s.destroy());
+    springsRef.current = [];
+    completedRef.current = 0;
+    const springs = elements.map((_, index) => {
+      const spring = createSpringValue6(0, {
+        ...config,
+        onUpdate: (value) => {
+          setAnimatedValues((prev) => {
+            const next = [...prev];
+            next[index] = value;
+            return next;
+          });
+        }
+      });
+      return spring;
+    });
+    springsRef.current = springs;
+    if (animateOnMount || trigger !== void 0) {
+      springs.forEach((spring, index) => {
+        setTimeout(() => {
+          spring.set(1);
+          const checkComplete = () => {
+            if (!spring.isAnimating()) {
+              completedRef.current++;
+              if (completedRef.current === elements.length) {
+                onComplete?.();
+              }
+            } else {
+              requestAnimationFrame(checkComplete);
+            }
+          };
+          setTimeout(checkComplete, 50);
+        }, index * stagger);
+      });
+    }
+    return () => {
+      springs.forEach((s) => s.destroy());
+    };
+  }, [elements, stagger, config, animateOnMount, trigger, onComplete]);
+  const getTransform = (progress) => {
+    const offset = (1 - progress) * initialOffset;
+    switch (from) {
+      case "left":
+        return `translateX(${-offset}px)`;
+      case "right":
+        return `translateX(${offset}px)`;
+      case "top":
+        return `translateY(${-offset}px)`;
+      case "bottom":
+        return `translateY(${offset}px)`;
+      case "center":
+        return `scale(${0.5 + progress * 0.5})`;
+      default:
+        return `translateY(${offset}px)`;
+    }
+  };
+  return /* @__PURE__ */ jsx6("span", { className, style, children: elements.map((element, index) => {
+    const progress = animatedValues[index] ?? 0;
+    const opacity = initialOpacity + (1 - initialOpacity) * progress;
+    if (element.match(/^\s+$/)) {
+      return /* @__PURE__ */ jsx6("span", { children: element }, index);
+    }
+    return /* @__PURE__ */ jsx6(
+      "span",
+      {
+        style: {
+          display: "inline-block",
+          opacity,
+          transform: getTransform(progress),
+          whiteSpace: mode === "lines" ? "pre" : void 0
+        },
+        children: element
+      },
+      index
+    );
+  }) });
+});
+var SpringNumber = memo2(function SpringNumber2({
+  value,
+  decimals = 0,
+  format,
+  config = { stiffness: 100, damping: 20 },
+  prefix = "",
+  suffix = "",
+  className,
+  style
+}) {
+  const [displayValue, setDisplayValue] = useState18(value);
+  const springRef = useRef27(null);
+  const lastValueRef = useRef27(value);
+  useEffect21(() => {
+    springRef.current = createSpringValue6(value, {
+      ...config,
+      onUpdate: setDisplayValue
+    });
+    return () => {
+      springRef.current?.destroy();
+      springRef.current = null;
+    };
+  }, []);
+  useEffect21(() => {
+    if (springRef.current && value !== lastValueRef.current) {
+      springRef.current.set(value);
+      lastValueRef.current = value;
+    }
+  }, [value]);
+  const formattedValue = useMemo7(() => {
+    if (format) {
+      return format(displayValue);
+    }
+    return displayValue.toFixed(decimals);
+  }, [displayValue, decimals, format]);
+  return /* @__PURE__ */ jsxs("span", { className, style, children: [
+    prefix,
+    formattedValue,
+    suffix
+  ] });
+});
+var TypeWriter = memo2(function TypeWriter2({
+  children,
+  speed = 50,
+  delay = 0,
+  cursor = true,
+  cursorChar = "|",
+  loop = false,
+  pauseAtEnd = 1e3,
+  deleteSpeed = 30,
+  onComplete,
+  className,
+  style
+}) {
+  const [displayText, setDisplayText] = useState18("");
+  const [showCursor, setShowCursor] = useState18(cursor);
+  const [_isDeleting, setIsDeleting] = useState18(false);
+  const timeoutRef = useRef27(null);
+  useEffect21(() => {
+    let currentIndex = 0;
+    let isDeleteMode = false;
+    const tick = () => {
+      if (!isDeleteMode) {
+        if (currentIndex <= children.length) {
+          setDisplayText(children.slice(0, currentIndex));
+          currentIndex++;
+          timeoutRef.current = window.setTimeout(tick, speed);
+        } else {
+          onComplete?.();
+          if (loop) {
+            timeoutRef.current = window.setTimeout(() => {
+              isDeleteMode = true;
+              setIsDeleting(true);
+              tick();
+            }, pauseAtEnd);
+          }
+        }
+      } else {
+        if (currentIndex > 0) {
+          currentIndex--;
+          setDisplayText(children.slice(0, currentIndex));
+          timeoutRef.current = window.setTimeout(tick, deleteSpeed);
+        } else {
+          isDeleteMode = false;
+          setIsDeleting(false);
+          timeoutRef.current = window.setTimeout(tick, speed);
+        }
+      }
+    };
+    timeoutRef.current = window.setTimeout(tick, delay);
+    return () => {
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    };
+  }, [children, speed, delay, loop, pauseAtEnd, deleteSpeed, onComplete]);
+  useEffect21(() => {
+    if (!cursor) return;
+    const blink = setInterval(() => {
+      setShowCursor((prev) => !prev);
+    }, 500);
+    return () => clearInterval(blink);
+  }, [cursor]);
+  return /* @__PURE__ */ jsxs("span", { className, style, children: [
+    displayText,
+    cursor && /* @__PURE__ */ jsx6("span", { style: { opacity: showCursor ? 1 : 0 }, children: cursorChar })
+  ] });
+});
+var SplitText = memo2(function SplitText2({
+  children,
+  mode = "characters",
+  render,
+  className,
+  style
+}) {
+  const elements = useMemo7(() => {
+    switch (mode) {
+      case "words":
+        return children.split(/(\s+)/);
+      case "lines":
+        return children.split("\n");
+      case "characters":
+      default:
+        return children.split("");
+    }
+  }, [children, mode]);
+  return /* @__PURE__ */ jsx6("span", { className, style, children: elements.map((element, index) => /* @__PURE__ */ jsx6(React6.Fragment, { children: render(element, index, elements.length) }, index)) });
+});
+
+// src/adapters/react/components/Magnetic.tsx
+import {
+  useRef as useRef28,
+  useEffect as useEffect22,
+  useState as useState19,
+  useCallback as useCallback15,
+  memo as memo3,
+  forwardRef as forwardRef3
+} from "react";
+import { createSpringValue as createSpringValue7 } from "@oxog/springkit";
+import { jsx as jsx7 } from "react/jsx-runtime";
+var Magnetic = memo3(forwardRef3(
+  function Magnetic2({
+    children,
+    strength = 0.3,
+    range = 100,
+    config = { stiffness: 200, damping: 20 },
+    enabled = true,
+    scaleOnHover = 1,
+    maxOffset = 50,
+    className,
+    style,
+    onAttract,
+    onRelease
+  }, ref) {
+    const innerRef = useRef28(null);
+    const combinedRef = (node) => {
+      innerRef.current = node;
+      if (typeof ref === "function") {
+        ref(node);
+      } else if (ref) {
+        ref.current = node;
+      }
+    };
+    const springXRef = useRef28(null);
+    const springYRef = useRef28(null);
+    const springScaleRef = useRef28(null);
+    const [transform, setTransform] = useState19({ x: 0, y: 0, scale: 1 });
+    const isAttractedRef = useRef28(false);
+    useEffect22(() => {
+      springXRef.current = createSpringValue7(0, {
+        ...config,
+        onUpdate: (x) => setTransform((t) => ({ ...t, x }))
+      });
+      springYRef.current = createSpringValue7(0, {
+        ...config,
+        onUpdate: (y) => setTransform((t) => ({ ...t, y }))
+      });
+      springScaleRef.current = createSpringValue7(1, {
+        ...config,
+        onUpdate: (scale) => setTransform((t) => ({ ...t, scale }))
+      });
+      return () => {
+        springXRef.current?.destroy();
+        springYRef.current?.destroy();
+        springScaleRef.current?.destroy();
+      };
+    }, [config]);
+    const onAttractRef = useRef28(onAttract);
+    const onReleaseRef = useRef28(onRelease);
+    onAttractRef.current = onAttract;
+    onReleaseRef.current = onRelease;
+    const handleMouseMove = useCallback15(
+      (e) => {
+        if (!enabled || !innerRef.current) return;
+        const rect = innerRef.current.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        const centerY = rect.top + rect.height / 2;
+        const distanceX = e.clientX - centerX;
+        const distanceY = e.clientY - centerY;
+        const distance = Math.sqrt(distanceX * distanceX + distanceY * distanceY);
+        if (distance < range) {
+          const factor = 1 - distance / range;
+          let offsetX = distanceX * strength * factor;
+          let offsetY = distanceY * strength * factor;
+          offsetX = Math.max(-maxOffset, Math.min(maxOffset, offsetX));
+          offsetY = Math.max(-maxOffset, Math.min(maxOffset, offsetY));
+          springXRef.current?.set(offsetX);
+          springYRef.current?.set(offsetY);
+          if (scaleOnHover !== 1) {
+            const scaleFactor = 1 + (scaleOnHover - 1) * factor;
+            springScaleRef.current?.set(scaleFactor);
+          }
+          if (!isAttractedRef.current) {
+            isAttractedRef.current = true;
+            onAttractRef.current?.();
+          }
+        } else {
+          springXRef.current?.set(0);
+          springYRef.current?.set(0);
+          springScaleRef.current?.set(1);
+          if (isAttractedRef.current) {
+            isAttractedRef.current = false;
+            onReleaseRef.current?.();
+          }
+        }
+      },
+      [enabled, range, strength, maxOffset, scaleOnHover]
+    );
+    const handleMouseLeave = useCallback15(() => {
+      springXRef.current?.set(0);
+      springYRef.current?.set(0);
+      springScaleRef.current?.set(1);
+      if (isAttractedRef.current) {
+        isAttractedRef.current = false;
+        onReleaseRef.current?.();
+      }
+    }, []);
+    useEffect22(() => {
+      if (!enabled) return;
+      window.addEventListener("mousemove", handleMouseMove, { passive: true });
+      window.addEventListener("mouseleave", handleMouseLeave, { passive: true });
+      return () => {
+        window.removeEventListener("mousemove", handleMouseMove);
+        window.removeEventListener("mouseleave", handleMouseLeave);
+      };
+    }, [enabled, handleMouseMove, handleMouseLeave]);
+    return /* @__PURE__ */ jsx7(
+      "div",
+      {
+        ref: combinedRef,
+        className,
+        style: {
+          display: "inline-block",
+          transform: `translate(${transform.x}px, ${transform.y}px) scale(${transform.scale})`,
+          willChange: "transform",
+          ...style
+        },
+        children
+      }
+    );
+  }
+));
+var MagneticGroup = memo3(function MagneticGroup2({
+  children,
+  repel: _repel = false,
+  repelStrength: _repelStrength = 0.2,
+  className,
+  style
+}) {
+  return /* @__PURE__ */ jsx7("div", { className, style, children });
+});
+var MagneticCursor = memo3(function MagneticCursor2({
+  children,
+  size = 30,
+  config = { stiffness: 150, damping: 15 },
+  offset = { x: 0, y: 0 },
+  visible = true,
+  zIndex = 9999,
+  className,
+  style
+}) {
+  const [position, setPosition] = useState19({ x: 0, y: 0 });
+  const springXRef = useRef28(null);
+  const springYRef = useRef28(null);
+  useEffect22(() => {
+    springXRef.current = createSpringValue7(0, {
+      ...config,
+      onUpdate: (x) => setPosition((p) => ({ ...p, x }))
+    });
+    springYRef.current = createSpringValue7(0, {
+      ...config,
+      onUpdate: (y) => setPosition((p) => ({ ...p, y }))
+    });
+    return () => {
+      springXRef.current?.destroy();
+      springYRef.current?.destroy();
+    };
+  }, [config]);
+  useEffect22(() => {
+    const handleMouseMove = (e) => {
+      springXRef.current?.set(e.clientX + offset.x);
+      springYRef.current?.set(e.clientY + offset.y);
+    };
+    window.addEventListener("mousemove", handleMouseMove, { passive: true });
+    return () => window.removeEventListener("mousemove", handleMouseMove);
+  }, [offset]);
+  if (!visible) return null;
+  return /* @__PURE__ */ jsx7(
+    "div",
+    {
+      className,
+      style: {
+        position: "fixed",
+        left: position.x - size / 2,
+        top: position.y - size / 2,
+        width: size,
+        height: size,
+        pointerEvents: "none",
+        zIndex,
+        ...style
+      },
+      children: children ?? /* @__PURE__ */ jsx7(
+        "div",
+        {
+          style: {
+            width: "100%",
+            height: "100%",
+            borderRadius: "50%",
+            border: "2px solid currentColor",
+            opacity: 0.5
+          }
+        }
+      )
+    }
+  );
+});
+function useMagnetic(options = {}) {
+  const {
+    strength = 0.3,
+    range = 100,
+    config = { stiffness: 200, damping: 20 },
+    enabled = true,
+    maxOffset = 50
+  } = options;
+  const ref = useRef28(null);
+  const springXRef = useRef28(null);
+  const springYRef = useRef28(null);
+  const [position, setPosition] = useState19({ x: 0, y: 0 });
+  const isAttractedRef = useRef28(false);
+  const [isAttracted, setIsAttracted] = useState19(false);
+  useEffect22(() => {
+    springXRef.current = createSpringValue7(0, {
+      ...config,
+      onUpdate: (x) => setPosition((p) => ({ ...p, x }))
+    });
+    springYRef.current = createSpringValue7(0, {
+      ...config,
+      onUpdate: (y) => setPosition((p) => ({ ...p, y }))
+    });
+    return () => {
+      springXRef.current?.destroy();
+      springYRef.current?.destroy();
+    };
+  }, [config]);
+  useEffect22(() => {
+    if (!enabled) return;
+    const handleMouseMove = (e) => {
+      if (!ref.current) return;
+      const rect = ref.current.getBoundingClientRect();
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const distanceX = e.clientX - centerX;
+      const distanceY = e.clientY - centerY;
+      const distance = Math.sqrt(distanceX * distanceX + distanceY * distanceY);
+      if (distance < range) {
+        const factor = 1 - distance / range;
+        let offsetX = distanceX * strength * factor;
+        let offsetY = distanceY * strength * factor;
+        offsetX = Math.max(-maxOffset, Math.min(maxOffset, offsetX));
+        offsetY = Math.max(-maxOffset, Math.min(maxOffset, offsetY));
+        springXRef.current?.set(offsetX);
+        springYRef.current?.set(offsetY);
+        if (!isAttractedRef.current) {
+          isAttractedRef.current = true;
+          setIsAttracted(true);
+        }
+      } else {
+        springXRef.current?.set(0);
+        springYRef.current?.set(0);
+        if (isAttractedRef.current) {
+          isAttractedRef.current = false;
+          setIsAttracted(false);
+        }
+      }
+    };
+    const handleMouseLeave = () => {
+      springXRef.current?.set(0);
+      springYRef.current?.set(0);
+      if (isAttractedRef.current) {
+        isAttractedRef.current = false;
+        setIsAttracted(false);
+      }
+    };
+    window.addEventListener("mousemove", handleMouseMove, { passive: true });
+    window.addEventListener("mouseleave", handleMouseLeave, { passive: true });
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseleave", handleMouseLeave);
+    };
+  }, [enabled, range, strength, maxOffset]);
+  const reset = useCallback15(() => {
+    springXRef.current?.set(0);
+    springYRef.current?.set(0);
+    isAttractedRef.current = false;
+    setIsAttracted(false);
+  }, []);
+  return {
+    ref,
+    x: position.x,
+    y: position.y,
+    isAttracted,
+    reset
+  };
+}
+
+// src/adapters/react/components/Parallax.tsx
+import * as React7 from "react";
+import {
+  useRef as useRef29,
+  useEffect as useEffect23,
+  useState as useState20,
+  useCallback as useCallback16,
+  useMemo as useMemo8,
+  memo as memo4,
+  forwardRef as forwardRef4,
+  createContext as createContext6,
+  useContext as useContext6
+} from "react";
+import { createSpringValue as createSpringValue8 } from "@oxog/springkit";
+import { jsx as jsx8, jsxs as jsxs2 } from "react/jsx-runtime";
+var Parallax = memo4(forwardRef4(
+  function Parallax2({
+    children,
+    speed = 0.5,
+    direction = "vertical",
+    config = { stiffness: 100, damping: 20 },
+    enabled = true,
+    offset = {},
+    rootMargin = "100px",
+    as: Component = "div",
+    className,
+    style
+  }, ref) {
+    const innerRef = useRef29(null);
+    const combinedRef = (node) => {
+      innerRef.current = node;
+      if (typeof ref === "function") {
+        ref(node);
+      } else if (ref) {
+        ref.current = node;
+      }
+    };
+    const springXRef = useRef29(null);
+    const springYRef = useRef29(null);
+    const [transform, setTransform] = useState20({ x: offset.x ?? 0, y: offset.y ?? 0 });
+    const [isInView, setIsInView] = useState20(false);
+    useEffect23(() => {
+      springXRef.current = createSpringValue8(offset.x ?? 0, {
+        ...config,
+        onUpdate: (x) => setTransform((t) => ({ ...t, x }))
+      });
+      springYRef.current = createSpringValue8(offset.y ?? 0, {
+        ...config,
+        onUpdate: (y) => setTransform((t) => ({ ...t, y }))
+      });
+      return () => {
+        springXRef.current?.destroy();
+        springYRef.current?.destroy();
+      };
+    }, [config, offset.x, offset.y]);
+    useEffect23(() => {
+      if (!innerRef.current) return;
+      const observer = new IntersectionObserver(
+        ([entry]) => {
+          setIsInView(entry?.isIntersecting ?? false);
+        },
+        { rootMargin }
+      );
+      observer.observe(innerRef.current);
+      return () => observer.disconnect();
+    }, [rootMargin]);
+    useEffect23(() => {
+      if (!enabled || !isInView) return;
+      const handleScroll = () => {
+        if (!innerRef.current) return;
+        const rect = innerRef.current.getBoundingClientRect();
+        const windowHeight = window.innerHeight;
+        const windowWidth = window.innerWidth;
+        const centerY = (rect.top + rect.height / 2 - windowHeight / 2) / windowHeight;
+        const centerX = (rect.left + rect.width / 2 - windowWidth / 2) / windowWidth;
+        if (direction === "vertical" || direction === "both") {
+          const yOffset = centerY * speed * 200 + (offset.y ?? 0);
+          springYRef.current?.set(yOffset);
+        }
+        if (direction === "horizontal" || direction === "both") {
+          const xOffset = centerX * speed * 200 + (offset.x ?? 0);
+          springXRef.current?.set(xOffset);
+        }
+      };
+      handleScroll();
+      window.addEventListener("scroll", handleScroll, { passive: true });
+      window.addEventListener("resize", handleScroll, { passive: true });
+      return () => {
+        window.removeEventListener("scroll", handleScroll);
+        window.removeEventListener("resize", handleScroll);
+      };
+    }, [enabled, isInView, speed, direction, offset]);
+    const transformStyle = useMemo8(() => {
+      const parts = [];
+      if (direction === "vertical" || direction === "both") {
+        parts.push(`translateY(${transform.y}px)`);
+      }
+      if (direction === "horizontal" || direction === "both") {
+        parts.push(`translateX(${transform.x}px)`);
+      }
+      return parts.join(" ") || "none";
+    }, [direction, transform]);
+    return React7.createElement(
+      Component,
+      {
+        ref: combinedRef,
+        className,
+        style: {
+          transform: transformStyle,
+          willChange: "transform",
+          ...style
+        }
+      },
+      children
+    );
+  }
+));
+var MouseParallax = memo4(forwardRef4(
+  function MouseParallax2({
+    children,
+    strength = 20,
+    inverted = false,
+    config = { stiffness: 100, damping: 15 },
+    enabled = true,
+    container,
+    resetOnLeave = true,
+    as: Component = "div",
+    className,
+    style
+  }, ref) {
+    const springXRef = useRef29(null);
+    const springYRef = useRef29(null);
+    const [transform, setTransform] = useState20({ x: 0, y: 0 });
+    useEffect23(() => {
+      springXRef.current = createSpringValue8(0, {
+        ...config,
+        onUpdate: (x) => setTransform((t) => ({ ...t, x }))
+      });
+      springYRef.current = createSpringValue8(0, {
+        ...config,
+        onUpdate: (y) => setTransform((t) => ({ ...t, y }))
+      });
+      return () => {
+        springXRef.current?.destroy();
+        springYRef.current?.destroy();
+      };
+    }, [config]);
+    useEffect23(() => {
+      if (!enabled) return;
+      const target = container?.current ?? null;
+      const useWindow = target === null;
+      const handleMouseMove = (e) => {
+        let centerX;
+        let centerY;
+        let width;
+        let height;
+        if (target) {
+          const rect = target.getBoundingClientRect();
+          centerX = e.clientX - rect.left - rect.width / 2;
+          centerY = e.clientY - rect.top - rect.height / 2;
+          width = rect.width;
+          height = rect.height;
+        } else {
+          centerX = e.clientX - window.innerWidth / 2;
+          centerY = e.clientY - window.innerHeight / 2;
+          width = window.innerWidth;
+          height = window.innerHeight;
+        }
+        const normalizedX = centerX / width * 2;
+        const normalizedY = centerY / height * 2;
+        const factor = inverted ? -1 : 1;
+        const offsetX = normalizedX * strength * factor;
+        const offsetY = normalizedY * strength * factor;
+        springXRef.current?.set(offsetX);
+        springYRef.current?.set(offsetY);
+      };
+      const handleMouseLeave = () => {
+        if (resetOnLeave) {
+          springXRef.current?.set(0);
+          springYRef.current?.set(0);
+        }
+      };
+      if (useWindow) {
+        window.addEventListener("mousemove", handleMouseMove, { passive: true });
+        window.addEventListener("mouseleave", handleMouseLeave, { passive: true });
+      } else {
+        target.addEventListener("mousemove", handleMouseMove, { passive: true });
+        target.addEventListener("mouseleave", handleMouseLeave, { passive: true });
+      }
+      return () => {
+        if (useWindow) {
+          window.removeEventListener("mousemove", handleMouseMove);
+          window.removeEventListener("mouseleave", handleMouseLeave);
+        } else {
+          target.removeEventListener("mousemove", handleMouseMove);
+          target.removeEventListener("mouseleave", handleMouseLeave);
+        }
+      };
+    }, [enabled, container, strength, inverted, resetOnLeave]);
+    return React7.createElement(
+      Component,
+      {
+        ref,
+        className,
+        style: {
+          transform: `translate(${transform.x}px, ${transform.y}px)`,
+          willChange: "transform",
+          ...style
+        }
+      },
+      children
+    );
+  }
+));
+var TiltCard = memo4(forwardRef4(
+  function TiltCard2({
+    children,
+    maxTilt = 20,
+    perspective = 1e3,
+    scale = 1,
+    config = { stiffness: 300, damping: 20 },
+    enabled = true,
+    glare = false,
+    glareOpacity = 0.2,
+    className,
+    style,
+    onTilt
+  }, ref) {
+    const innerRef = useRef29(null);
+    const combinedRef = (node) => {
+      innerRef.current = node;
+      if (typeof ref === "function") {
+        ref(node);
+      } else if (ref) {
+        ref.current = node;
+      }
+    };
+    const springTiltXRef = useRef29(null);
+    const springTiltYRef = useRef29(null);
+    const springScaleRef = useRef29(null);
+    const springGlareRef = useRef29(null);
+    const [tilt, setTilt] = useState20({ x: 0, y: 0, scale: 1, glareX: 50, glareY: 50, glareOpacity: 0 });
+    useEffect23(() => {
+      springTiltXRef.current = createSpringValue8(0, {
+        ...config,
+        onUpdate: (x) => setTilt((t) => ({ ...t, x }))
+      });
+      springTiltYRef.current = createSpringValue8(0, {
+        ...config,
+        onUpdate: (y) => setTilt((t) => ({ ...t, y }))
+      });
+      springScaleRef.current = createSpringValue8(1, {
+        ...config,
+        onUpdate: (s) => setTilt((t) => ({ ...t, scale: s }))
+      });
+      springGlareRef.current = createSpringValue8(0, {
+        ...config,
+        onUpdate: (o) => setTilt((t) => ({ ...t, glareOpacity: o }))
+      });
+      return () => {
+        springTiltXRef.current?.destroy();
+        springTiltYRef.current?.destroy();
+        springScaleRef.current?.destroy();
+        springGlareRef.current?.destroy();
+      };
+    }, [config]);
+    const handleMouseMove = useCallback16(
+      (e) => {
+        if (!enabled || !innerRef.current) return;
+        const rect = innerRef.current.getBoundingClientRect();
+        const centerX = (e.clientX - rect.left) / rect.width - 0.5;
+        const centerY = (e.clientY - rect.top) / rect.height - 0.5;
+        const tiltX = centerY * maxTilt * -1;
+        const tiltY = centerX * maxTilt;
+        springTiltXRef.current?.set(tiltX);
+        springTiltYRef.current?.set(tiltY);
+        springScaleRef.current?.set(scale);
+        if (glare) {
+          springGlareRef.current?.set(glareOpacity);
+          setTilt((t) => ({
+            ...t,
+            glareX: (centerX + 0.5) * 100,
+            glareY: (centerY + 0.5) * 100
+          }));
+        }
+        onTilt?.(tiltX, tiltY);
+      },
+      [enabled, maxTilt, scale, glare, glareOpacity, onTilt]
+    );
+    const handleMouseLeave = useCallback16(() => {
+      springTiltXRef.current?.set(0);
+      springTiltYRef.current?.set(0);
+      springScaleRef.current?.set(1);
+      springGlareRef.current?.set(0);
+    }, []);
+    return /* @__PURE__ */ jsx8(
+      "div",
+      {
+        ref: combinedRef,
+        className,
+        style: {
+          perspective: `${perspective}px`,
+          ...style
+        },
+        onMouseMove: handleMouseMove,
+        onMouseLeave: handleMouseLeave,
+        children: /* @__PURE__ */ jsxs2(
+          "div",
+          {
+            style: {
+              transform: `rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) scale(${tilt.scale})`,
+              transformStyle: "preserve-3d",
+              width: "100%",
+              height: "100%"
+            },
+            children: [
+              children,
+              glare && /* @__PURE__ */ jsx8(
+                "div",
+                {
+                  style: {
+                    position: "absolute",
+                    inset: 0,
+                    pointerEvents: "none",
+                    background: `radial-gradient(circle at ${tilt.glareX}% ${tilt.glareY}%, white, transparent)`,
+                    opacity: tilt.glareOpacity,
+                    borderRadius: "inherit"
+                  }
+                }
+              )
+            ]
+          }
+        )
+      }
+    );
+  }
+));
+var ParallaxContext = createContext6(null);
+var ParallaxContainer = memo4(function ParallaxContainer2({
+  children,
+  pages = 1,
+  className,
+  style
+}) {
+  const containerRef = useRef29(null);
+  const [scrollProgress, setScrollProgress] = useState20(0);
+  useEffect23(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const handleScroll = () => {
+      const el = containerRef.current;
+      if (!el) return;
+      const scrollTop = el.scrollTop;
+      const maxScroll = el.scrollHeight - el.clientHeight;
+      setScrollProgress(maxScroll > 0 ? scrollTop / maxScroll : 0);
+    };
+    container.addEventListener("scroll", handleScroll, { passive: true });
+    return () => container.removeEventListener("scroll", handleScroll);
+  }, []);
+  const contextValue = useMemo8(
+    () => ({ scrollProgress, containerRef }),
+    [scrollProgress]
+  );
+  return /* @__PURE__ */ jsx8(ParallaxContext.Provider, { value: contextValue, children: /* @__PURE__ */ jsx8(
+    "div",
+    {
+      ref: containerRef,
+      className,
+      style: {
+        height: "100vh",
+        overflow: "auto",
+        position: "relative",
+        ...style
+      },
+      children: /* @__PURE__ */ jsx8("div", { style: { height: `${pages * 100}vh`, position: "relative" }, children })
+    }
+  ) });
+});
+var ParallaxLayer = memo4(function ParallaxLayer2({
+  children,
+  offset = 0,
+  speed = 1,
+  horizontal = false,
+  sticky,
+  className,
+  style
+}) {
+  const context = useContext6(ParallaxContext);
+  const [transform, setTransform] = useState20({ x: 0, y: 0 });
+  useEffect23(() => {
+    if (!context) return;
+    const progress = context.scrollProgress;
+    const pageHeight = 100;
+    if (sticky) {
+      const stickyRange = sticky.end - sticky.start;
+      if (progress >= sticky.start && progress <= sticky.end && stickyRange > 0) {
+        const _stickyProgress = (progress - sticky.start) / stickyRange;
+        setTransform({
+          x: 0,
+          y: sticky.start * pageHeight
+        });
+      } else if (progress < sticky.start) {
+        setTransform({ x: 0, y: offset * pageHeight });
+      } else {
+        setTransform({ x: 0, y: sticky.end * pageHeight });
+      }
+    } else {
+      const base = offset * pageHeight;
+      const parallaxOffset = progress * pageHeight * (1 - speed);
+      if (horizontal) {
+        setTransform({ x: parallaxOffset, y: base });
+      } else {
+        setTransform({ x: 0, y: base + parallaxOffset });
+      }
+    }
+  }, [context?.scrollProgress, offset, speed, horizontal, sticky]);
+  return /* @__PURE__ */ jsx8(
+    "div",
+    {
+      className,
+      style: {
+        position: "absolute",
+        top: 0,
+        left: 0,
+        width: "100%",
+        height: "100vh",
+        transform: `translate(${transform.x}vh, ${transform.y}vh)`,
+        willChange: "transform",
+        ...style
+      },
+      children
+    }
+  );
+});
+function useParallaxContext() {
+  return useContext6(ParallaxContext);
+}
+
+// src/adapters/react/components/LazyMotion.tsx
+import * as React8 from "react";
+import { createContext as createContext7, useContext as useContext7, useState as useState21, useEffect as useEffect24, useMemo as useMemo9 } from "react";
+var domAnimation = {
+  animations: true,
+  gestures: true
+};
+var domMax = {
+  animations: true,
+  gestures: true,
+  layout: true,
+  svg: true,
+  scroll: true
+};
+var domMin = {
+  animations: true
+};
+var LazyMotionContext = createContext7({
+  features: domMax,
+  isStrict: false,
+  isLoaded: true
+});
+function useLazyMotion() {
+  return useContext7(LazyMotionContext);
+}
+function useMotionFeature(feature) {
+  const { features, isLoaded } = useLazyMotion();
+  return isLoaded && (features[feature] ?? false);
+}
+function LazyMotion({
+  features,
+  strict = false,
+  children
+}) {
+  const [loadedFeatures, setLoadedFeatures] = useState21(
+    typeof features === "function" ? null : features
+  );
+  const [isLoaded, setIsLoaded] = useState21(typeof features !== "function");
+  useEffect24(() => {
+    if (typeof features === "function") {
+      features().then((loaded) => {
+        setLoadedFeatures(loaded);
+        setIsLoaded(true);
+      });
+    } else {
+      setLoadedFeatures(features);
+      setIsLoaded(true);
+    }
+  }, [features]);
+  const contextValue = useMemo9(() => ({
+    features: loadedFeatures ?? {},
+    isStrict: strict,
+    isLoaded
+  }), [loadedFeatures, strict, isLoaded]);
+  if (!isLoaded) {
+    return React8.createElement(React8.Fragment, null, null);
+  }
+  return React8.createElement(
+    LazyMotionContext.Provider,
+    { value: contextValue },
+    children
+  );
+}
+function MotionFeatureGuard({
+  feature,
+  children,
+  fallback = null
+}) {
+  const isAvailable = useMotionFeature(feature);
+  return React8.createElement(
+    React8.Fragment,
+    null,
+    isAvailable ? children : fallback
+  );
+}
+function createAsyncFeatures(config) {
+  return async () => {
+    const result = {};
+    await Promise.all(
+      Object.entries(config).map(async ([key, value]) => {
+        const featureKey = key;
+        if (typeof value === "function") {
+          await value();
+          result[featureKey] = true;
+        } else {
+          result[featureKey] = value;
+        }
+      })
+    );
+    return result;
+  };
+}
+function mergeFeatures(...bundles) {
+  return bundles.reduce((acc, bundle) => ({
+    ...acc,
+    ...bundle
+  }), {});
+}
+
+// src/adapters/react/index.ts
+import {
+  MotionValue as MotionValue5,
+  createMotionValue as createMotionValue5,
+  transformValue,
+  transformMapRange
+} from "@oxog/springkit";
+export {
+  AnimatePresence,
+  Animated,
+  LayoutGroupContext,
+  LayoutGroupProvider,
+  LazyMotion,
+  Magnetic,
+  MagneticCursor,
+  MagneticGroup,
+  MotionConfig,
+  MotionFeatureGuard,
+  MotionValue5 as MotionValue,
+  MouseParallax,
+  Parallax,
+  ParallaxContainer,
+  ParallaxLayer,
+  PresenceChild,
+  PresenceContext,
+  Reorder,
+  SharedLayoutContextReact,
+  SharedLayoutProvider,
+  SplitText,
+  Spring,
+  SpringNumber,
+  SpringText,
+  TiltCard,
+  Trail,
+  TypeWriter,
+  VariantContext,
+  VariantProvider,
+  createAsyncFeatures,
+  createMotionComponent,
+  createMotionValue5 as createMotionValue,
+  domAnimation,
+  domMax,
+  domMin,
+  getReducedMotionPreference,
+  isBrowser,
+  isServer,
+  transformMapRange as mapRange,
+  mergeFeatures,
+  safeCancelAnimationFrame,
+  safeRequestAnimationFrame,
+  shouldSkipAnimation,
+  transformValue,
+  useAnimate,
+  useAnimationFrame,
+  useAutoLayout,
+  useBounce,
+  useChain,
+  useClamp,
+  useCombinedTransform,
+  useDelay,
+  useDifference,
+  useDrag,
+  useDragControls,
+  useElastic,
+  useFlip,
+  useFocus,
+  useForceUpdate,
+  useGesture,
+  useGestureAnimation,
+  useGestureState,
+  useGravity,
+  useGyroscope,
+  useHover,
+  useInView,
+  useInViewCallback,
+  useInViewMultiple,
+  useInstantTransition,
+  useInteractionState,
+  useIsPresent,
+  useIsomorphicLayoutEffect,
+  useLayoutGroup,
+  useLayoutId,
+  useLayoutMeasure,
+  useLazyMotion,
+  useMagnetic,
+  useMomentum,
+  useMorph,
+  useMorphRef,
+  useMorphSequence,
+  useMotionConfig,
+  useMotionFeature,
+  useMotionTemplate,
+  useMotionValue,
+  useMotionValueEvent,
+  useMotionValueState,
+  useMotionValueSync,
+  useMotionValues,
+  useParallax,
+  useParallaxContext,
+  usePointer,
+  usePresence,
+  usePresenceCustom,
+  useProduct,
+  useReducedMotion,
+  useReducedMotionConfig,
+  useReducedMotionValue,
+  useScroll,
+  useScrollLinkedValue,
+  useScrollProgress,
+  useScrollTrigger,
+  useScrollVelocity,
+  useShouldAnimate,
+  useSmooth,
+  useSnap,
+  useSpring,
+  useSpringState,
+  useSpringTransform,
+  useSpringValue,
+  useSprings,
+  useStaggerChildren,
+  useSum,
+  useTap,
+  useTime,
+  useTimeline,
+  useTimelineState,
+  useTrail,
+  useTransform,
+  useVariantContext,
+  useVariants,
+  useVelocity,
+  useVelocityTransform,
+  useWillChange
+};

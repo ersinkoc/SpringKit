@@ -1,4 +1,5 @@
-import React, { useMemo, useCallback, useRef, useEffect } from 'react'
+import * as React from 'react'
+import { useMemo, useCallback, useRef, useEffect } from 'react'
 import { PresenceContext, type PresenceContextValue } from '../context/PresenceContext.js'
 
 /** Default timeout for exit animations (10 seconds) */

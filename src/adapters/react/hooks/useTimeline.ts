@@ -9,7 +9,7 @@ import {
   type TimelineTarget,
   type TimelineProps,
   type TimelinePosition,
-} from '../../../index.js'
+} from '@oxog/springkit'
 import { useIsomorphicLayoutEffect } from '../utils/ssr.js'
 
 // ============ Types ============

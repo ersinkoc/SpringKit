@@ -1,6 +1,6 @@
 import { useRef, useCallback, useEffect } from 'react'
-import { createSpringValue } from '../../../core/spring-value.js'
-import type { SpringConfig } from '../../../types.js'
+import { createSpringValue } from '@oxog/springkit'
+import type { SpringConfig } from '@oxog/springkit'
 
 /**
  * Animation target - either a CSS property object or a keyframe array

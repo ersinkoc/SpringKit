@@ -2,7 +2,7 @@
  * React hooks for layout animations (FLIP)
  */
 import { useRef, useCallback, createContext, type ReactNode, type RefCallback } from 'react'
-import React from 'react'
+import * as React from 'react'
 import {
   createLayoutGroup,
   createSharedLayoutContext,
@@ -15,7 +15,7 @@ import {
   type AutoLayoutConfig,
   type LayoutMeasurement,
   type FlipOptions,
-} from '../../../index.js'
+} from '@oxog/springkit'
 import { useIsomorphicLayoutEffect } from '../utils/ssr.js'
 
 // ============ Context ============

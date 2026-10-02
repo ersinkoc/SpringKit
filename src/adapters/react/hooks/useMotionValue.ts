@@ -1,5 +1,5 @@
 import { useRef, useEffect, useState } from 'react'
-import { MotionValue, createMotionValue, type MotionValueOptions } from '../../../core/MotionValue.js'
+import { MotionValue, createMotionValue, type MotionValueOptions } from '@oxog/springkit'
 
 /**
  * Create a MotionValue that persists across renders

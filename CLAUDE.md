@@ -32,9 +32,14 @@ npm run typecheck
 # Linting (flat ESLint config)
 npm run lint
 
-# Build + test before publish
+# Validate published package shape (publint + arethetypeswrong; needs a build)
+npm run lint:package
+
+# Typecheck + lint + build + all tests (runs automatically on publish)
 npm run prepublishOnly
 ```
+
+`npm run build` cleans `dist/` and runs `scripts/build.mjs`, which builds the core and React targets **one at a time** (`SPRINGKIT_BUILD=core|react`). Do not switch back to plain `tsup`: building both targets in parallel intermittently crashes Node on Windows (`0xC0000374`) with no error message and an incomplete `dist/`.
 
 ## Architecture Overview
 
@@ -51,6 +56,8 @@ src/
 
 - **Core** (`@oxog/springkit`): Framework-agnostic animation primitives
 - **React** (`@oxog/springkit/react`): Hooks and components for React 18+ (peer dep, optional)
+
+The React adapter must import core code **only** via `'@oxog/springkit'` (never relative paths like `'../../../core/...'`). That specifier is external in the React build, so both entry points share one core instance (one `globalLoop`, one `MotionValue` class). `tsconfig.json` `paths` and the Vitest aliases map it to `src/` during development. Anything the adapter needs from core must therefore be exported from `src/index.ts`. Import React as `import * as React from 'react'` (no default import, so consumers without `esModuleInterop` can typecheck). The React bundle gets a `"use client"` banner.
 
 ### Source Modules
 

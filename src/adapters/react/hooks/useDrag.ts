@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
-import { createDragSpring } from '../../../index.js'
-import type { DragSpring, DragSpringConfig } from '../../../types.js'
+import { createDragSpring } from '@oxog/springkit'
+import type { DragSpring, DragSpringConfig } from '@oxog/springkit'
 
 /**
  * Drag API interface

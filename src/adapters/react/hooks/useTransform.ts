@@ -1,5 +1,5 @@
 import { useRef, useEffect, useMemo, useCallback } from 'react'
-import { MotionValue, createMotionValue } from '../../../core/MotionValue.js'
+import { MotionValue, createMotionValue } from '@oxog/springkit'
 
 /**
  * Track the velocity of a MotionValue

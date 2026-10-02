@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState } from 'react'
-import { createTrail } from '../../../index.js'
-import type { SpringConfig } from '../../../types.js'
+import * as React from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { createTrail } from '@oxog/springkit'
+import type { SpringConfig } from '@oxog/springkit'
 
 /**
  * Trail component props

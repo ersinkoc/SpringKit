@@ -1,4 +1,5 @@
-import React, {
+import * as React from 'react'
+import {
   createContext,
   useContext,
   useRef,
@@ -7,8 +8,8 @@ import React, {
   useCallback,
   useMemo,
 } from 'react'
-import { createSpringValue } from '../../../core/spring-value.js'
-import type { SpringConfig } from '../../../types.js'
+import { createSpringValue } from '@oxog/springkit'
+import type { SpringConfig } from '@oxog/springkit'
 
 // ============ Types ============
 

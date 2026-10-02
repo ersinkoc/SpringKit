@@ -303,17 +303,39 @@ export {
 
 // ============ Re-export core types ============
 
-export * from '../../types.js'
+// Core is imported as an external package (never bundled into the React
+// adapter) so both entry points share one animation loop and one set of
+// classes — `instanceof MotionValue` and `globalLoop` work across them.
+export type {
+  SpringConfig,
+  SpringPresets,
+  SpringAnimation,
+  SpringValue,
+  SpringGroup,
+  StaggerOptions,
+  TrailConfig,
+  DecayAnimation,
+  DecayConfig,
+  Interpolation,
+  InterpolateOptions,
+  ColorInterpolation,
+  DragSpring,
+  DragSpringConfig,
+  ScrollSpring,
+  ScrollSpringConfig,
+  RGB,
+  HSL,
+} from '@oxog/springkit'
 
 // Re-export MotionValue from core
 export {
   MotionValue,
   createMotionValue,
   transformValue,
-  mapRange,
-} from '../../core/MotionValue.js'
+  transformMapRange as mapRange,
+} from '@oxog/springkit'
 export type {
   MotionValueSubscriber,
   MotionValueEvent,
   MotionValueOptions,
-} from '../../core/MotionValue.js'
+} from '@oxog/springkit'

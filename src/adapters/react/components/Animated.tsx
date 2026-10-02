@@ -1,6 +1,7 @@
-import React, { useEffect, useRef, useState, useContext, useCallback, memo } from 'react'
-import { createSpringGroup } from '../../../index.js'
-import type { SpringConfig } from '../../../types.js'
+import * as React from 'react'
+import { useEffect, useRef, useState, useContext, useCallback, memo } from 'react'
+import { createSpringGroup } from '@oxog/springkit'
+import type { SpringConfig } from '@oxog/springkit'
 import { PresenceContext } from '../context/PresenceContext.js'
 import { isBrowser } from '../utils/ssr.js'
 

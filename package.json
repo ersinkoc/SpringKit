@@ -7,9 +7,12 @@
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "https://github.com/ersinkoc/springkit"
+    "url": "git+https://github.com/ersinkoc/springkit.git"
   },
   "homepage": "https://springkit.oxog.dev",
+  "bugs": {
+    "url": "https://github.com/ersinkoc/springkit/issues"
+  },
   "keywords": [
     "animation",
     "spring",
@@ -31,15 +34,26 @@
   "sideEffects": false,
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     },
     "./react": {
-      "types": "./dist/react/index.d.ts",
-      "import": "./dist/react/index.js",
-      "require": "./dist/react/index.cjs"
-    }
+      "import": {
+        "types": "./dist/react/index.d.ts",
+        "default": "./dist/react/index.js"
+      },
+      "require": {
+        "types": "./dist/react/index.d.cts",
+        "default": "./dist/react/index.cjs"
+      }
+    },
+    "./package.json": "./package.json"
   },
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -51,7 +65,8 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "tsup",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && node scripts/build.mjs",
     "dev": "tsup --watch",
     "test": "vitest run",
     "test:react": "node --max-old-space-size=4096 ./node_modules/vitest/vitest.mjs run --config vitest.config.react.mts",
@@ -59,10 +74,12 @@
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest watch",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src --ext .ts,.tsx",
-    "prepare": "npm run build && npm run test"
+    "lint": "eslint src",
+    "lint:package": "publint --strict && attw --pack .",
+    "prepublishOnly": "npm run typecheck && npm run lint && npm run build && npm run test:all"
   },
   "devDependencies": {
+    "@arethetypeswrong/cli": "^0.18.5",
     "@eslint/js": "^9.39.2",
     "@testing-library/jest-dom": "^6.6.3",
     "@testing-library/react": "^16.1.0",
@@ -75,6 +92,7 @@
     "eslint-plugin-react": "^7.37.2",
     "eslint-plugin-react-hooks": "^5.0.0",
     "jsdom": "^25.0.1",
+    "publint": "^0.3.25",
     "tsup": "^8.3.5",
     "typescript": "^5.7.2",
     "typescript-eslint": "^8.51.0",
@@ -90,5 +108,12 @@
   },
   "engines": {
     "node": ">=18.0.0"
+  },
+  "typesVersions": {
+    "*": {
+      "react": [
+        "./dist/react/index.d.ts"
+      ]
+    }
   }
 }
