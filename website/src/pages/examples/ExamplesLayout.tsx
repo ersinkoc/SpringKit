@@ -9,7 +9,7 @@ import {
 export const CATEGORIES = [
   {
     id: 'latest',
-    label: 'Latest (v1.3)',
+    label: 'Latest',
     icon: Sparkles,
     color: 'from-indigo-500 to-purple-500',
     description: 'Variants, Timeline, SVG Morphing, Scroll-Linked, Stagger Patterns'

@@ -5692,10 +5692,11 @@ function createMorph(initialPath, config = {}) {
   currentPoints = [...fromPoints];
   toPoints = [...fromPoints];
   const progressSpring = createSpringValue(0, springConfig);
+  let initialized = false;
   progressSpring.subscribe(() => {
     notifications++;
     const progress = progressSpring.get();
-    onProgress?.(progress);
+    if (initialized) onProgress?.(progress);
     currentPoints = fromPoints.map(
       (from, i) => interpolatePoint(from, toPoints[i] ?? from, progress)
     );
@@ -5712,6 +5713,7 @@ function createMorph(initialPath, config = {}) {
       onComplete?.();
     }
   });
+  initialized = true;
   return {
     getPath: () => currentPath,
     getProgress: () => progressSpring.get(),

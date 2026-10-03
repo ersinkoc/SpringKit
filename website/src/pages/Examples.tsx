@@ -80,7 +80,7 @@ import {
 
 const CATEGORIES = [
   { id: 'all', label: 'All Examples', icon: Sparkles, color: 'from-orange-500 to-amber-500' },
-  { id: 'new', label: 'New in v1.2', icon: Zap, color: 'from-orange-500 to-amber-500' },
+  { id: 'new', label: 'Feature Showcase', icon: Zap, color: 'from-orange-500 to-amber-500' },
   { id: 'visual', label: 'Visual Effects', icon: Shapes, color: 'from-purple-500 to-pink-500' },
   { id: 'spectacular', label: 'Spectacular', icon: Star, color: 'from-yellow-500 to-orange-500' },
   { id: 'ui', label: 'UI Components', icon: Layers, color: 'from-blue-500 to-cyan-500' },
@@ -1967,7 +1967,7 @@ function OdometerDigit({ value }: { value: number }) {
 }
 
 // ============================================================================
-// NEW v1.2.0 FEATURE DEMOS
+// FEATURE SHOWCASE DEMOS
 // ============================================================================
 
 // Keyframes Animation Demo
@@ -3991,7 +3991,7 @@ function PresetsComparison() {
 }
 
 // ============================================================================
-// NEW FEATURE DEMOS - v1.3.0 Features
+// FEATURE SHOWCASE DEMOS (continued)
 // ============================================================================
 
 // Timeline API Demo
@@ -5200,10 +5200,9 @@ function NewFeaturesSection() {
       className="mb-12"
     >
       <div className="flex items-center gap-3 mb-2">
-        <h2 className="text-2xl font-bold text-white">New in v1.3.0</h2>
-        <span className="px-2 py-0.5 bg-gradient-to-r from-orange-500 to-amber-500 text-white text-xs font-bold rounded-full">NEW</span>
+        <h2 className="text-2xl font-bold text-white">Feature Showcase</h2>
       </div>
-      <p className="text-white/40 mb-6">Latest features: Timeline API, SVG Morphing, Variants System, Stagger Patterns, Physics Presets</p>
+      <p className="text-white/40 mb-6">Keyframes, SVG paths and morphing, FLIP, Timeline, Variants, Stagger Patterns, physics hooks and text components</p>
 
       <div className="grid lg:grid-cols-4 gap-6">
         {demos.map((Demo, i) => {

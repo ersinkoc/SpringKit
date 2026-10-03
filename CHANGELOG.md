@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- `createMorph` called `onProgress(0)` when the morph was created, although
+  nothing had moved. A "busy" flag set from `onProgress` (e.g. to disable
+  buttons while morphing) stayed on until the first morph finished, and
+  `useMorphRef` re-rendered once on mount. `onProgress` now only reports real
+  progress updates (`morphTo()` frames and `setProgress()`).
+
+### Website
+- New "Migrating to 2.0" page; the home page, examples and presets docs no
+  longer advertise 1.x versions. The SVG Morph example's shape buttons were
+  disabled on load (see above); the site has a favicon.
+
 ## [2.0.0] - 2026-10-02
 
 This release fixes about 190 bugs (each with a regression test),

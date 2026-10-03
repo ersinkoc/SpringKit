@@ -465,11 +465,14 @@ export function createMorph(
 
   // Create spring for progress
   const progressSpring = createSpringValue(0, springConfig)
+  // subscribe() calls back once synchronously with the initial progress;
+  // that is not a progress update, so onProgress skips it
+  let initialized = false
 
   progressSpring.subscribe(() => {
     notifications++
     const progress = progressSpring.get()
-    onProgress?.(progress)
+    if (initialized) onProgress?.(progress)
 
     // Interpolate points
     currentPoints = fromPoints.map((from, i) =>
@@ -490,6 +493,7 @@ export function createMorph(
       onComplete?.()
     }
   })
+  initialized = true
 
   return {
     getPath: () => currentPath,

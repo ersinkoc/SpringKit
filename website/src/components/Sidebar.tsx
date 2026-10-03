@@ -14,6 +14,10 @@ const navItems: NavItem[] = [
     href: '/docs/getting-started',
   },
   {
+    title: 'Migrating to 2.0',
+    href: '/docs/migration',
+  },
+  {
     title: 'Spring Basics',
     children: [
       { title: 'Spring Function', href: '/docs/spring/function' },

@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { createMorph, createMorphSequence, shapes } from '@oxog/springkit'
+import { installTestClock } from '../../../src/testing/index'
 
 describe('SVG Morph', () => {
   beforeEach(() => {
@@ -160,8 +161,11 @@ describe('SVG Morph', () => {
       const circlePath = shapes.circle(50, 50, 25)
       const morph = createMorph(circlePath, { onProgress })
 
-      // Initial subscription triggers callback
-      expect(onProgress).toHaveBeenCalled()
+      // Creating a morph is not a progress update
+      expect(onProgress).not.toHaveBeenCalled()
+
+      morph.setProgress(0.5)
+      expect(onProgress).toHaveBeenLastCalledWith(0.5)
 
       morph.destroy()
     })
@@ -752,5 +756,32 @@ describe('SVG Morph review regressions', () => {
     expect(nested).toHaveBeenLastCalledWith('M 0 10 L 10 10')
     unsubscribe()
     morph.destroy()
+  })
+
+  it('onProgress is not called on creation, only for real progress updates', () => {
+    const clock = installTestClock()
+    try {
+      // The usual "busy" flag pattern: it must not be stuck at true on load
+      let busy = false
+      const onProgress = vi.fn((p: number) => { busy = p < 0.99 })
+      const onComplete = vi.fn(() => { busy = false })
+      const morph = createMorph('M 0 0 L 10 0', { samples: 2, onProgress, onComplete })
+
+      expect(onProgress).not.toHaveBeenCalled()
+      expect(busy).toBe(false)
+
+      morph.morphTo('M 0 10 L 10 10')
+      clock.nextFrame()
+      expect(onProgress).toHaveBeenCalled()
+      expect(busy).toBe(true)
+
+      clock.runAll()
+      expect(onProgress).toHaveBeenLastCalledWith(1)
+      expect(onComplete).toHaveBeenCalledTimes(1)
+      expect(busy).toBe(false)
+      morph.destroy()
+    } finally {
+      clock.uninstall()
+    }
   })
 })

@@ -2,6 +2,7 @@ import { Routes, Route, useLocation } from 'react-router-dom'
 import { lazy, Suspense } from 'react'
 import { Home } from './pages/Home'
 import { GettingStarted } from './docs/GettingStarted'
+import { Migration } from './docs/Migration'
 import { SpringBasics } from './docs/SpringBasics'
 import { Presets } from './docs/Presets'
 import { Interpolation } from './docs/Interpolation'
@@ -51,6 +52,7 @@ function App() {
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/docs/getting-started" element={<GettingStarted />} />
+            <Route path="/docs/migration" element={<Migration />} />
             <Route path="/docs/spring/*" element={<SpringBasics />} />
             <Route path="/docs/presets" element={<Presets />} />
             <Route path="/docs/interpolation" element={<Interpolation />} />

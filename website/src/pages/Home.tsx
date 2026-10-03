@@ -1740,7 +1740,7 @@ function Stats() {
     { value: 3, suffix: 'KB', label: 'Gzipped, spring() only', icon: Box },
     { value: 0, suffix: '', label: 'Dependencies', icon: Feather },
     { value: 100, suffix: '%', label: 'TypeScript', icon: Code2 },
-    { value: 2500, suffix: '+', label: 'Tests', icon: Timer },
+    { value: 3200, suffix: '+', label: 'Tests', icon: Timer },
   ]
 
   return (
@@ -1916,16 +1916,19 @@ const drag = createDragSpring(element, {
                   transition={{ duration: 0.8, ease: [0.21, 0.47, 0.32, 0.98] }}
                 >
                   {/* Badge */}
-                  <AnimatedDiv
-                    className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass-subtle mb-8"
-                    whileHover={{ scale: 1.02 }}
-                  >
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75" />
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500" />
-                    </span>
-                    <span className="text-sm text-white/70">v1.2.0 — AnimatePresence, Gesture Props, Keyframes, SVG Path, FLIP Layout</span>
-                  </AnimatedDiv>
+                  <Link to="/docs/migration" className="inline-block mb-8">
+                    <AnimatedDiv
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-full glass-subtle hover:bg-white/10 transition-colors"
+                      whileHover={{ scale: 1.02 }}
+                    >
+                      <span className="relative flex h-2 w-2">
+                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75" />
+                        <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500" />
+                      </span>
+                      <span className="text-sm text-white/70">v2.0 — Exact physics, compositor springs, Animated drag, test clock</span>
+                      <ArrowRight className="w-3.5 h-3.5 text-white/50" />
+                    </AnimatedDiv>
+                  </Link>
 
                   {/* Headline */}
                   <h1 className="text-5xl md:text-6xl lg:text-7xl font-bold leading-[1.1] tracking-tight">
@@ -2052,7 +2055,7 @@ const drag = createDragSpring(element, {
               <FeatureCard
                 icon={Zap}
                 title="Real Spring Physics"
-                description="Based on actual spring equations with configurable stiffness, damping, and mass for natural, believable motion."
+                description="The exact closed-form spring solution, advanced with real elapsed time: identical motion at 60, 120 or 144Hz, and seekable with solveSpring()."
                 gradient="bg-gradient-to-br from-yellow-500/20 to-orange-500/20"
                 delay={0}
               />
@@ -2066,7 +2069,7 @@ const drag = createDragSpring(element, {
               <FeatureCard
                 icon={MousePointer2}
                 title="Gesture Support"
-                description="Built-in drag and scroll springs with rubber band physics, momentum, and smooth boundary constraints."
+                description="Drag, swipe, pinch, rotate and scroll springs with rubber bands, momentum and boundary constraints. Every velocity is in px/s."
                 gradient="bg-gradient-to-br from-blue-500/20 to-cyan-500/20"
                 delay={0.2}
               />
@@ -2080,12 +2083,12 @@ const drag = createDragSpring(element, {
               <FeatureCard
                 icon={Waves}
                 title="Interpolation"
-                description="Interpolate between any values including colors, with support for custom output ranges and easing."
+                description="Interpolate numbers, units and colors (alpha, CSS color names, OKLab mixing) across any input range, with clamping and easing."
                 gradient="bg-gradient-to-br from-rose-500/20 to-red-500/20"
                 delay={0.4}
               />
               <FeatureCard
-                icon={Cpu}
+                icon={Code2}
                 title="React Hooks"
                 description="useSpring, useSpringValue, useTrail, and more. Plus ready-to-use Animated components for React."
                 gradient="bg-gradient-to-br from-indigo-500/20 to-violet-500/20"
@@ -2101,7 +2104,7 @@ const drag = createDragSpring(element, {
               <FeatureCard
                 icon={MousePointer2}
                 title="Gesture Props"
-                description="whileHover, whileTap, whileFocus, whileInView, whileDrag - declarative gesture animations on Animated components."
+                description="whileHover, whileTap, whileFocus, whileInView, whileDrag, plus drag with constraints, elastic edges, momentum and handles on Animated."
                 gradient="bg-gradient-to-br from-teal-500/20 to-cyan-500/20"
                 delay={0.7}
               />

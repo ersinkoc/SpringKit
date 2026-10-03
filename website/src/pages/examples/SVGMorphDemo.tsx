@@ -128,9 +128,8 @@ function SVGMorphDemo() {
     // Create morph controller with spring physics
     morphRef.current = createMorph(shapePaths.circle, {
       spring: { stiffness: 180, damping: 18 },
-      onProgress: (progress) => {
-        setIsAnimating(progress < 0.99)
-      },
+      // Not onProgress: it also reports the initial progress (0) when the
+      // morph is created, which would leave the buttons disabled on load
       onComplete: () => {
         setIsAnimating(false)
       },
