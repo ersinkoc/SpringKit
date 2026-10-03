@@ -65,6 +65,17 @@ interface Timer {
 
 type Global = typeof globalThis & Record<string, unknown>
 
+/**
+ * First virtual frame / timer id. Code often cancels the last id it got in
+ * cleanup, possibly after uninstall(), with the real cancelAnimationFrame /
+ * clearTimeout. Real ids count up from small numbers, so virtual ids live at
+ * the top of the 32-bit range, where real ones never get to: no stale virtual
+ * id can cancel an unrelated real callback. (Kept below 2^32 because WebIDL
+ * truncates handles to 32 bits; as a signed `long` (clearTimeout) these are
+ * negative, which real timer ids never are.)
+ */
+const VIRTUAL_ID_BASE = 0xf000_0000
+
 let active: TestClock | null = null
 
 /**
@@ -104,9 +115,9 @@ export function installTestClock(options: TestClockOptions = {}): TestClock {
   const EPSILON = 1e-6
 
   let frameCallbacks = new Map<number, FrameRequestCallback>()
-  let nextFrameId = 1
+  let nextFrameId = VIRTUAL_ID_BASE
   const timers = new Map<number, Timer>()
-  let nextTimerId = 1
+  let nextTimerId = VIRTUAL_ID_BASE
 
   const fakes: Record<string, unknown> = {
     requestAnimationFrame: (callback: FrameRequestCallback): number => {

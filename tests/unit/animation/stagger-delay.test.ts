@@ -11,7 +11,9 @@ afterEach(() => {
 
 /** Run stagger() and record when each item's animation actually started */
 function startTimes(count: number, options: Parameters<typeof stagger>[2]) {
-  clock = installTestClock({ timers: true, startTime: 0 })
+  // Delays run on the animation loop, so they fire on frames: 1ms frames
+  // make the start times exact
+  clock = installTestClock({ timers: true, startTime: 0, frameRate: 1000 })
   const started: number[] = new Array(count).fill(-1)
   const done = stagger(
     Array.from({ length: count }, (_, i) => i),

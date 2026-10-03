@@ -30,7 +30,11 @@ describe('useReducedMotion', () => {
     vi.stubGlobal('matchMedia', () => mql)
     const { result } = renderHook(() => useReducedMotion())
     expect(result.current).toBe(false)
-    act(() => listener?.({ matches: true }))
+    act(() => {
+      // Browsers update `matches` before notifying
+      mql.matches = true
+      listener?.({ matches: true })
+    })
     expect(result.current).toBe(true)
   })
 })

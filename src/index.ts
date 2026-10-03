@@ -187,6 +187,7 @@ export { clamp, lerp, mapRange, degToRad, radToDeg } from './utils/math.js'
 export {
   parseColor,
   parseColorRGBA,
+  isColorString,
   rgbToHex,
   hexToRgb,
   hslToRgb,
@@ -248,6 +249,8 @@ export type {
 
 export {
   simulateSpring,
+  stepSpring,
+  springMotion,
   calculatePeriod,
   calculateDampingRatio,
   isUnderdamped,
@@ -257,7 +260,7 @@ export {
 
 // ============ Global Loop ============
 
-export { globalLoop, AnimationState } from './animation/loop.js'
+export { globalLoop, AnimationState, delay } from './animation/loop.js'
 
 // ============ SVG Animations ============
 

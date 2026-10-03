@@ -720,3 +720,37 @@ describe('SVG Morph regressions', () => {
     }
   })
 })
+
+describe('SVG Morph review regressions', () => {
+  it('parses compact arc flags (single 0/1 characters followed directly by numbers)', () => {
+    expect(createMorph('M0 0 a10 10 0 0120 20', { samples: 2 }).getPath()).toBe('M 0 0 L 20 20')
+    expect(createMorph('M0 0 A10 10 0 11-20-30', { samples: 2 }).getPath()).toBe('M 0 0 L -20 -30')
+    // Implicitly repeated compact arcs
+    expect(createMorph('M0 0 a1 1 0 0110 0 1 1 0 0110 5', { samples: 3 }).getPath()).toBe('M 0 0 L 10 0 L 20 5')
+  })
+
+  it('setProgress notifies subscribers exactly once per call', () => {
+    const morph = createMorph('M 0 0 L 10 0', { samples: 2 })
+    morph.morphTo('M 0 10 L 10 10')
+    const callback = vi.fn()
+    morph.subscribe(callback)
+    callback.mockClear()
+
+    morph.setProgress(0.5)
+    expect(callback).toHaveBeenCalledTimes(1)
+    expect(callback).toHaveBeenCalledWith('M 0 5 L 10 5')
+
+    // Also when called from inside a subscriber
+    const nested = vi.fn()
+    const unsubscribe = morph.subscribe((path) => {
+      if (path === 'M 0 5 L 10 5') morph.setProgress(1)
+    })
+    morph.subscribe(nested)
+    nested.mockClear()
+    morph.setProgress(0.5)
+    expect(morph.getPath()).toBe('M 0 10 L 10 10')
+    expect(nested).toHaveBeenLastCalledWith('M 0 10 L 10 10')
+    unsubscribe()
+    morph.destroy()
+  })
+})

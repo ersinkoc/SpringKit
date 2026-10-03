@@ -4,7 +4,21 @@ import { createSpringGroup } from '@oxog/springkit'
 import type { SpringConfig } from '@oxog/springkit'
 import { PresenceContext } from '../context/PresenceContext.js'
 import { isBrowser, safeRequestAnimationFrame, safeCancelAnimationFrame } from '../utils/ssr.js'
+import {
+  animatableSignature,
+  channelValuesOf,
+  composeAnimatableRecord,
+  hasKeys,
+  hiddenChannelKey,
+  parseAnimatableRecord,
+  parseAnimatableValue,
+  planTransition,
+  type AnimatableValue,
+  type ChannelKeysOf,
+  type ParsedValue,
+} from '../utils/animatable.js'
 import { MotionContext } from './MotionConfig.js'
+import { useShouldReduceMotion } from '../utils/reducedMotion.js'
 import { useAnimatedDrag } from './useAnimatedDrag.js'
 import type { AnimatedDragProps } from './useAnimatedDrag.js'
 
@@ -82,7 +96,7 @@ export interface AnimatedElementProps
   /** Style object (static styles + animated values) */
   style?: React.CSSProperties
 
-  /** Callback when animation completes */
+  /** Called when the exit animation (inside AnimatePresence) has completed */
   onAnimationComplete?: () => void
 
   /** Callback when hover starts */
@@ -139,10 +153,17 @@ const DEFAULT_VALUES: Record<string, number> = {
   scaleY: 1,
 }
 
-function getNumber(source: object | false | null | undefined, key: string): number | undefined {
+/** Value of `key` in an animation source, if it is a number or a string */
+function getValue(source: object | false | null | undefined, key: string): AnimatableValue | undefined {
   if (!source) return undefined
   const value = (source as Record<string, unknown>)[key]
-  return typeof value === 'number' ? value : undefined
+  return typeof value === 'number' || typeof value === 'string' ? value : undefined
+}
+
+function sameChannels(a: Record<string, number>, b: Record<string, number>): boolean {
+  const aKeys = Object.keys(a)
+  if (aKeys.length !== Object.keys(b).length) return false
+  return aKeys.every((key) => a[key] === b[key])
 }
 
 function pickKeys(values: Record<string, number>, keys: string[]): Record<string, number> {
@@ -152,13 +173,6 @@ function pickKeys(values: Record<string, number>, keys: string[]): Record<string
     if (value !== undefined) result[key] = value
   }
   return result
-}
-
-function shallowEqualValues(a: Record<string, number> | null, b: Record<string, number>): boolean {
-  if (!a) return false
-  const aKeys = Object.keys(a)
-  if (aKeys.length !== Object.keys(b).length) return false
-  return aKeys.every((key) => a[key] === b[key])
 }
 
 function isIdentityTransform(key: string, value: number | string): boolean {
@@ -206,19 +220,6 @@ function buildStyle(
   }
 
   return style as React.CSSProperties
-}
-
-/**
- * Extract non-numeric (string) values from a style object
- */
-function extractStringValues(style: AnimatedStyle): Record<string, string> {
-  const result: Record<string, string> = {}
-  for (const key in style) {
-    if (typeof style[key] === 'string') {
-      result[key] = style[key] as string
-    }
-  }
-  return result
 }
 
 /**
@@ -291,9 +292,11 @@ function createAnimatedComponent<T extends React.ElementType>(
       const hasCalledSafeToRemove = useRef(false)
       const isDestroyedRef = useRef(false)
       const hasMountedRef = useRef(false)
-      // Last target sent to the spring (set() restarts the spring with zero
-      // velocity, so it must only be called when the target actually changes)
-      const lastTargetRef = useRef<Record<string, number> | null>(null)
+      // Set once the first commit's effects have run
+      const hasCommittedRef = useRef(false)
+      // Last target sent to (or scheduled for) the spring, so it is only
+      // re-sent when it actually changes
+      const lastTargetRef = useRef<{ signature: string; values: Record<string, ParsedValue> } | null>(null)
       // Latest animated values (to continue from when the spring is re-created)
       const latestValuesRef = useRef<Record<string, number>>({})
 
@@ -345,7 +348,9 @@ function createAnimatedComponent<T extends React.ElementType>(
 
       // Inherit MotionConfig (default spring config, reduced motion, initial)
       const motionConfig = useContext(MotionContext)
-      const reducedMotion = motionConfig.isReducedMotion
+      // Reduced motion: MotionConfig 'always' / 'never', or the OS setting for
+      // 'user' (the default, also without any MotionConfig)
+      const reducedMotion = useShouldReduceMotion()
       const springConfig: SpringConfig = { ...motionConfig.config, ...config }
       const skipInitial =
         initial === false ||
@@ -410,10 +415,11 @@ function createAnimatedComponent<T extends React.ElementType>(
         }
       }, [whileInView, viewport?.once, viewport?.margin, viewport?.amount])
 
-      // Every numeric key that can be animated, from all animation sources.
-      // Keys only present in e.g. whileHover must still be part of the spring group.
-      const numericKeySet = new Set<string>()
-      for (const source of [
+      // Every key that can be animated, from all animation sources. Keys only
+      // present in e.g. whileHover must still be part of the spring group.
+      // Keys with a string value anywhere (colors, '50%', box shadows...) are
+      // decomposed into hidden numeric channels (see utils/animatable.ts).
+      const animationSources = [
         initial === false ? undefined : initial,
         animate,
         exit,
@@ -422,19 +428,71 @@ function createAnimatedComponent<T extends React.ElementType>(
         whileFocus,
         whileDrag,
         whileInView,
-        style,
-      ]) {
+      ]
+      const numericKeySet = new Set<string>()
+      const stringKeySet = new Set<string>()
+      for (const source of animationSources) {
         if (!source) continue
         for (const key in source) {
-          if (typeof (source as Record<string, unknown>)[key] === 'number') numericKeySet.add(key)
+          const value = (source as Record<string, unknown>)[key]
+          if (typeof value === 'number') numericKeySet.add(key)
+          else if (typeof value === 'string') stringKeySet.add(key)
         }
       }
+      // Numeric inline styles animate when they change; string inline styles
+      // stay static unless an animation source animates that key
+      for (const key in style) {
+        if (typeof (style as Record<string, unknown>)[key] === 'number') numericKeySet.add(key)
+      }
+      for (const key of stringKeySet) numericKeySet.delete(key)
       const numericKeys = Array.from(numericKeySet).sort()
-      const numericKeysSignature = numericKeys.join('|')
+      const stringKeys = Array.from(stringKeySet).sort()
 
-      // Resting value of a key when no active state specifies it
-      const getBaseValue = (key: string): number =>
-        getNumber(animate, key) ?? getNumber(style, key) ?? DEFAULT_VALUES[key] ?? 0
+      // Spring-group layout: a numeric key is its own channel; a string key
+      // has hidden channels, enough for the largest value it takes
+      const channelKeysOf: ChannelKeysOf = (key, value) => {
+        if (!stringKeySet.has(key)) return [key]
+        const keys: string[] = []
+        for (let i = 0; i < value.template.size; i++) keys.push(hiddenChannelKey(key, i))
+        return keys
+      }
+
+      // Resting value of a transform key written as a string with a unit when
+      // nothing specifies it: the identity in that unit ('0%' for x: '50%')
+      const getTransformIdentity = (key: string): string | undefined => {
+        if (!TRANSFORM_KEY_SET.has(key)) return undefined
+        for (const source of animationSources) {
+          const value = getValue(source, key)
+          if (typeof value !== 'string') continue
+          const { template } = parseAnimatableValue(value)
+          if (template.kinds.length === 1 && template.kinds[0] === 'n') {
+            return `${template.parts[0]}${key.startsWith('scale') ? 1 : 0}${template.parts[1]}`
+          }
+        }
+        return undefined
+      }
+
+      // Resting value of a key when no active state specifies it. A string key
+      // without one isn't rendered (and starts at its target when it appears).
+      const getBaseValue = (key: string): AnimatableValue | undefined => {
+        if (stringKeySet.has(key)) {
+          return getValue(animate, key) ?? getValue(style, key) ?? getTransformIdentity(key)
+        }
+        const value = getValue(animate, key) ?? getValue(style, key)
+        return typeof value === 'number' ? value : (DEFAULT_VALUES[key] ?? 0)
+      }
+
+      const channelKeys: string[] = [...numericKeys]
+      for (const key of stringKeys) {
+        let size = 0
+        for (const source of [...animationSources, style]) {
+          const value = getValue(source, key)
+          if (value !== undefined) size = Math.max(size, parseAnimatableValue(value).template.size)
+        }
+        for (let i = 0; i < size; i++) channelKeys.push(hiddenChannelKey(key, i))
+      }
+      channelKeys.sort()
+      const channelKeysSignature = channelKeys.join('|')
 
       // Determine the target style based on presence and gesture states
       const getTargetStyle = (): AnimatedStyle => {
@@ -470,56 +528,115 @@ function createAnimatedComponent<T extends React.ElementType>(
         return target
       }
 
-      // Numeric target for every animatable key (unspecified keys return to their base value)
-      const getNumericTarget = (): Record<string, number> => {
+      // Target of every animatable key (unspecified keys return to their base value)
+      const getTargetValues = (): Record<string, AnimatableValue> => {
         const target = getTargetStyle()
-        const result: Record<string, number> = {}
+        const result: Record<string, AnimatableValue> = {}
         for (const key of numericKeys) {
-          result[key] = getNumber(target, key) ?? getBaseValue(key)
+          const value = getValue(target, key)
+          result[key] = typeof value === 'number' ? value : (getBaseValue(key) as number)
         }
-        return result
-      }
-
-      // Values to start from on mount
-      const getInitialValues = (): Record<string, number> => {
-        const target = getNumericTarget()
-        if (skipInitial || reducedMotion || !initial) return target
-        const result = { ...target }
-        for (const key of numericKeys) {
-          const value = getNumber(initial, key)
+        for (const key of stringKeys) {
+          const value = getValue(target, key) ?? getBaseValue(key)
           if (value !== undefined) result[key] = value
         }
         return result
       }
 
-      // Seed rendered values synchronously so the first paint (and SSR output)
-      // uses the initial values instead of flashing unstyled content
-      const [animatedStyle, setAnimatedStyle] = useState<Record<string, number>>(getInitialValues)
+      // Values to start from on mount
+      const getInitialValues = (): Record<string, AnimatableValue> => {
+        const target = getTargetValues()
+        if (skipInitial || reducedMotion || !initial) return target
+        const result = { ...target }
+        for (const key of [...numericKeys, ...stringKeys]) {
+          const value = getValue(initial, key)
+          if (value !== undefined) result[key] = value
+        }
+        return result
+      }
+
+      // Rendered state: the values the channels currently represent (the
+      // last target given to the spring) and the channel values. Seeded
+      // synchronously so the first paint (and SSR output) uses the initial
+      // values instead of flashing unstyled content.
+      const [animatedState, setAnimatedState] = useState<{
+        values: Record<string, ParsedValue>
+        channels: Record<string, number>
+      }>(() => {
+        const values = parseAnimatableRecord(getInitialValues())
+        return { values, channels: channelValuesOf(values, channelKeysOf) }
+      })
+      // What the spring channels currently represent (updated with the spring)
+      const appliedRef = useRef(animatedState.values)
 
       // Latest render's computations, for use inside effects
-      const getNumericTargetRef = useRef(getNumericTarget)
-      getNumericTargetRef.current = getNumericTarget
-      const getInitialValuesRef = useRef(getInitialValues)
-      getInitialValuesRef.current = getInitialValues
+      const getTargetValuesRef = useRef(getTargetValues)
+      getTargetValuesRef.current = getTargetValues
+      const channelKeysOfRef = useRef(channelKeysOf)
+      channelKeysOfRef.current = channelKeysOf
+      const channelKeysRef = useRef(channelKeys)
+      channelKeysRef.current = channelKeys
       const reducedMotionRef = useRef(reducedMotion)
       reducedMotionRef.current = reducedMotion
 
-      // Initialize spring (re-created when the config or the set of animated keys changes)
-      useEffect(() => {
-        const target = getNumericTargetRef.current()
-        const keys = Object.keys(target)
+      // Render a state (skipping identical ones, e.g. the spring's notification
+      // of a jump that was already rendered)
+      const shownRef = useRef(animatedState)
+      const showState = useCallback(
+        (values: Record<string, ParsedValue>, channels: Record<string, number>) => {
+          const shown = shownRef.current
+          if (shown.values === values && sameChannels(shown.channels, channels)) return
+          const state = { values, channels }
+          shownRef.current = state
+          setAnimatedState(state)
+        },
+        []
+      )
 
-        // Only create spring if there are numeric values to animate
+      // Send a target to the spring: values whose template is unchanged
+      // animate, the others (new keys, mismatched units...) jump
+      const applyTarget = useCallback(
+        (targetValues: Record<string, AnimatableValue>, instant: boolean) => {
+          const spring = springRef.current
+          const next = parseAnimatableRecord(targetValues)
+          const plan = planTransition(appliedRef.current, next, channelKeysOfRef.current, instant)
+          appliedRef.current = next
+          lastTargetRef.current = { signature: animatableSignature(targetValues), values: next }
+          if (spring) {
+            if (hasKeys(plan.jump)) spring.jump(plan.jump)
+            if (hasKeys(plan.set)) spring.set(plan.set)
+          }
+          // What the channels mean changed (or they jumped): re-render now
+          // instead of on the spring's next notification
+          if (plan.structural || hasKeys(plan.jump)) {
+            showState(next, spring ? spring.get() : {})
+          }
+        },
+        [showState]
+      )
+
+      // Initialize spring (re-created when the config or the set of channels changes)
+      useEffect(() => {
+        const keys = channelKeysRef.current
+
+        // Only create spring if there are numeric channels to animate
         if (keys.length === 0) {
           return
         }
 
         // Start from the initial values on mount, otherwise continue from the
         // current values (config change, new keys, StrictMode effect re-run)
-        const startValues: Record<string, number> = hasMountedRef.current
-          ? { ...target, ...pickKeys(latestValuesRef.current, keys) }
-          : getInitialValuesRef.current()
+        const startValues: Record<string, number> = {}
+        for (const key of keys) startValues[key] = 0
+        Object.assign(
+          startValues,
+          pickKeys(channelValuesOf(appliedRef.current, channelKeysOfRef.current), keys)
+        )
+        if (hasMountedRef.current) Object.assign(startValues, pickKeys(latestValuesRef.current, keys))
         hasMountedRef.current = true
+        // Re-created after the first commit (config change, new channels,
+        // StrictMode re-run): continue right away instead of on the next frame
+        const isMount = !hasCommittedRef.current
 
         isDestroyedRef.current = false
         const spring = createSpringGroup(startValues, springConfig)
@@ -528,18 +645,30 @@ function createAnimatedComponent<T extends React.ElementType>(
         unsubscribeRef.current = spring.subscribe((values) => {
           latestValuesRef.current = values
           if (!isDestroyedRef.current) {
-            setAnimatedStyle(values)
+            showState(appliedRef.current, values)
           }
         })
 
         springRef.current = spring
-        lastTargetRef.current = target
+
+        const targetValues = getTargetValuesRef.current()
+        const signature = animatableSignature(targetValues)
+        const targetChannels = channelValuesOf(
+          parseAnimatableRecord(targetValues),
+          channelKeysOfRef.current
+        )
+        const appliedValues: Record<string, AnimatableValue> = {}
+        for (const key in appliedRef.current) appliedValues[key] = appliedRef.current[key]!.raw
+        const needsAnimation =
+          animatableSignature(appliedValues) !== signature ||
+          Object.keys(targetChannels).some((key) => startValues[key] !== targetChannels[key])
+        // Scheduled: later renders don't re-send the same target
+        lastTargetRef.current = { signature, values: parseAnimatableRecord(targetValues) }
 
         let rafId: number | null = null
-        const needsAnimation = keys.some((key) => startValues[key] !== target[key])
         if (needsAnimation) {
-          if (reducedMotionRef.current) {
-            spring.jump(target)
+          if (reducedMotionRef.current || !isMount) {
+            applyTarget(targetValues, reducedMotionRef.current)
           } else {
             // Use requestAnimationFrame to ensure spring is ready
             rafId = safeRequestAnimationFrame(() => {
@@ -547,11 +676,7 @@ function createAnimatedComponent<T extends React.ElementType>(
               if (isDestroyedRef.current) return
               // The reduced-motion preference may have arrived since mount
               // (e.g. right after hydration): don't play the entrance then
-              if (reducedMotionRef.current) {
-                spring.jump(target)
-              } else {
-                spring.set(target)
-              }
+              applyTarget(getTargetValuesRef.current(), reducedMotionRef.current)
             })
           }
         }
@@ -566,30 +691,28 @@ function createAnimatedComponent<T extends React.ElementType>(
           spring.destroy()
           springRef.current = null
         }
-      }, [springConfig.stiffness, springConfig.damping, springConfig.mass, numericKeysSignature]) // eslint-disable-line react-hooks/exhaustive-deps
+      }, [springConfig.stiffness, springConfig.damping, springConfig.mass, channelKeysSignature]) // eslint-disable-line react-hooks/exhaustive-deps
 
       // Handle animation updates after mount. Only send a new target to the spring
       // when it actually changed (see lastTargetRef).
       useEffect(() => {
+        hasCommittedRef.current = true
         const spring = springRef.current
-        if (!spring) return
-
-        const target = getNumericTarget()
+        const targetValues = getTargetValues()
         // Reduced motion switched on mid-animation: finish it immediately
-        if (reducedMotion && spring.isAnimating() && lastTargetRef.current) {
-          spring.jump(lastTargetRef.current)
+        if (reducedMotion && spring && spring.isAnimating() && lastTargetRef.current) {
+          spring.jump(channelValuesOf(lastTargetRef.current.values, channelKeysOf))
         }
-        if (shallowEqualValues(lastTargetRef.current, target)) return
-        lastTargetRef.current = target
-
-        if (reducedMotion) {
-          spring.jump(target)
-        } else {
-          spring.set(target)
-        }
+        if (lastTargetRef.current?.signature === animatableSignature(targetValues)) return
+        applyTarget(targetValues, reducedMotion)
       })
 
-      // Handle exit animation completion
+      // Handle exit animation completion. `exit` and `onAnimationComplete` are
+      // usually inline: read them from refs so re-renders (every animation
+      // frame) don't restart the wait.
+      const onAnimationCompleteRef = useRef(onAnimationComplete)
+      onAnimationCompleteRef.current = onAnimationComplete
+      const hasExit = Boolean(exit)
       useEffect(() => {
         if (isPresent || !safeToRemove || hasCalledSafeToRemove.current) return
 
@@ -597,36 +720,36 @@ function createAnimatedComponent<T extends React.ElementType>(
           if (hasCalledSafeToRemove.current) return
           hasCalledSafeToRemove.current = true
           safeToRemove()
-          onAnimationComplete?.()
+          onAnimationCompleteRef.current?.()
         }
 
-        // Nothing to animate out: allow removal right away
-        if (!exit) {
+        // Nothing to animate out (or no spring): allow removal right away
+        const spring = springRef.current
+        if (!hasExit || !spring || spring.isDestroyed()) {
           complete()
           return
         }
 
-        let cancelled = false
-        let timeout: ReturnType<typeof setTimeout> | null = null
-
-        // Poll until the exit spring has settled
-        const checkComplete = () => {
-          if (cancelled) return
-          const spring = springRef.current
-          if (!spring || spring.isDestroyed() || !spring.isAnimating()) {
-            complete()
-            return
-          }
-          timeout = setTimeout(checkComplete, 50)
+        // The exit target was sent by the update effect above: complete on the
+        // spring's notification of the frame it settles in (subscribe() also
+        // reports right away, covering an exit with nothing to animate)
+        let unsubscribe: (() => void) | null = null
+        unsubscribe = spring.subscribe(() => {
+          if (spring.isAnimating()) return
+          unsubscribe?.()
+          unsubscribe = null
+          complete()
+        })
+        if (hasCalledSafeToRemove.current) {
+          unsubscribe?.()
+          unsubscribe = null
         }
-
-        timeout = setTimeout(checkComplete, 50)
 
         return () => {
-          cancelled = true
-          if (timeout !== null) clearTimeout(timeout)
+          unsubscribe?.()
         }
-      }, [isPresent, exit, safeToRemove, onAnimationComplete])
+        // The spring is re-created when its config or channels change
+      }, [isPresent, hasExit, safeToRemove, springConfig.stiffness, springConfig.damping, springConfig.mass, channelKeysSignature])
 
       // Reset flag when becoming present again
       useEffect(() => {
@@ -745,25 +868,12 @@ function createAnimatedComponent<T extends React.ElementType>(
         Object.entries(style).filter(([_, v]) => typeof v !== 'number')
       ) as React.CSSProperties
 
-      // Get string values from active gesture states (applied immediately, not animated)
-      const gestureStringStyles: Record<string, string> = {}
-
-      // Layer gesture string styles in order (later ones override)
-      if (whileInView && isInViewport) {
-        Object.assign(gestureStringStyles, extractStringValues(whileInView))
-      }
-      if (whileFocus && isFocused) {
-        Object.assign(gestureStringStyles, extractStringValues(whileFocus))
-      }
-      if (whileHover && isHovered) {
-        Object.assign(gestureStringStyles, extractStringValues(whileHover))
-      }
-      if (whileDrag && isDragging) {
-        Object.assign(gestureStringStyles, extractStringValues(whileDrag))
-      }
-      if (whileTap && isPressed) {
-        Object.assign(gestureStringStyles, extractStringValues(whileTap))
-      }
+      // Recompose the animated values (hidden channels never reach the DOM)
+      const animatedValues = composeAnimatableRecord(
+        animatedState.values,
+        animatedState.channels,
+        channelKeysOf
+      )
 
       // User event handlers we destructured are always passed through; gesture
       // handlers below wrap (and call) them when gestures are in use
@@ -811,7 +921,7 @@ function createAnimatedComponent<T extends React.ElementType>(
           ? { touchAction: drag === 'x' ? 'pan-y' : drag === 'y' ? 'pan-x' : 'none' }
           : undefined),
         ...staticStyle,
-        ...buildStyle({ ...animatedStyle, ...gestureStringStyles }, staticStyle.transform),
+        ...buildStyle(animatedValues, staticStyle.transform),
       }
       if (dragOffset.x !== 0 || dragOffset.y !== 0) {
         // Outermost, so the element follows the pointer 1:1 even when scaled/rotated
@@ -860,6 +970,21 @@ function createAnimatedComponent<T extends React.ElementType>(
  *   Content automatically animates
  * </Animated.div>
  * ```
+ *
+ * String values animate too: colors (`'#f00'`, `'rgba(0,0,255,.5)'`,
+ * `'transparent'`, CSS names; premultiplied alpha, so fades from
+ * `transparent` don't go dark), numbers with units (`'50%'`, `'20rem'`,
+ * `'45deg'`) and complex strings whose numbers/colors line up
+ * (`boxShadow: '0 4px 12px rgba(0,0,0,.3)'`, `filter: 'blur(4px)'`). They
+ * use the same spring as the numbers (gestures, exit, retargeting, reduced
+ * motion all apply). A value jumps instead of animating when:
+ * - its shape differs from the current one (`'auto'` → `'100px'`,
+ *   `'50%'` → `'200px'`, a number → a string, a different shadow count);
+ * - the key has no previous value: a string key missing from `initial`,
+ *   `animate` and `style` starts at its target (a transform shorthand with a
+ *   unit, e.g. `whileHover={{ x: '20%' }}`, starts from `'0%'`).
+ * Inline `style` strings are static unless an animation prop animates that
+ * key; they then act as its resting value.
  *
  * @example With AnimatePresence
  * ```tsx

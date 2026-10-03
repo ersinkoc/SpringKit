@@ -19,7 +19,7 @@ export interface NativeAnimationOptions extends SpringEasingOptions {
    * (default true).
    */
   respectReducedMotion?: boolean
-  /** Called once when the animation finishes (not when cancelled) */
+  /** Called when the animation finishes (not when cancelled), once per run */
   onComplete?: () => void
 }
 
@@ -28,7 +28,11 @@ export interface NativeAnimationControls {
   readonly animation: Animation | null
   /** Duration of the spring in milliseconds */
   readonly duration: number
-  /** Resolves when the animation finishes or is cancelled */
+  /**
+   * Resolves when the current run finishes or is cancelled. A `play()` or
+   * `reverse()` after that starts a new run with a new promise (and fires
+   * `onComplete` again when it finishes).
+   */
   readonly finished: Promise<void>
   play(): void
   pause(): void
@@ -102,50 +106,103 @@ export function animateNative(
     fill: 'both',
   })
 
+  // Playback direction set by reverse(): the time scale sets the rate's
+  // magnitude only, it must not turn a reversed animation forwards again
+  let direction = 1
   // Follow the global time scale (slow motion / freeze) while running
   const applyTimeScale = (scale: number) => {
+    const rate = scale * direction
     if (typeof animation.updatePlaybackRate === 'function') {
-      animation.updatePlaybackRate(scale)
+      animation.updatePlaybackRate(rate)
     } else {
-      animation.playbackRate = scale
+      animation.playbackRate = rate
     }
   }
-  if (globalLoop.getTimeScale() !== 1) applyTimeScale(globalLoop.getTimeScale())
-  const unsubscribeTimeScale = globalLoop.onTimeScaleChange(applyTimeScale)
-
-  const finished = animation.finished.then(
-    () => {
-      unsubscribeTimeScale()
-      if (persist) {
-        try {
-          animation.commitStyles()
-        } catch {
-          // commitStyles throws for detached / non-rendered elements
-          applyFinalKeyframe(element, keyframes)
-        }
-        animation.cancel()
-      }
-      try {
-        onComplete?.()
-      } catch (error) {
-        console.error('[SpringKit]', error)
-      }
-    },
-    // Rejected with AbortError when cancelled — that's a normal outcome
-    () => {
-      unsubscribeTimeScale()
+  // The time scale listener is attached only while the animation runs, so a
+  // paused, finished or cancelled animation (and its element) isn't retained
+  let unsubscribeTimeScale: (() => void) | null = null
+  const follow = () => {
+    if (!unsubscribeTimeScale) {
+      unsubscribeTimeScale = globalLoop.onTimeScaleChange(applyTimeScale)
     }
-  )
+  }
+  const unfollow = () => {
+    unsubscribeTimeScale?.()
+    unsubscribeTimeScale = null
+  }
+
+  // Each run (the first one, or a replay after finishing / cancelling) gets
+  // its own `finished` promise from WAAPI; watch the current one
+  let watchedRun: Promise<Animation> | null = null
+  let finished: Promise<void> = Promise.resolve()
+  const watchRun = () => {
+    const run = animation.finished
+    if (run === watchedRun) return
+    watchedRun = run
+    finished = run.then(
+      () => {
+        // A replay started before this settled: it's watched separately
+        if (watchedRun !== run) return
+        unfollow()
+        if (persist) {
+          try {
+            animation.commitStyles()
+          } catch {
+            // commitStyles throws for detached / non-rendered elements
+            applyFinalKeyframe(element, keyframes)
+          }
+          animation.cancel()
+        }
+        try {
+          onComplete?.()
+        } catch (error) {
+          console.error('[SpringKit]', error)
+        }
+      },
+      // Rejected with AbortError when cancelled — that's a normal outcome
+      () => {
+        if (watchedRun === run) unfollow()
+      }
+    )
+  }
+
+  /** After play() / reverse(): follow the time scale and watch the run */
+  const resumed = () => {
+    watchRun()
+    if (!unsubscribeTimeScale) {
+      applyTimeScale(globalLoop.getTimeScale())
+      follow()
+    }
+  }
+
+  if (globalLoop.getTimeScale() !== 1) applyTimeScale(globalLoop.getTimeScale())
+  follow()
+  watchRun()
 
   return {
     animation,
     duration,
-    finished,
-    play: () => animation.play(),
-    pause: () => animation.pause(),
-    cancel: () => animation.cancel(),
+    get finished() {
+      return finished
+    },
+    play: () => {
+      animation.play()
+      resumed()
+    },
+    pause: () => {
+      animation.pause()
+      unfollow()
+    },
+    cancel: () => {
+      animation.cancel()
+      unfollow()
+    },
     finish: () => animation.finish(),
-    reverse: () => animation.reverse(),
+    reverse: () => {
+      direction = -direction
+      animation.reverse()
+      resumed()
+    },
     seek: (ms: number) => {
       animation.currentTime = Math.max(0, delay) + Math.min(Math.max(0, ms), duration)
     },

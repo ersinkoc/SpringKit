@@ -1,0 +1,88 @@
+# SpringKit
+
+> Zero-dependency, physics-based spring animation library for the browser, with an optional React adapter. Package: `@oxog/springkit`. Entry points: `@oxog/springkit` (framework-agnostic core), `@oxog/springkit/react` (React 18+ hooks and components, includes `"use client"`), `@oxog/springkit/testing` (deterministic test clock). ESM + CJS, full TypeScript types.
+
+This file is a compact reference for AI coding assistants. Use only the APIs listed here; check the TypeScript declarations in `dist/*.d.ts` for full option lists.
+
+## Units and conventions (read first)
+
+- Spring physics: `stiffness` (default 100), `damping` (default 10), `mass` (default 1). Spring `velocity` is in units per **second**.
+- Delays and durations are **milliseconds** everywhere (`delay`, `stagger`, `staggerChildren`, `delayChildren`, `keyframes({ duration })`, `defineSpring({ duration })`), **except timelines**, whose positions, `duration` and `seek()` are in **seconds** (GSAP convention: `'-=0.2'`, `1.5`).
+- `decay()`: `velocity` in px/s; `deceleration` is the fraction of velocity kept per millisecond (0.998 normal, 0.99 fast).
+- All velocities are px/s: React `Animated` drag `info.velocity`, core `createDragSpring`/`useDrag` `onDragEnd` velocity and `release(vx, vy)`, swipe `state.velocity` and `velocityThreshold` (default 500; a swipe also needs `minDistance`, default 10px).
+- Animation delays (`animate`/`stagger`/variants/trail delays) run on the animation clock: they follow `globalLoop.setTimeScale()` and the test clock. Use `delay(ms, cb) => cancel` for your own animation timing.
+- Colors: hex (3/4/6/8 digits), `rgb()`/`rgba()`, `hsl()`/`hsla()`, `transparent` and CSS color names are accepted (`isColorString(value)` checks); interpolation uses premultiplied alpha; translucent results are `rgba(r, g, b, a)` strings; optional `space: 'srgb' | 'linear' | 'oklab'`.
+- `animate()` array values are `[from, ...to]` (first entry is the start value).
+- Physics is exact (closed-form) and independent of the display refresh rate.
+
+## Core: springs
+
+- `spring(from: number, to: number, config?: SpringConfig): SpringAnimation` — call `.start()`. Methods: `stop()`, `pause()`, `resume()`, `reverse()`, `set(to)`, `setWithVelocity(to, v?)`, `getValue()`, `getVelocity()`, `isAnimating()`, `destroy()`, `finished: Promise<void>` (resolves on rest or `stop()`). Callbacks in config: `onUpdate(value)`, `onStart`, `onComplete`, `onRest`.
+- `createSpringValue(initial: number, config?): SpringValue` — `set(to, config?)` (retargets a running animation keeping velocity), `jump(to)`, `get()`, `subscribe(cb) => unsubscribe`, `finished`, `destroy()`.
+- `createSpringGroup({ x: 0, y: 0 }, config?)` — animate several numbers together: `set({ x: 100 })`, `get()`, `subscribe(cb)`.
+- `createMotionValue(initial, options?)` / class `MotionValue` — `get()`, `set(v, animate = true)`, `jump(v)`, `subscribe(cb)`, `on('change' | 'animationStart' | 'animationComplete' | 'animationCancel' | 'animationEnd', cb)`, `destroy()`.
+- `defineSpring({ duration?: ms = 500, bounce?: -1..1 = 0, mass? }): SpringConfig` — perceptual parameters (SwiftUI model). Spread into any config: `spring(0, 1, { ...defineSpring({ duration: 400, bounce: 0.2 }), onUpdate })`.
+- `springPresets` keys: `default`, `gentle`, `wobbly`, `stiff`, `slow`, `molasses`, `bounce`, `noWobble`. `physicsPresets` has semantic presets (e.g. `button`, `modalEnter`, `toast`, `dragRelease`); `getPhysicsPreset(name)`.
+
+## Core: native (compositor) springs
+
+- `springEasing(config): { easing: string, duration: number(ms) }` — CSS `linear()` easing; `String(result)` is `"<ms>ms linear(...)"`.
+- `springTransition(props: string | string[], config): string` — ready `transition` value, e.g. `el.style.transition = springTransition('transform', defineSpring({ bounce: 0.2 }))`.
+- `animateNative(element, keyframes, options?)` — Web Animations API spring; options = spring config + `delay`, `persist` (default true), `respectReducedMotion` (default true), `onComplete`. Returns `{ animation, duration, finished, play, pause, cancel, finish, reverse, seek(ms) }`.
+- `solveSpring(config, from = 0, to = 1)` — exact solver: `.at(ms) => { value, velocity }`, `.duration` (ms until rest).
+- `supportsLinearEasing(): boolean`.
+
+## Core: orchestration
+
+- `animate(elementOrSelector, { x: 100, opacity: [0, 1] }, { stiffness?, damping?, mass?, delay?, duration?, ease?, onUpdate?, onComplete? })` — returns controls with `finished`, `stop()`, `pause()`, `resume()`, `getProgress()`, `isAnimating()`.
+- `animateAll(selector, target, { ...options, stagger?: ms })` → controls[].
+- `sequence([() => anim, ...])`, `parallel([() => anim, ...])` — factories return anything with `finished`.
+- `stagger(items, (item, i) => springAnimationNotStarted, { delay: ms | (i) => ms, from: 'first' | 'last' | 'center' | index })` — do NOT call `.start()` inside the factory.
+- `keyframes(values, { config?, duration?, times?, onKeyframe? })` → `.play()`, `.pause()`, `.stop()`.
+- `decay({ velocity, from?, deceleration?, modifyTarget?, clamp?, onUpdate?, onComplete? })` → `.start()`, `.target`, `getValue()`, `getVelocity()`, `finished`.
+- `createTrail(count, { followDelay?, ...springConfig })` → `set(v)`, `getValues()`, `subscribe(cb)`.
+- `createTimeline({ autoplay = false, defaults?, repeat?, yoyo?, repeatDelay?, onComplete? })` (call `.play()` unless `autoplay: true`) → `.to(target, { x, opacity, duration: s, spring?, ease? }, position?)`, `.from()`, `.fromTo()`, `.set()`, `.addLabel(name, pos)`, `.call(fn, pos)`, `.play()`, `.pause()`, `.reverse()`, `.seek(seconds | label)`, `.progress()`.
+- Stagger patterns (return one delay per item, ms): `linearStagger`, `reverseStagger`, `centerStagger`, `edgeStagger`, `gridStagger`, `waveStagger`, `spiralStagger`, `randomStagger`, `customStagger`, `staggerPresets.*(count)`; `applyStagger(options[], delays)`.
+
+## Core: values, color, gestures, layout, svg, scroll
+
+- `interpolate(valueOrGetter, input: number[], output: number[], options?)` → `{ get() }`.
+- `interpolateColor(valueOrGetter, input: number[], colors: string[], { space? })` → `{ get(): string }`. Helpers: `isColorString`, `parseColor`, `parseColorRGBA`, `rgbToHex`, `hexToRgb`, `hslToRgb`, `rgbToHsl`, `rgbToOklab`, `oklabToRgb`, `mixColorsRGBA`, `formatRGBA`.
+- `createDragSpring(element, { bounds?, constraints?, snap?, momentum?, momentumDecay? (per-frame factor, default 0.95), modifyTarget?, onDragStart?, onDrag?, onDragEnd?(x, y, velocity px/s) })` → `release(vx, vy)`, `animateTo(x, y)`, `getVelocity()`, `destroy()`; `createScrollSpring`, `createPinchGesture`, `createRotateGesture`, `createSwipeGesture`, `createLongPressGesture`.
+- `flip(element, mutate, options?)`, `createFlip`, `flipBatch`, `measureElement`, `createLayoutGroup`, `createSharedLayoutContext`, `createAutoLayout`.
+- `createMorph(path, { spring })` → `subscribe(d)`, `morphTo(path)`; `shapes.circle/rect/polygon/star/heart/arrow`; `createPathAnimation(pathEl, options)` → `play()`, `reverse()`, `set(progress)`.
+- `createScrollProgress(el?, { offset?, smooth? })`, `createParallax(el, config)`, `createScrollTrigger(el, config)`, `createScrollLinkedValue(scrollProgress, { inputRange, outputRange, smooth? })`.
+
+## Core: loop and debugging
+
+- `globalLoop.setTimeScale(n)` — 1 normal, 0.1 slow motion, 0 freeze (springs, decay, timelines, keyframes, `animateNative`, animation delays). `delay(ms, cb)` / `globalLoop.delay(ms, cb)` — timeout on the animation clock, returns cancel. `getTimeScale()`, `onTimeScaleChange(cb)`, `onFrame(cb)`, `getFPS()`.
+
+## React (`@oxog/springkit/react`)
+
+- `<Animated.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} config={springConfig} />` — values may be numbers, colors (`backgroundColor: '#f00'`), unit strings (`width: '20rem'`, `x: '50%'`) or complex strings (`boxShadow`, `filter`); all spring. Strings whose shape differs (`'auto'` → `'100px'`, `'%'` → `'px'`) jump. `x`, `y`, `scale`, `rotate` become a transform. Honors `prefers-reduced-motion` by default (override with `MotionConfig`). Gesture props: `whileHover`, `whileTap`, `whileFocus`, `whileInView` (+ `viewport={{ once, amount, margin }}`), `whileDrag`; callbacks `onTap`, `onTapStart`, `onTapCancel`, `onHoverStart`, `onHoverEnd`, `onAnimationComplete`. Spring config prop is `config` (not `transition`).
+- Drag on `Animated`: `drag` (true | 'x' | 'y'), `dragConstraints` ({ top, left, right, bottom } or a ref), `dragElastic` (0-1, default 0.5), `dragMomentum` (default true), `dragTransition` ({ deceleration, modifyTarget, bounceStiffness, bounceDamping }), `dragSnapToOrigin`, `dragDirectionLock`, `dragThreshold` (px, default 3), `dragListener`, `dragControls` (from `useDragControls()`: `start(event)`, `stop()`, `cancel()`), `onDragStart/onDrag/onDragEnd(event, { point, delta, offset, velocity })`, `onDragTransitionEnd()`.
+- `<AnimatePresence mode="sync" | "wait" | "popLayout" initial={false} onExitComplete>` — children need a `key`; exit via `Animated` `exit` or `usePresence()` → `[isPresent, safeToRemove]`.
+- `<MotionConfig reducedMotion="user" | "always" | "never" config={...}>`; `useReducedMotion()`.
+- Variants: `useVariants({ variants, initial, animate, custom, spring })` → `{ values, setVariant }`; `<VariantProvider variant transition={{ staggerChildren: ms, delayChildren: ms, when: 'beforeChildren' }}>` indexes its direct children (`'afterChildren'` unsupported); variant values may be colors/unit strings; `createMotionComponent('li', { variants, spring })`.
+- Hooks: `useSpring(values, config) => animated values`, `useSpringValue(initial, config)`, `useSprings(count, (i) => ({ values, from?, delay?, config? }))`, `useTrail`, `useMotionValue(initial)`, `useTransform(mv, inputRange, outputRange, { clamp?, ease?, space? })`, `useMotionTemplate`, `useInView({ once, amount, margin }) => { ref, inView }`, `useScroll({ target?, container?, axis?, offset? })`, `useAnimate() => [scopeRef, animate(target, { config?, delay? }), controls]`, `useDrag(config) => [{ x, y }, api]`, `useGesture({ onDrag, onPinch, onRotate, ... })` → bind handlers, `useTimeline(config) => { timeline, play, seek(seconds), seekProgress(0-1), ... }`.
+- Components: `Spring`, `Trail`, `SpringText`, `SpringNumber`, `TypeWriter`, `SplitText`, `Magnetic`, `Parallax`, `MouseParallax`, `TiltCard`, `Reorder.Group` / `Reorder.Item`, `LazyMotion`.
+
+## Testing (`@oxog/springkit/testing`)
+
+```ts
+import { installTestClock } from '@oxog/springkit/testing'
+const clock = installTestClock({ frameRate: 60, timers: false, startTime })
+clock.advance(100) // runs exactly 6 frames at 60fps
+clock.nextFrame()
+clock.runAll()     // until nothing is animating; throws if it never settles
+clock.uninstall()  // always in afterEach
+```
+
+Prefer it over `vi.useFakeTimers()`; in React tests wrap `clock.advance()` in `act()`.
+
+## Optional
+
+- [README](README.md)
+- [Changelog](CHANGELOG.md)
+- [Migration guide 1.x → 2.0](docs/MIGRATION-2.0.md)
+- [Documentation site](https://springkit.oxog.dev)

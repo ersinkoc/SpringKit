@@ -63,7 +63,18 @@ export const Spring = <T extends Record<string, number>>({
   toRef.current = to
   const onRestRef = useRef(onRest)
   onRestRef.current = onRest
-  const handleRest = useRef(() => onRestRef.current?.()).current
+  // Animate to the latest `to`; onRest fires once every value of this run has
+  // come to rest (a per-value onRest would fire once per key, the first time
+  // as soon as any value settled), not when the run is retargeted or destroyed
+  const runIdRef = useRef(0)
+  const animateTo = useRef((spring: ReturnType<typeof createSpringGroup<T>>, springConfig: SpringConfig) => {
+    const runId = ++runIdRef.current
+    spring.set(toRef.current, springConfig)
+    spring.finished.then(() => {
+      if (runIdRef.current !== runId || spring.isDestroyed() || spring.isAnimating()) return
+      onRestRef.current?.()
+    })
+  }).current
 
   // Only re-target when the target values actually change
   const toSignature = Object.keys(to).map((key) => `${key}:${to[key]}`).join('|')
@@ -76,7 +87,7 @@ export const Spring = <T extends Record<string, number>>({
 
     // Start animation
     const rafId = requestAnimationFrame(() => {
-      spring.set(toRef.current, { ...config, onRest: handleRest })
+      animateTo(spring, config)
     })
 
     return () => {
@@ -96,7 +107,7 @@ export const Spring = <T extends Record<string, number>>({
       isFirstUpdateRef.current = false
       return
     }
-    springRef.current?.set(toRef.current, { ...config, onRest: handleRest })
-  }, [toSignature, config, handleRest])
+    if (springRef.current) animateTo(springRef.current, config)
+  }, [toSignature, config, animateTo])
 
   return <>{children(values)}</>}

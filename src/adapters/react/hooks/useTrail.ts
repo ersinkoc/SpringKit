@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { createSpringValue, type SpringValue } from '@oxog/springkit'
+import { createSpringValue, delay, type SpringValue } from '@oxog/springkit'
 import type { SpringConfig } from '@oxog/springkit'
 
 /**
@@ -49,24 +49,30 @@ export function useTrail<T extends Record<string, number>>(
   )
   const isFirstRender = useRef(true)
   const prevValuesRef = useRef<string>(JSON.stringify(values))
-  // Track timeouts for cleanup to prevent memory leaks
-  const timeoutsRef = useRef<ReturnType<typeof setTimeout>[]>([])
+  // Pending stagger delays (cancel functions), cleaned up to prevent leaks
+  const timeoutsRef = useRef<Array<() => void>>([])
 
-  // Initialize springs
+  // Physics config the springs were created with (a change recreates them)
+  const springsConfigKeyRef = useRef<string | null>(null)
+  const configKey = `${config.stiffness}|${config.damping}|${config.mass}`
+
+  // Initialize springs. When only `count` changes, the springs of the
+  // remaining items are kept (an animation in progress continues): only added
+  // items get new springs and removed items' springs are destroyed.
   useEffect(() => {
     isMountedRef.current = true
     const keys = Object.keys(values)
     const springs = new Map<string, SpringValue[]>()
 
-    // Create springs for each property and each item
-    // Check for existing springs that may have been destroyed (StrictMode compatibility)
-    const existingSprings = springsRef.current
+    // Reuse live springs created with the same config (destroyed ones, e.g.
+    // after StrictMode's simulated unmount, are recreated)
+    const existingSprings = springsConfigKeyRef.current === configKey ? springsRef.current : null
+    springsConfigKeyRef.current = configKey
     keys.forEach(key => {
       const propSprings: SpringValue[] = []
       const initialValue = values[key] as number
       const existingPropSprings = existingSprings?.get(key)
       for (let i = 0; i < count; i++) {
-        // Reuse spring if it exists and is not destroyed, otherwise create new
         const existingSpring = existingPropSprings?.[i]
         const spring = (existingSpring && !existingSpring.isDestroyed())
           ? existingSpring
@@ -74,6 +80,14 @@ export function useTrail<T extends Record<string, number>>(
         propSprings.push(spring)
       }
       springs.set(key, propSprings)
+    })
+
+    // Destroy the springs that are no longer used
+    springsRef.current?.forEach((propSprings, key) => {
+      const kept = springs.get(key)
+      propSprings.forEach((spring, index) => {
+        if (kept?.[index] !== spring) spring.destroy()
+      })
     })
 
     springsRef.current = springs
@@ -109,15 +123,19 @@ export function useTrail<T extends Record<string, number>>(
     return () => {
       isMountedRef.current = false
       unsubscribers.forEach(unsub => unsub())
-      // Destroy springs to prevent memory leaks
-      springs.forEach(propSprings => {
-        propSprings.forEach(spring => spring.destroy())
-      })
-      springs.clear()
-      springsRef.current = null
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [count, config.stiffness, config.damping, config.mass])
+  }, [count, configKey])
+
+  // Destroy the springs on unmount (StrictMode's simulated unmount included:
+  // the effect above then recreates them)
+  useEffect(() => {
+    return () => {
+      springsRef.current?.forEach(propSprings => {
+        propSprings.forEach(spring => spring.destroy())
+      })
+    }
+  }, [])
 
   // Update springs when values change with staggered delay
   useEffect(() => {
@@ -137,7 +155,7 @@ export function useTrail<T extends Record<string, number>>(
     const staggerDelay = 50 // ms between each item
 
     // Clear any pending timeouts from previous animation
-    timeoutsRef.current.forEach(clearTimeout)
+    timeoutsRef.current.forEach((cancel) => cancel())
     timeoutsRef.current = []
 
     keys.forEach(key => {
@@ -146,20 +164,30 @@ export function useTrail<T extends Record<string, number>>(
 
       const targetValue = values[key] as number
       propSprings.forEach((spring, index) => {
-        const timeoutId = setTimeout(() => {
+        if (index === 0) {
           spring.set(targetValue, config)
-        }, index * staggerDelay)
-        timeoutsRef.current.push(timeoutId)
+          return
+        }
+        // Animation time (follows the time scale and the test clock)
+        const cancel = delay(index * staggerDelay, () => {
+          spring.set(targetValue, config)
+        })
+        timeoutsRef.current.push(cancel)
       })
     })
 
     // Cleanup function for this effect
     return () => {
-      timeoutsRef.current.forEach(clearTimeout)
+      timeoutsRef.current.forEach((cancel) => cancel())
       timeoutsRef.current = []
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [JSON.stringify(values), config.stiffness, config.damping])
 
-  return currentValues
+  // Right after `count` changed, the state still has the previous number of
+  // items: return exactly `count` (new items start at `values`)
+  if (currentValues.length === count) return currentValues
+  const result = currentValues.slice(0, count)
+  while (result.length < count) result.push({ ...values })
+  return result
 }

@@ -1,6 +1,6 @@
 {
   "name": "@oxog/springkit",
-  "version": "1.3.6",
+  "version": "2.0.0",
   "description": "Zero-dependency physics-based spring animation library with gesture support",
   "author": "Ersin KOÇ",
   "license": "MIT",
@@ -72,7 +72,9 @@
     "dist",
     "README.md",
     "LICENSE",
-    "CHANGELOG.md"
+    "CHANGELOG.md",
+    "llms.txt",
+    "docs/MIGRATION-2.0.md"
   ],
   "scripts": {
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
@@ -129,5 +131,8 @@
         "./dist/testing/index.d.ts"
       ]
     }
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

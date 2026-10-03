@@ -106,6 +106,8 @@ interface DragControlsSubscriber {
  */
 export function useDragControls(): DragControls {
   const isDraggingRef = useRef(false)
+  // Elements with a gesture in progress (the controls may drive several)
+  const activeCountRef = useRef(0)
   // Single-handler registration (legacy internal API)
   const listenerRef = useRef<((event: PointerEvent, options?: DragStartOptions) => void) | null>(null)
   const stopRef = useRef<(() => void) | null>(null)
@@ -181,10 +183,13 @@ export function useDragControls(): DragControls {
     // Called by the dragged component when a gesture starts / ends, including
     // gestures started by its own pointer listener
     _notifyDragStart: () => {
+      activeCountRef.current++
       isDraggingRef.current = true
     },
     _notifyDragEnd: () => {
-      isDraggingRef.current = false
+      // Still dragging while another element's gesture is in progress
+      activeCountRef.current = Math.max(0, activeCountRef.current - 1)
+      if (activeCountRef.current === 0) isDraggingRef.current = false
     },
   }), [start, stop, cancel, isDragging])
 

@@ -146,7 +146,9 @@ function ApiIndex() {
 
       <DocSection title="Global Loop">
         <p className="text-muted-foreground mb-4">
-          Access the global animation loop for monitoring and debugging:
+          Access the global animation loop for monitoring and debugging (see{' '}
+          <Link to="/docs/advanced/time-scale" className="text-orange-300 hover:underline">Slow Motion</Link>
+          {' '}for a live time-scale demo):
         </p>
         <div className="grid md:grid-cols-2 gap-3">
           {[
@@ -154,6 +156,9 @@ function ApiIndex() {
             { fn: 'globalLoop.getFPS()', desc: 'Get current frame rate' },
             { fn: 'globalLoop.getAliveCount()', desc: 'Get number of active animations' },
             { fn: 'globalLoop.size', desc: 'Total animations in loop' },
+            { fn: 'globalLoop.setTimeScale(scale)', desc: 'Slow motion / freeze: 1 = normal, 0.1 = 10x slower, 0 = frozen (also scales animateNative)' },
+            { fn: 'globalLoop.getTimeScale()', desc: 'Current time scale (default 1)' },
+            { fn: 'globalLoop.onTimeScaleChange(callback)', desc: 'Subscribe to time scale changes; returns an unsubscribe function' },
           ].map((item) => (
             <div key={item.fn} className="p-3 rounded-lg bg-white/5 border border-white/10">
               <code className="font-mono text-sm text-orange-300 block mb-1">{item.fn}</code>

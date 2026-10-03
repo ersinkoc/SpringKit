@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { sequence, parallel, stagger } from '@oxog/springkit'
+import { installTestClock } from '../../../src/testing/index'
 
 describe('animation orchestration', () => {
   beforeEach(() => {
@@ -171,15 +172,15 @@ describe('animation orchestration', () => {
       expect(results).toEqual(['a', 'b'])
     })
 
-    it('should use setTimeout for positive delays', async () => {
-      // Use real timers to properly test setTimeout callback
+    it('should start items with a positive delay later (loop-driven delay)', async () => {
       vi.useRealTimers()
+      const clock = installTestClock()
 
       const items = ['a', 'b']
       const startOrder: string[] = []
       const resolvers: (() => void)[] = []
 
-      await stagger(
+      const done = stagger(
         items,
         (item) => {
           let resolver: () => void
@@ -199,6 +200,10 @@ describe('animation orchestration', () => {
         },
         { delay: 5 }
       )
+      expect(startOrder).toEqual(['a'])
+      clock.runAll()
+      clock.uninstall()
+      await done
 
       // Both items should have been started
       expect(startOrder).toEqual(['a', 'b'])

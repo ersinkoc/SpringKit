@@ -253,8 +253,9 @@ export class MotionValue<T = number> {
   }
 
   /**
-   * Update spring configuration
-   * Takes effect immediately on ongoing animations
+   * Update spring configuration. Applies from the next animated `set()`
+   * (which retargets an ongoing animation with the new physics, keeping its
+   * velocity); an animation already in flight keeps its current target.
    */
   setConfig(config: Partial<SpringConfig>): void {
     this._springConfig = { ...this._springConfig, ...config }

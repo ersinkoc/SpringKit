@@ -328,7 +328,7 @@ describe('SpringGroup regressions', () => {
     vi.restoreAllMocks()
   })
 
-  it('a superseded batch does not resolve the new batch early, and its own promise settles', async () => {
+  it('a superseded batch does not resolve the new batch early; both settle once x has settled', async () => {
     const { step } = manualFrames()
     const group = createSpringGroup({ x: 0 }, { stiffness: 170, damping: 26 })
 
@@ -347,14 +347,15 @@ describe('SpringGroup regressions', () => {
     })
 
     await flushMicrotasks()
-    // The interrupted batch's promise settles...
-    expect(firstResolved).toBe(true)
-    // ...but must NOT resolve the new batch while x is still animating
+    // Neither batch resolves while x is still animating (finished means
+    // every animating key has settled)
     expect(group.isAnimating()).toBe(true)
+    expect(firstResolved).toBe(false)
     expect(secondResolved).toBe(false)
 
     for (let i = 0; i < 600 && group.isAnimating(); i++) step()
     await flushMicrotasks()
+    expect(firstResolved).toBe(true)
     expect(secondResolved).toBe(true)
     expect(group.getValue('x')).toBe(200)
     group.destroy()

@@ -166,9 +166,9 @@ export function keyframes(
   let spring: ReturnType<typeof createSpringValue> | null = null
   let currentValue = normalizedKeyframes[0]?.value ?? 0
   let destroyed = false
-  // Track pending RAF and timeout IDs for cleanup
+  // Track the pending RAF ID and delay for cleanup
   let pendingRafId: number | null = null
-  let pendingTimeoutId: ReturnType<typeof setTimeout> | null = null
+  let cancelPendingDelay: (() => void) | null = null
   // Resolver of the transition currently being awaited (settled on cancel)
   let pendingResolve: (() => void) | null = null
   // Incremented whenever playback is started, paused, stopped or destroyed.
@@ -240,10 +240,8 @@ export function keyframes(
       cancelAnimationFrame(pendingRafId)
       pendingRafId = null
     }
-    if (pendingTimeoutId !== null) {
-      clearTimeout(pendingTimeoutId)
-      pendingTimeoutId = null
-    }
+    cancelPendingDelay?.()
+    cancelPendingDelay = null
     const resolve = pendingResolve
     pendingResolve = null
     resolve?.()
@@ -290,11 +288,11 @@ export function keyframes(
           pendingRafId = requestAnimationFrame(checkComplete)
         }
       }
-      // Give spring time to start
-      pendingTimeoutId = setTimeout(() => {
-        pendingTimeoutId = null
+      // Give spring time to start (animation time: follows the time scale)
+      cancelPendingDelay = globalLoop.delay(16, () => {
+        cancelPendingDelay = null
         checkComplete()
-      }, 16)
+      })
     })
   }
 

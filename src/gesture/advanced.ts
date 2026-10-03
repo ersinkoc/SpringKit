@@ -70,7 +70,10 @@ export interface RotateState extends GestureState {
   origin: Point
   /** Rotation movement */
   movement: number
-  /** Rotation offset from initial */
+  /**
+   * Rotation accumulated by the previous gestures (the `angle` when the
+   * current gesture started; updated when a gesture ends)
+   */
   offset: number
 }
 
@@ -80,7 +83,7 @@ export interface RotateState extends GestureState {
 export interface SwipeState extends GestureState {
   /** Swipe direction */
   direction: 'up' | 'down' | 'left' | 'right' | null
-  /** Swipe velocity */
+  /** Swipe velocity (px/s) */
   velocity: Point
   /** Distance swiped */
   distance: Point
@@ -147,10 +150,20 @@ export interface RotateConfig {
  * Swipe gesture configuration
  */
 export interface SwipeConfig {
-  /** Minimum velocity to trigger swipe (pixels/ms) */
+  /**
+   * A swipe is a release that travelled at least `distanceThreshold` px or
+   * was at least this fast, in px/s (default 500). A fast release must still
+   * have travelled `minDistance` px.
+   */
   velocityThreshold?: number
-  /** Minimum distance to trigger swipe (pixels) */
+  /** Distance (px) that counts as a swipe at any speed (default 50) */
   distanceThreshold?: number
+  /**
+   * Minimum travel (px) along the swipe direction for any swipe, including
+   * fast ones that pass `velocityThreshold` (default 10), so a quick jitter
+   * or tap isn't reported as a swipe
+   */
+  minDistance?: number
   /** Maximum duration for swipe (ms) */
   maxDuration?: number
   /** Axis constraint */
@@ -255,6 +268,18 @@ function normalizeAngleDelta(delta: number): number {
   if (d > 180) d -= 360
   if (d < -180) d += 360
   return d
+}
+
+/**
+ * Capture a pointer. Capturing can throw (e.g. the pointer is no longer
+ * active); the gesture then still works while the pointer is over the element.
+ */
+function capturePointer(element: HTMLElement, pointerId: number): void {
+  try {
+    element.setPointerCapture(pointerId)
+  } catch {
+    // Not capturable: continue without capture
+  }
 }
 
 /**
@@ -425,6 +450,13 @@ export function createPinchGesture(
       }
 
       onPinchEnd?.(createState(e, false, true))
+    } else if (active) {
+      // A finger was lifted but two or more remain: the pinching pair may
+      // have changed, so continue from the current scale with the remaining
+      // pair as the reference (otherwise the scale jumps)
+      const touchArray = Array.from(touches.values())
+      initialDistance = getDistance(touchArray[0]!, touchArray[1]!)
+      initialScale = currentScale
     }
   }
 
@@ -490,6 +522,8 @@ export function createRotateGesture(
   let startTime = 0
   let lastTime = 0
   let angleOffset = 0
+  // Rotation (`angle`) when the current gesture started
+  let gestureStartAngle = 0
   // Last raw (wrapped) finger angle and the unwrapped rotation accumulated since start
   let lastRawAngle = 0
   let accumulatedDelta = 0
@@ -513,7 +547,9 @@ export function createRotateGesture(
       velocity,
       initialAngle,
       origin,
-      movement: currentAngle - initialAngle,
+      // Rotation during this gesture (initialAngle is the raw finger angle,
+      // not a rotation, so it can't be subtracted from `angle`)
+      movement: currentAngle - gestureStartAngle,
       offset: angleOffset,
     }
   }
@@ -535,6 +571,7 @@ export function createRotateGesture(
       startTime = performance.now()
       lastTime = startTime
       lastAngle = currentAngle
+      gestureStartAngle = currentAngle
       active = true
 
       onRotateStart?.(createState(e, true, false))
@@ -589,6 +626,11 @@ export function createRotateGesture(
       active = false
       angleOffset = currentAngle
       onRotateEnd?.(createState(e, false, true))
+    } else if (active) {
+      // A finger was lifted but two or more remain: measure further rotation
+      // from the remaining pair's angle (otherwise the angle jumps)
+      const touchArray = Array.from(touches.values())
+      lastRawAngle = getAngle(touchArray[0]!, touchArray[1]!)
     }
   }
 
@@ -633,8 +675,9 @@ export function createSwipeGesture(
   config: SwipeConfig = {}
 ): GestureController {
   const {
-    velocityThreshold = 0.5,
+    velocityThreshold = 500,
     distanceThreshold = 50,
+    minDistance = 10,
     maxDuration = 300,
     axis = 'both',
     onSwipe,
@@ -649,8 +692,10 @@ export function createSwipeGesture(
   let startTime = 0
   let lastTime = 0
   let pointerId: number | null = null
-  // Velocity measured between the last two pointer samples (pixels/ms)
+  // Velocity measured between the last two pointer samples (px/s)
   let moveVelocity: Point = { x: 0, y: 0 }
+  // disable() was called during the current gesture: it ends as cancelled
+  let cancelledByDisable = false
 
   const createState = (
     event: PointerEvent,
@@ -670,9 +715,10 @@ export function createSwipeGesture(
       y: point.y - startPoint.y,
     }
 
+    // px/s, like every other velocity in SpringKit
     const velocity = velocityOverride ?? {
-      x: dt > 0 ? (point.x - lastPoint.x) / dt : 0,
-      y: dt > 0 ? (point.y - lastPoint.y) / dt : 0,
+      x: dt > 0 ? ((point.x - lastPoint.x) / dt) * 1000 : 0,
+      y: dt > 0 ? ((point.y - lastPoint.y) / dt) * 1000 : 0,
     }
 
     return {
@@ -696,11 +742,11 @@ export function createSwipeGesture(
     const velX = Math.abs(velocity.x)
     const velY = Math.abs(velocity.y)
 
-    // Check if meets thresholds
+    // Check if meets thresholds (a fast release must still travel minDistance)
     const meetsDistanceX = absX >= distanceThreshold
     const meetsDistanceY = absY >= distanceThreshold
-    const meetsVelocityX = velX >= velocityThreshold
-    const meetsVelocityY = velY >= velocityThreshold
+    const meetsVelocityX = velX >= velocityThreshold && absX >= minDistance
+    const meetsVelocityY = velY >= velocityThreshold && absY >= minDistance
 
     // Determine primary direction based on axis constraint
     if (axis === 'x' || (axis === 'both' && absX > absY)) {
@@ -727,9 +773,10 @@ export function createSwipeGesture(
     startTime = performance.now()
     lastTime = startTime
     moveVelocity = { x: 0, y: 0 }
+    cancelledByDisable = false
     active = true
 
-    element.setPointerCapture(e.pointerId)
+    capturePointer(element, e.pointerId)
     addSwipeEndGuards()
     onSwipeStart?.(createState(e, true, false))
   }
@@ -741,8 +788,8 @@ export function createSwipeGesture(
     const dt = now - lastTime
     if (dt > 0) {
       moveVelocity = {
-        x: (e.clientX - lastPoint.x) / dt,
-        y: (e.clientY - lastPoint.y) / dt,
+        x: ((e.clientX - lastPoint.x) / dt) * 1000,
+        y: ((e.clientY - lastPoint.y) / dt) * 1000,
       }
     }
     lastPoint = { x: e.clientX, y: e.clientY }
@@ -751,6 +798,11 @@ export function createSwipeGesture(
 
   const handlePointerUp = (e: PointerEvent) => {
     if (!active || e.pointerId !== pointerId) return
+    // Disabled during the gesture: it never counts as a swipe
+    if (!enabled || cancelledByDisable) {
+      handlePointerCancel(e)
+      return
+    }
 
     active = false
     pointerId = null
@@ -770,7 +822,7 @@ export function createSwipeGesture(
       const dt = now - lastTime
       const movedSinceLastSample = e.clientX !== lastPoint.x || e.clientY !== lastPoint.y
       const velocity = movedSinceLastSample && dt > 0
-        ? { x: (e.clientX - lastPoint.x) / dt, y: (e.clientY - lastPoint.y) / dt }
+        ? { x: ((e.clientX - lastPoint.x) / dt) * 1000, y: ((e.clientY - lastPoint.y) / dt) * 1000 }
         : dt <= VELOCITY_STALE_MS ? moveVelocity : { x: 0, y: 0 }
 
       const direction = detectDirection(movement, velocity)
@@ -837,7 +889,10 @@ export function createSwipeGesture(
 
   return {
     enable: () => { enabled = true },
-    disable: () => { enabled = false },
+    disable: () => {
+      enabled = false
+      if (active) cancelledByDisable = true
+    },
     isEnabled: () => enabled,
     destroy: () => {
       element.removeEventListener('pointerdown', handlePointerDown)
@@ -907,7 +962,7 @@ export function createLongPressGesture(
     active = true
     triggered = false
 
-    element.setPointerCapture(e.pointerId)
+    capturePointer(element, e.pointerId)
     addPressEndGuards()
     onPressStart?.(createState(e, true, false))
 

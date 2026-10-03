@@ -100,3 +100,41 @@ describe('decay() physics', () => {
     }
   })
 })
+
+describe('decay() config ownership', () => {
+  it("destroy() doesn't strip callbacks from the caller's config object", () => {
+    clock = installTestClock()
+    const values: number[] = []
+    const config = { velocity: 1000, onUpdate: (v: number) => values.push(v) }
+    decay(config).destroy()
+    expect(config.onUpdate).toBeTypeOf('function')
+    // A reused config still drives the next decay
+    const anim = decay(config).start()
+    clock.advance(50)
+    expect(values.length).toBeGreaterThan(0)
+    anim.destroy()
+  })
+})
+
+describe('decay() stopped from its own onUpdate', () => {
+  it('does not fire onComplete when stop() is called on the final frame', () => {
+    clock = installTestClock()
+    let stopped = false
+    let completed = false
+    const anim = decay({
+      velocity: 500,
+      clamp: [0, 10], // hits the bound (final frame) quickly
+      onUpdate: (v) => {
+        if (!stopped && v >= 10) {
+          stopped = true
+          anim.stop()
+        }
+      },
+      onComplete: () => (completed = true),
+    })
+    anim.start()
+    clock.runAll()
+    expect(stopped).toBe(true)
+    expect(completed).toBe(false)
+  })
+})

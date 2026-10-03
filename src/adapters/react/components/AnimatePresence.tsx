@@ -206,8 +206,12 @@ export function AnimatePresence({
   const showEntering = mode !== 'wait' || Object.keys(derivedExiting).length === 0
 
   // Render order: current children in order, with each exiting child re-inserted
-  // after the key that preceded it in the previous render (keeps list positions)
-  const renderedOrder: string[] = showEntering ? [...currentKeys] : []
+  // after the key that preceded it in the previous render (keeps list positions).
+  // Children that are already mounted stay mounted while others exit in 'wait'
+  // mode; only new ones are held back.
+  const renderedOrder: string[] = showEntering
+    ? [...currentKeys]
+    : currentKeys.filter((key) => prevOrder.includes(key))
   const exitingKeys = Object.keys(derivedExiting).sort(
     (a, b) => prevOrder.indexOf(a) - prevOrder.indexOf(b)
   )

@@ -218,6 +218,8 @@ export const Magnetic = memo(forwardRef<HTMLDivElement, MagneticProps>(
           springXRef.current?.jump(0)
           springYRef.current?.jump(0)
           springScaleRef.current?.jump(1)
+          // jump() doesn't call onUpdate
+          setTransform({ x: 0, y: 0, scale: 1 })
         }
         return
       }
@@ -501,6 +503,8 @@ export function useMagnetic(options: UseMagneticOptions = {}): UseMagneticReturn
       if (reduceMotion) {
         springXRef.current?.jump(0)
         springYRef.current?.jump(0)
+        // jump() doesn't call onUpdate
+        setPosition({ x: 0, y: 0 })
       } else {
         springXRef.current?.set(0)
         springYRef.current?.set(0)

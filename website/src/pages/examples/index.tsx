@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import {
   Gauge, Grid3X3, Timer, Zap, Shapes, MousePointer2, Layers, Type,
-  ArrowRight, Sparkles, Play, LayoutGrid, Cpu
+  ArrowRight, Sparkles, Play, LayoutGrid, Cpu, Hand
 } from 'lucide-react'
 
 interface DemoCardProps {
@@ -75,6 +75,14 @@ const demos: DemoCardProps[] = [
     path: '/examples/native-springs',
     gradient: 'from-emerald-500 to-teal-500',
     tags: ['New', 'Compositor', 'WAAPI'],
+  },
+  {
+    title: 'Drag Gestures',
+    description: '<Animated.div drag> with container constraints, elastic edges, momentum, snap-back, axis lock, drag handles and live velocity.',
+    icon: <Hand className="w-6 h-6 text-white" />,
+    path: '/examples/drag',
+    gradient: 'from-sky-500 to-indigo-500',
+    tags: ['New', 'React', 'Gestures'],
   },
   {
     title: 'Physics Presets',

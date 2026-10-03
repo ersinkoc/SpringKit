@@ -6,7 +6,7 @@
 
 import * as React from 'react'
 import { useRef, useEffect, useState, useMemo, memo } from 'react'
-import { createSpringValue } from '@oxog/springkit'
+import { createSpringValue, delay } from '@oxog/springkit'
 import type { SpringConfig } from '@oxog/springkit'
 import { useStableSpringConfig } from '../utils/config.js'
 
@@ -164,13 +164,12 @@ export const SpringText = memo(function SpringText({
     }
 
     let cancelled = false
-    const timeouts = new Set<ReturnType<typeof setTimeout>>()
-    const rafIds = new Set<number>()
+    const cancelDelays = new Set<() => void>()
     let completed = 0
 
     setAnimatedValues(new Array<number>(elements.length).fill(0))
 
-    // Create new springs
+    // Create new springs (each completes once: it is set to 1 a single time)
     const springs = elements.map((_, index) =>
       createSpringValue(0, {
         ...config,
@@ -182,45 +181,35 @@ export const SpringText = memo(function SpringText({
             return next
           })
         },
+        onComplete: () => {
+          if (cancelled) return
+          completed++
+          if (completed === springs.length) {
+            onCompleteRef.current?.()
+          }
+        },
       })
     )
 
-    // Animate with stagger
+    // Animate with stagger, in animation time (follows the time scale and
+    // the test clock)
     springs.forEach((spring, index) => {
-      const startTimeout = setTimeout(() => {
-        timeouts.delete(startTimeout)
+      const ms = index * stagger
+      if (!(ms > 0)) {
+        spring.set(1)
+        return
+      }
+      const cancel = delay(ms, () => {
+        cancelDelays.delete(cancel)
         if (cancelled) return
         spring.set(1)
-
-        // Check completion
-        const checkComplete = () => {
-          if (cancelled) return
-          if (!spring.isAnimating()) {
-            completed++
-            if (completed === springs.length) {
-              onCompleteRef.current?.()
-            }
-          } else {
-            const rafId = requestAnimationFrame(() => {
-              rafIds.delete(rafId)
-              checkComplete()
-            })
-            rafIds.add(rafId)
-          }
-        }
-        const checkTimeout = setTimeout(() => {
-          timeouts.delete(checkTimeout)
-          checkComplete()
-        }, 50)
-        timeouts.add(checkTimeout)
-      }, index * stagger)
-      timeouts.add(startTimeout)
+      })
+      cancelDelays.add(cancel)
     })
 
     return () => {
       cancelled = true
-      timeouts.forEach((id) => clearTimeout(id))
-      rafIds.forEach((id) => cancelAnimationFrame(id))
+      cancelDelays.forEach((cancel) => cancel())
       springs.forEach((s) => s.destroy())
     }
   }, [elements, stagger, config, animateOnMount, trigger])

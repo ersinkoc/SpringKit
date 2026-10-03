@@ -43,6 +43,9 @@ class SpringValueImpl implements SpringValue {
   private finishedPromise: Promise<void>
   private destroyed: boolean = false
   private isNotifying: boolean = false
+  // setConfig() was called since the running spring was created: the next
+  // set() must create a spring with the new physics instead of retargeting
+  private configChanged: boolean = false
 
   constructor(initial: number, config: SpringConfig = {}) {
     // Validate initial value
@@ -79,6 +82,7 @@ class SpringValueImpl implements SpringValue {
       running &&
       running.isAnimating() &&
       !running.isPaused() &&
+      !this.configChanged &&
       Object.keys(config).length === 0
     ) {
       // Each set() still gets its own `finished`; the superseded one settles
@@ -110,6 +114,7 @@ class SpringValueImpl implements SpringValue {
     })
 
     // Create new animation
+    this.configChanged = false
     const mergedConfig = { ...this.config, ...config }
     if (config.velocity === undefined && carriedVelocity !== undefined) {
       mergedConfig.velocity = carriedVelocity
@@ -170,6 +175,7 @@ class SpringValueImpl implements SpringValue {
 
   setConfig(config: Partial<SpringConfig>): void {
     this.config = { ...this.config, ...config }
+    this.configChanged = true
   }
 
   subscribe(callback: (value: number) => void): () => void {

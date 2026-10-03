@@ -1,10 +1,13 @@
 import { Routes, Route, Link } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
 import { DocLayout, DocSection, CodeBlock } from '@/components/docs'
-import { Atom, Code2, Box, Sparkles, Heart, Star, Zap, RotateCcw, GripVertical, Target, ArrowRight, Check } from 'lucide-react'
+import { Atom, Code2, Box, Sparkles, Heart, Star, Zap, RotateCcw, GripVertical, Target, ArrowRight, Check, Palette } from 'lucide-react'
 import { useState, useRef, useEffect } from 'react'
 import { useSpring, useDrag, useTrail } from '@oxog/springkit/react'
 import { createSpringValue } from '@oxog/springkit'
+import { ReactDrag } from './ReactDrag'
+import { ReactPresence } from './ReactPresence'
+import { ReactValues } from './ReactValues'
 
 export function ReactGuide() {
   return (
@@ -12,6 +15,9 @@ export function ReactGuide() {
       <Route path="/" element={<ReactIndex />} />
       <Route path="/hooks" element={<ReactHooks />} />
       <Route path="/components" element={<ReactComponents />} />
+      <Route path="/values" element={<ReactValues />} />
+      <Route path="/drag" element={<ReactDrag />} />
+      <Route path="/presence-variants" element={<ReactPresence />} />
       <Route path="/examples" element={<ReactExamples />} />
     </Routes>
   )
@@ -21,6 +27,9 @@ function ReactIndex() {
   const guides = [
     { title: 'Hooks', href: '/docs/react/hooks', desc: 'useSpring, useMotionValue, useInView, useScroll, and more', icon: Code2 },
     { title: 'Components', href: '/docs/react/components', desc: 'Spring, Animated, Trail, AnimatePresence', icon: Box },
+    { title: 'Animating Any Value', href: '/docs/react/values', desc: 'Colors, units and complex strings like box shadows', icon: Palette },
+    { title: 'Animated Drag', href: '/docs/react/drag', desc: 'drag, constraints, momentum, drag handles', icon: GripVertical },
+    { title: 'Presence & Variants', href: '/docs/react/presence-variants', desc: 'AnimatePresence modes, createMotionComponent, stagger', icon: Target },
     { title: 'Examples', href: '/docs/react/examples', desc: 'React examples and patterns', icon: Sparkles },
   ]
 
@@ -230,7 +239,10 @@ function TrailList({ items, isVisible }) {
 
       <DocSection title="useDrag">
         <p className="text-muted-foreground mb-4">
-          Add drag interactions:
+          Add drag interactions. <code>useDrag</code> takes the{' '}
+          <Link to="/docs/gestures/drag" className="text-orange-300 hover:underline">createDragSpring</Link>{' '}
+          options (velocities in px/s). For a declarative alternative, see{' '}
+          <Link to="/docs/react/drag" className="text-orange-300 hover:underline">Animated drag</Link>.
         </p>
         <Card>
           <CardContent className="pt-6">
@@ -361,7 +373,20 @@ function ScrollProgress() {
 
       <DocSection title="useReducedMotion">
         <p className="text-muted-foreground mb-4">
-          Respect user's motion preferences for accessibility:
+          You rarely need this hook for SpringKit's own components: <code>Animated</code> (including
+          its drag release), <code>Magnetic</code> and <code>Parallax</code> honor the OS{' '}
+          <code>prefers-reduced-motion</code> setting by default, with or without a{' '}
+          <code>MotionConfig</code>: <code>Animated</code> jumps to its targets instead of animating,
+          drag releases skip momentum and land where they would have come to rest, and the magnetic
+          and parallax effects are turned off. Wrap a subtree in{' '}
+          <code>{'<MotionConfig reducedMotion="never">'}</code> to opt out, or{' '}
+          <code>reducedMotion="always"</code> to force it.
+        </p>
+        <p className="text-muted-foreground mb-4">
+          <code>useReducedMotion()</code> returns the user's preference for your own animations and
+          updates when it changes. On the server and during hydration it returns <code>false</code> (so
+          the markup matches) and React re-renders right after hydration if the real preference differs;
+          a client-only first render reads the real preference immediately.
         </p>
         <Card>
           <CardContent className="pt-6">
@@ -499,7 +524,12 @@ function ReactComponents() {
 
       <DocSection title="Animated">
         <p className="text-muted-foreground mb-4">
-          Animate elements declaratively with <code>initial</code> / <code>animate</code> (numeric <code>style</code> values are animated too; string values like <code>transform</code> are applied as-is):
+          Animate elements declaratively with <code>initial</code> / <code>animate</code>. Numbers, colors,
+          units (<code>'20rem'</code>, <code>'50%'</code>) and complex strings such as{' '}
+          <code>boxShadow</code> all spring; see{' '}
+          <Link to="/docs/react/values" className="text-orange-300 hover:underline">Animating Any Value</Link>.
+          Numeric <code>style</code> values animate when they change; <code>style</code> strings are
+          applied as-is unless an animation prop animates the same key:
         </p>
         <Card>
           <CardContent className="pt-6">
@@ -560,7 +590,11 @@ function ReactComponents() {
 
       <DocSection title="AnimatePresence">
         <p className="text-muted-foreground mb-4">
-          Animate components as they mount and unmount:
+          Animate components as they mount and unmount. See{' '}
+          <Link to="/docs/react/presence-variants" className="text-orange-300 hover:underline">Presence &amp; Variants</Link>{' '}
+          for the <code>sync</code> / <code>wait</code> / <code>popLayout</code> modes, and{' '}
+          <Link to="/docs/react/drag" className="text-orange-300 hover:underline">Animated Drag</Link>{' '}
+          for the <code>drag</code> props.
         </p>
         <Card>
           <CardContent className="pt-6">
@@ -642,7 +676,11 @@ function FadeOut() {
 
       <DocSection title="MotionConfig">
         <p className="text-muted-foreground mb-4">
-          Provide default animation configuration to all children:
+          Provide default animation configuration to all children. <code>reducedMotion</code> defaults
+          to <code>'user'</code>, which is also what applies without any <code>MotionConfig</code>:{' '}
+          <code>Animated</code>, drag, <code>Magnetic</code> and <code>Parallax</code> follow the OS{' '}
+          <code>prefers-reduced-motion</code> setting. <code>'always'</code> reduces motion everywhere;{' '}
+          <code>'never'</code> opts out and always animates.
         </p>
         <Card>
           <CardContent className="pt-6">

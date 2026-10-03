@@ -6,7 +6,7 @@
  */
 
 import { clamp, lerp } from '../utils/math.js'
-import { parseColorRGBA, rgbToHex, mixColorsRGBA, formatRGBA, type ColorSpace } from '../utils/color.js'
+import { parseColorRGBA, rgbToHex, mixColorsRGBA, formatRGBA, isColorString as isColorStringUtil, type ColorSpace } from '../utils/color.js'
 import { createSpringValue } from '../core/spring-value.js'
 import type { SpringConfig } from '../core/config.js'
 
@@ -32,8 +32,10 @@ function resolveSmoothing(smooth: ScrollSmoothing | undefined): SpringConfig | n
   if (typeof smooth === 'number') {
     if (!Number.isFinite(smooth) || smooth <= 0) return null
     const omega = -Math.log(Math.min(smooth, MAX_SMOOTHING_FACTOR)) * 60
-    // Scale mass so stiffness stays in a sane range for slow smoothing
-    const mass = Math.max(1, 100 / (omega * omega))
+    // Scale mass so stiffness stays in a sane range for slow smoothing, at
+    // most 10 so the strongest smoothing doesn't trip the "high mass"
+    // development warning (the motion only depends on omega)
+    const mass = Math.min(10, Math.max(1, 100 / (omega * omega)))
     return { ...rest, mass, stiffness: mass * omega * omega, damping: 2 * mass * omega }
   }
   if (smooth && typeof smooth === 'object') return { ...rest, ...smooth }
@@ -93,10 +95,8 @@ function lerpColor(colorA: string, colorB: string, t: number, space?: ColorSpace
   return mixed.a >= 1 ? rgbToHex(mixed.r, mixed.g, mixed.b) : formatRGBA(mixed)
 }
 
-const isColorString = (value: unknown): value is string =>
-  typeof value === 'string' &&
-  (value.startsWith('#') || value.startsWith('rgb') || value.startsWith('hsl') ||
-    value.trim().toLowerCase() === 'transparent')
+// Hex, rgb(), hsl(), transparent and CSS color names
+const isColorString = isColorStringUtil
 
 /**
  * Fraction (0-1) of an element's rect that is inside the viewport.
@@ -265,23 +265,28 @@ export function createScrollProgress(
   // a huge bogus velocity when the page is already scrolled
   let lastScrollY = typeof window !== 'undefined' ? window.scrollY : 0
   let lastTime = performance.now()
-  let velocity = 0
-  let direction: -1 | 0 | 1 = 0
   let rafId: number | null = null
   let destroyed = false
   const subscribers = new Set<(info: ScrollInfo) => void>()
 
-  const calculateProgress = (): ScrollInfo => {
+  /**
+   * Measure the current scroll info. With `commit` (scroll / resize updates)
+   * it becomes the new state: velocity baseline, `get()` and the smoothing
+   * target. Without it (getInfo) nothing is changed.
+   */
+  const calculateProgress = (commit = true): ScrollInfo => {
     const scrollY = window.scrollY
     const windowHeight = window.innerHeight
     const now = performance.now()
     const dt = Math.max(now - lastTime, 1)
 
-    // Calculate velocity and direction
-    velocity = ((scrollY - lastScrollY) / dt) * 1000
-    direction = scrollY > lastScrollY ? 1 : scrollY < lastScrollY ? -1 : 0
-    lastScrollY = scrollY
-    lastTime = now
+    // Calculate velocity and direction (since the last committed update)
+    const currentVelocity = ((scrollY - lastScrollY) / dt) * 1000
+    const currentDirection: -1 | 0 | 1 = scrollY > lastScrollY ? 1 : scrollY < lastScrollY ? -1 : 0
+    if (commit) {
+      lastScrollY = scrollY
+      lastTime = now
+    }
 
     let newProgress: number
     let isInView = true
@@ -319,18 +324,15 @@ export function createScrollProgress(
     }
 
     // Apply smoothing: the spring is retargeted and reports its own progress
-    if (smoother) {
-      smoother.set(newProgress)
-      progress = smoother.get()
-    } else {
-      progress = newProgress
-    }
+    if (smoother && commit) smoother.set(newProgress)
+    const currentProgress = smoother ? smoother.get() : newProgress
+    if (commit) progress = currentProgress
 
     return {
-      progress,
+      progress: currentProgress,
       scrollY,
-      velocity,
-      direction,
+      velocity: currentVelocity,
+      direction: currentDirection,
       isInView,
       visibleRatio,
     }
@@ -372,7 +374,8 @@ export function createScrollProgress(
 
   return {
     get: () => progress,
-    getInfo: () => calculateProgress(),
+    // Side-effect free: doesn't move the velocity baseline or the smoothing target
+    getInfo: () => calculateProgress(false),
     subscribe: (callback) => {
       subscribers.add(callback)
       try {
@@ -523,6 +526,9 @@ export function createScrollTrigger(
 
   let isActive = false
   let progress = 0
+  // Unsmoothed progress: enter/leave follow the scroll position itself, not
+  // the scrub spring (which keeps moving after the last scroll event)
+  let rawProgress = 0
   let hasEntered = false
   let rafId: number | null = null
   let destroyed = false
@@ -565,7 +571,7 @@ export function createScrollTrigger(
     // windowHeight + (endPos - startPos).
     const scrolled = windowHeight - startPos
     const scrollDistance = windowHeight + (endPos - startPos)
-    const rawProgress = scrollDistance > 0
+    rawProgress = scrollDistance > 0
       ? clamp(scrolled / scrollDistance, 0, 1)
       : scrolled >= 0 ? 1 : 0
 
@@ -607,7 +613,7 @@ export function createScrollTrigger(
 
       // Check for enter/leave
       const wasActive = isActive
-      isActive = info.progress > 0 && info.progress < 1
+      isActive = rawProgress > 0 && rawProgress < 1
 
       if (!wasActive && isActive && (!once || !hasEntered)) {
         hasEntered = true
@@ -678,13 +684,21 @@ export function createScrollLinkedValue(
   scrollProgress: ScrollProgress,
   config: ScrollLinkedConfig
 ): ScrollLinkedValue {
-  const { inputRange, outputRange, clamp: shouldClamp = true, easing, colorSpace, smooth } = config
+  const { clamp: shouldClamp = true, easing, colorSpace, smooth } = config
+  let { inputRange, outputRange } = config
 
   if (inputRange.length !== outputRange.length) {
     throw new Error('inputRange and outputRange must have the same length')
   }
 
-  const firstOutput = outputRange[0]
+  // The segment lookup assumes an ascending input range: reverse descending
+  // ranges (e.g. [1, 0.5, 0]) like `interpolate()` does
+  if (inputRange.length > 1 && inputRange[0]! > inputRange[inputRange.length - 1]!) {
+    inputRange = [...inputRange].reverse()
+    outputRange = [...outputRange].reverse()
+  }
+
+  const firstOutput = config.outputRange[0]
   const isColorOutput = isColorString(firstOutput)
 
   let currentValue: number | string = firstOutput ?? 0

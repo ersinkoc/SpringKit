@@ -67,7 +67,7 @@ export function DemoPageLayout({
         {/* Main Content Grid */}
         <div className="grid lg:grid-cols-2 gap-8">
           {/* Demo Area */}
-          <div className="order-1">
+          <div className="order-1 min-w-0">
             <div className="sticky top-24">
               <h2 className="text-sm font-medium text-white/60 uppercase tracking-wider mb-4">
                 Live Demo
@@ -79,7 +79,7 @@ export function DemoPageLayout({
           </div>
 
           {/* Code Area */}
-          <div className="order-2">
+          <div className="order-2 min-w-0">
             <div className="flex items-center justify-between mb-4">
               <h2 className="text-sm font-medium text-white/60 uppercase tracking-wider">
                 Source Code

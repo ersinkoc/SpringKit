@@ -1,3 +1,5 @@
+import { globalLoop } from './loop.js'
+
 /**
  * Anything exposing a `finished` promise (a spring animation, keyframes,
  * decay, an `animate()` control, ...). Used by sequence() and parallel(),
@@ -22,7 +24,8 @@ export interface StaggerOptions {
   /**
    * Delay between consecutive items in ms (item k steps away from `from`
    * starts after k * delay), or a function receiving the item's position in
-   * start order and returning its delay
+   * start order and returning its delay. Delays run on the animation clock,
+   * so they follow `globalLoop.setTimeScale()`.
    */
   delay?: number | ((index: number) => number)
   /** Where to start staggering from */
@@ -166,7 +169,8 @@ export async function stagger<T>(
       ? (i: number) => delay(i)
       : (i: number) => Math.abs(indices[i]! - startIndex) * delay
   const animations: StartableAnimation[] = []
-  const timeoutIds: ReturnType<typeof setTimeout>[] = []
+  // Loop-driven delays: they follow globalLoop's time scale
+  const cancelDelays: Array<() => void> = []
 
   for (let i = 0; i < indices.length; i++) {
     const index = indices[i]!
@@ -176,10 +180,7 @@ export async function stagger<T>(
     const delayMs = getDelay(i)
 
     if (delayMs > 0) {
-      const timeoutId = setTimeout(() => {
-        anim.start()
-      }, delayMs)
-      timeoutIds.push(timeoutId)
+      cancelDelays.push(globalLoop.delay(delayMs, () => anim.start()))
     } else {
       anim.start()
     }
@@ -188,7 +189,7 @@ export async function stagger<T>(
   try {
     await Promise.all(animations.map((a) => a.finished))
   } finally {
-    // Clear any remaining timeouts on completion or error
-    timeoutIds.forEach(clearTimeout)
+    // Cancel any remaining delays on completion or error
+    cancelDelays.forEach((cancel) => cancel())
   }
 }

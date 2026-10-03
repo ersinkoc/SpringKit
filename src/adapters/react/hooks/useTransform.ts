@@ -3,6 +3,7 @@ import {
   MotionValue,
   createMotionValue,
   parseColorRGBA,
+  isColorString,
   mixColorsRGBA,
   formatRGBA,
   type ColorSpace,
@@ -128,11 +129,8 @@ export function useMotionValueEvent<T>(
   callbackRef.current = callback
 
   useEffect(() => {
-    if (event === 'change') {
-      return value.subscribe((v) => callbackRef.current(v))
-    }
-
-    // For animation events, use the on method
+    // `on` for 'change' too: `subscribe` would also call back right away
+    // (on mount and on every re-subscription) although nothing changed
     return value.on(event, () => callbackRef.current(value.get()))
   }, [value, event])
 }
@@ -169,6 +167,11 @@ const STRING_TOKEN_REGEX =
   /#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3,4})\b|(?:rgba?|hsla?)\([^)]*\)|\btransparent\b|-?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?/gi
 
 function parseAnimatableString(value: string): ParsedString {
+  // A bare CSS color name ('red', 'rebeccapurple') is a single color token
+  const trimmed = value.trim()
+  if (/^[a-z]+$/i.test(trimmed) && trimmed.toLowerCase() !== 'transparent' && isColorString(trimmed)) {
+    return { parts: ['', ''], tokens: [parseColorRGBA(trimmed)] }
+  }
   const parts: string[] = []
   const tokens: StringToken[] = []
   let last = 0
@@ -274,11 +277,13 @@ export function useTransform<O = number>(
     /** Segment index and (eased, optionally clamped) progress within it */
     const locate = (value: number): { i: number; next: number; t: number } => {
       // Find the segment (values beyond the last stop use the last segment,
-      // so they extrapolate the same way values below the first stop do)
+      // so they extrapolate the same way values below the first stop do).
+      // The input range may also be descending ([100, 50, 0]).
+      const descending = (inputRange[inputRange.length - 1] ?? 0) < (inputRange[0] ?? 0)
       let i = 0
       for (; i < inputRange.length - 2; i++) {
         const nextVal = inputRange[i + 1]
-        if (nextVal !== undefined && value <= nextVal) break
+        if (nextVal !== undefined && (descending ? value >= nextVal : value <= nextVal)) break
       }
       const next = Math.min(i + 1, inputRange.length - 1)
 
@@ -290,14 +295,16 @@ export function useTransform<O = number>(
         ? (value - inputMin) / (inputMax - inputMin)
         : 0
 
+      // Clamp if requested - before easing too: easings are defined on 0..1
+      // (an ease-in t*t would turn -0.5 back into 0.25, a circular one into NaN)
+      if (options?.clamp) {
+        t = Math.max(0, Math.min(1, t))
+      }
+
       // Apply easing if provided
       if (options?.ease) {
         t = options.ease(t)
-      }
-
-      // Clamp if requested
-      if (options?.clamp) {
-        t = Math.max(0, Math.min(1, t))
+        if (options.clamp) t = Math.max(0, Math.min(1, t))
       }
 
       return { i, next, t }
@@ -502,11 +509,13 @@ export function useSpringTransform(
 
   const transform = useMemo(() => {
     return (value: number): number => {
-      // Values beyond the last stop use the last segment
+      // Values beyond the last stop use the last segment (the input range
+      // may be descending)
+      const descending = (inputRange[inputRange.length - 1] ?? 0) < (inputRange[0] ?? 0)
       let i = 0
       for (; i < inputRange.length - 2; i++) {
         const nextVal = inputRange[i + 1]
-        if (nextVal !== undefined && value <= nextVal) break
+        if (nextVal !== undefined && (descending ? value >= nextVal : value <= nextVal)) break
       }
 
       const inCurr = inputRange[i] ?? 0

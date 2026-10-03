@@ -25,6 +25,7 @@ const GesturesDemo = lazy(() => import('./pages/examples/GesturesDemo'))
 const VariantsDemo = lazy(() => import('./pages/examples/VariantsDemo'))
 const TextAnimationsDemo = lazy(() => import('./pages/examples/TextAnimationsDemo'))
 const NativeSpringsDemo = lazy(() => import('./pages/examples/NativeSpringsDemo'))
+const DragDemo = lazy(() => import('./pages/examples/DragDemo'))
 
 // Loading component
 function PageLoader() {
@@ -46,7 +47,7 @@ function App() {
       <Header />
       <div className="flex">
         {showSidebar && <Sidebar />}
-        <main className={`flex-1 ${showSidebar ? 'lg:pl-64' : ''}`}>
+        <main className={`flex-1 min-w-0 ${showSidebar ? 'lg:pl-64' : ''}`}>
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/docs/getting-started" element={<GettingStarted />} />
@@ -97,6 +98,11 @@ function App() {
             <Route path="/examples/gestures" element={
               <Suspense fallback={<PageLoader />}>
                 <GesturesDemo />
+              </Suspense>
+            } />
+            <Route path="/examples/drag" element={
+              <Suspense fallback={<PageLoader />}>
+                <DragDemo />
               </Suspense>
             } />
             <Route path="/examples/variants" element={

@@ -5,17 +5,24 @@ import { useEffect as useEffect2, useRef as useRef2, useState, useCallback } fro
 import { createSpringGroup } from "@oxog/springkit";
 
 // src/adapters/react/hooks/useDestroyOnUnmount.ts
-import { useEffect, useRef } from "react";
+import { useEffect, useReducer, useRef } from "react";
 function useDestroyOnUnmount(destroy) {
   const destroyRef = useRef(destroy);
   destroyRef.current = destroy;
   const mountIdRef = useRef(0);
+  const destroyedRef = useRef(false);
+  const [, forceRender] = useReducer((n) => n + 1, 0);
   useEffect(() => {
     const mountIds = mountIdRef;
     const mountId = ++mountIds.current;
+    if (destroyedRef.current) {
+      destroyedRef.current = false;
+      forceRender();
+    }
     return () => {
       queueMicrotask(() => {
         if (mountIds.current !== mountId) return;
+        destroyedRef.current = true;
         destroyRef.current();
       });
     };
@@ -48,9 +55,10 @@ function useSpring(values, config = {}) {
     return spring2.get();
   }, []);
   const [currentValues, setCurrentValues] = useState(getSpringValues);
+  const springGroup = springRef.current;
   useEffect2(() => {
     isMounted.current = true;
-    const spring2 = springRef.current;
+    const spring2 = springGroup;
     if (!spring2) return;
     const unsubscribe = spring2.subscribe((newValues) => {
       if (isMounted.current) {
@@ -61,7 +69,7 @@ function useSpring(values, config = {}) {
       isMounted.current = false;
       unsubscribe();
     };
-  }, []);
+  }, [springGroup]);
   useEffect2(() => {
     const spring2 = springRef.current;
     if (!spring2) return;
@@ -91,7 +99,7 @@ function useSpringValue(initial, config = {}) {
 
 // src/adapters/react/hooks/useSprings.ts
 import { useEffect as useEffect3, useRef as useRef4, useState as useState2, useCallback as useCallback2 } from "react";
-import { createSpringGroup as createSpringGroup2 } from "@oxog/springkit";
+import { createSpringGroup as createSpringGroup2, delay } from "@oxog/springkit";
 function shallowEqual2(a, b) {
   const keysA = Object.keys(a);
   if (keysA.length !== Object.keys(b).length) return false;
@@ -106,12 +114,12 @@ function useSprings(count, items, defaultConfig = {}) {
   const itemsRef = useRef4(items);
   itemsRef.current = items;
   const getInitialValues = useCallback2(() => {
-    const result = [];
+    const result2 = [];
     for (let i = 0; i < count; i++) {
       const item = itemsRef.current(i);
-      result.push(item.from ?? item.values);
+      result2.push(item.from ?? item.values);
     }
-    return result;
+    return result2;
   }, [count]);
   const [currentValues, setCurrentValues] = useState2(getInitialValues);
   const defaultConfigRef = useRef4(defaultConfig);
@@ -119,31 +127,56 @@ function useSprings(count, items, defaultConfig = {}) {
   const defaultConfigKey = JSON.stringify(defaultConfig);
   const lastTargetsRef = useRef4([]);
   const timeoutsRef = useRef4(/* @__PURE__ */ new Map());
-  const scheduleSet = useCallback2((index, values, delay, config) => {
+  const scheduleSet = useCallback2((index, values, ms, config) => {
     const timeouts = timeoutsRef.current;
-    const pending = timeouts.get(index);
-    if (pending !== void 0) clearTimeout(pending);
-    const timeoutId = setTimeout(() => {
+    timeouts.get(index)?.();
+    timeouts.delete(index);
+    if (!(ms > 0)) {
+      springsRef.current[index]?.set(values, config);
+      return;
+    }
+    const cancel = delay(ms, () => {
       timeouts.delete(index);
       springsRef.current[index]?.set(values, config);
-    }, delay);
-    timeouts.set(index, timeoutId);
+    });
+    timeouts.set(index, cancel);
   }, []);
+  const springsConfigKeyRef = useRef4(null);
   useEffect3(() => {
     isMountedRef.current = true;
-    springsRef.current.forEach((s) => s?.destroy());
-    springsRef.current = [];
-    lastTargetsRef.current = [];
+    const springs = springsRef.current;
+    const timeouts = timeoutsRef.current;
+    const dropSpring = (index) => {
+      springs[index]?.destroy();
+      const pending = timeouts.get(index);
+      if (pending !== void 0) {
+        pending();
+        timeouts.delete(index);
+      }
+    };
+    if (springsConfigKeyRef.current !== defaultConfigKey) {
+      for (let i = 0; i < springs.length; i++) dropSpring(i);
+      springs.length = 0;
+      springsConfigKeyRef.current = defaultConfigKey;
+    }
+    for (let i = count; i < springs.length; i++) dropSpring(i);
+    springs.length = Math.min(springs.length, count);
+    lastTargetsRef.current.length = Math.min(lastTargetsRef.current.length, count);
     const unsubscribers = [];
     setCurrentValues((prev) => prev.length > count ? prev.slice(0, count) : prev);
     for (let i = 0; i < count; i++) {
-      const item = itemsRef.current(i);
-      const initialValues = item.from ?? item.values;
-      const spring2 = createSpringGroup2(initialValues, {
-        ...defaultConfigRef.current,
-        ...item.config
-      });
-      springsRef.current.push(spring2);
+      let spring2 = springs[i];
+      if (!spring2 || spring2.isDestroyed()) {
+        const item = itemsRef.current(i);
+        const initialValues = item.from ?? item.values;
+        spring2 = createSpringGroup2(initialValues, {
+          ...defaultConfigRef.current,
+          ...item.config
+        });
+        springs[i] = spring2;
+        lastTargetsRef.current[i] = item.values;
+        scheduleSet(i, item.values, item.delay ?? 0);
+      }
       const index = i;
       const unsubscribe = spring2.subscribe((values) => {
         if (isMountedRef.current) {
@@ -169,18 +202,21 @@ function useSprings(count, items, defaultConfig = {}) {
         }
       });
       unsubscribers.push(unsubscribe);
-      lastTargetsRef.current[i] = item.values;
-      scheduleSet(i, item.values, item.delay ?? 0);
     }
-    const timeouts = timeoutsRef.current;
     return () => {
       isMountedRef.current = false;
       unsubscribers.forEach((unsub) => unsub());
-      timeouts.forEach(clearTimeout);
-      timeouts.clear();
-      springsRef.current.forEach((s) => s?.destroy());
     };
   }, [count, defaultConfigKey, scheduleSet]);
+  useEffect3(() => {
+    const springs = springsRef.current;
+    const timeouts = timeoutsRef.current;
+    return () => {
+      timeouts.forEach((cancel) => cancel());
+      timeouts.clear();
+      springs.forEach((s) => s?.destroy());
+    };
+  }, []);
   useEffect3(() => {
     for (let i = 0; i < springsRef.current.length; i++) {
       const spring2 = springsRef.current[i];
@@ -192,12 +228,18 @@ function useSprings(count, items, defaultConfig = {}) {
       scheduleSet(i, item.values, item.delay ?? 0, item.config);
     }
   });
-  return currentValues;
+  if (currentValues.length === count) return currentValues;
+  const result = currentValues.slice(0, count);
+  for (let i = result.length; i < count; i++) {
+    const item = itemsRef.current(i);
+    result.push(item.from ?? item.values);
+  }
+  return result;
 }
 
 // src/adapters/react/hooks/useTrail.ts
 import { useEffect as useEffect4, useRef as useRef5, useState as useState3 } from "react";
-import { createSpringValue as createSpringValue2 } from "@oxog/springkit";
+import { createSpringValue as createSpringValue2, delay as delay2 } from "@oxog/springkit";
 function useTrail(count, values, config = {}) {
   const springsRef = useRef5(null);
   const isMountedRef = useRef5(false);
@@ -207,11 +249,14 @@ function useTrail(count, values, config = {}) {
   const isFirstRender = useRef5(true);
   const prevValuesRef = useRef5(JSON.stringify(values));
   const timeoutsRef = useRef5([]);
+  const springsConfigKeyRef = useRef5(null);
+  const configKey = `${config.stiffness}|${config.damping}|${config.mass}`;
   useEffect4(() => {
     isMountedRef.current = true;
     const keys = Object.keys(values);
     const springs = /* @__PURE__ */ new Map();
-    const existingSprings = springsRef.current;
+    const existingSprings = springsConfigKeyRef.current === configKey ? springsRef.current : null;
+    springsConfigKeyRef.current = configKey;
     keys.forEach((key) => {
       const propSprings = [];
       const initialValue = values[key];
@@ -222,6 +267,12 @@ function useTrail(count, values, config = {}) {
         propSprings.push(spring2);
       }
       springs.set(key, propSprings);
+    });
+    springsRef.current?.forEach((propSprings, key) => {
+      const kept = springs.get(key);
+      propSprings.forEach((spring2, index) => {
+        if (kept?.[index] !== spring2) spring2.destroy();
+      });
     });
     springsRef.current = springs;
     setCurrentValues((prev) => prev.length > count ? prev.slice(0, count) : prev);
@@ -249,13 +300,15 @@ function useTrail(count, values, config = {}) {
     return () => {
       isMountedRef.current = false;
       unsubscribers.forEach((unsub) => unsub());
-      springs.forEach((propSprings) => {
+    };
+  }, [count, configKey]);
+  useEffect4(() => {
+    return () => {
+      springsRef.current?.forEach((propSprings) => {
         propSprings.forEach((spring2) => spring2.destroy());
       });
-      springs.clear();
-      springsRef.current = null;
     };
-  }, [count, config.stiffness, config.damping, config.mass]);
+  }, []);
   useEffect4(() => {
     if (!springsRef.current) return;
     const currentValuesString = JSON.stringify(values);
@@ -268,30 +321,53 @@ function useTrail(count, values, config = {}) {
     prevValuesRef.current = currentValuesString;
     const keys = Object.keys(values);
     const staggerDelay = 50;
-    timeoutsRef.current.forEach(clearTimeout);
+    timeoutsRef.current.forEach((cancel) => cancel());
     timeoutsRef.current = [];
     keys.forEach((key) => {
       const propSprings = springsRef.current?.get(key);
       if (!propSprings) return;
       const targetValue = values[key];
       propSprings.forEach((spring2, index) => {
-        const timeoutId = setTimeout(() => {
+        if (index === 0) {
           spring2.set(targetValue, config);
-        }, index * staggerDelay);
-        timeoutsRef.current.push(timeoutId);
+          return;
+        }
+        const cancel = delay2(index * staggerDelay, () => {
+          spring2.set(targetValue, config);
+        });
+        timeoutsRef.current.push(cancel);
       });
     });
     return () => {
-      timeoutsRef.current.forEach(clearTimeout);
+      timeoutsRef.current.forEach((cancel) => cancel());
       timeoutsRef.current = [];
     };
   }, [JSON.stringify(values), config.stiffness, config.damping]);
-  return currentValues;
+  if (currentValues.length === count) return currentValues;
+  const result = currentValues.slice(0, count);
+  while (result.length < count) result.push({ ...values });
+  return result;
 }
 
 // src/adapters/react/hooks/useDrag.ts
 import { useCallback as useCallback3, useEffect as useEffect5, useRef as useRef6, useState as useState4 } from "react";
 import { createDragSpring } from "@oxog/springkit";
+var elementIds = /* @__PURE__ */ new WeakMap();
+var nextElementId = 0;
+function configKeyOf(config) {
+  return JSON.stringify(config, (_key, value) => {
+    if (typeof value === "function") return void 0;
+    if (typeof Element !== "undefined" && value instanceof Element) {
+      let id = elementIds.get(value);
+      if (id === void 0) {
+        id = nextElementId++;
+        elementIds.set(value, id);
+      }
+      return `#element${id}`;
+    }
+    return value;
+  });
+}
 function useDrag(config = {}) {
   const dragSpringRef = useRef6(null);
   const positionRef = useRef6({ x: 0, y: 0 });
@@ -316,6 +392,7 @@ function useDrag(config = {}) {
       });
     }
   };
+  const configKey = configKeyOf(config);
   useEffect5(() => {
     let isActive = true;
     if (dragSpringRef.current) {
@@ -327,6 +404,7 @@ function useDrag(config = {}) {
       rafIdRef.current = null;
     }
     if (element) {
+      const carried = positionRef.current;
       dragSpringRef.current = createDragSpring(element, {
         ...configRef.current,
         onDragStart: (e) => {
@@ -347,9 +425,11 @@ function useDrag(config = {}) {
           configRef.current.onUpdate?.(x, y);
         }
       });
+      if (carried.x !== 0 || carried.y !== 0) dragSpringRef.current.setPosition(carried.x, carried.y);
     }
     return () => {
       isActive = false;
+      if (dragSpringRef.current?.isDragging()) setIsDragging(false);
       dragSpringRef.current?.destroy();
       dragSpringRef.current = null;
       if (rafIdRef.current !== null) {
@@ -357,7 +437,7 @@ function useDrag(config = {}) {
         rafIdRef.current = null;
       }
     };
-  }, [element]);
+  }, [element, configKey]);
   const set = (values) => {
     const rawX = values.x ?? positionRef.current.x;
     const rawY = values.y ?? positionRef.current.y;
@@ -376,56 +456,93 @@ function useDrag(config = {}) {
 // src/adapters/react/hooks/useGesture.ts
 import { useRef as useRef7 } from "react";
 function useGesture(handlers) {
-  const stateRef = useRef7({
-    isDragging: false,
-    startX: 0,
-    startY: 0,
-    currentX: 0,
-    currentY: 0
-  });
+  const pointersRef = useRef7(/* @__PURE__ */ new Map());
+  const dragRef = useRef7(null);
+  const pinchRef = useRef7(null);
+  const call = (name, fn, arg) => {
+    if (!fn) return;
+    try {
+      fn(arg);
+    } catch (error) {
+      console.error(`[SpringKit] Gesture ${name} error:`, error);
+    }
+  };
+  const startPinch = () => {
+    const [first, second] = Array.from(pointersRef.current.entries());
+    if (!first || !second) return;
+    const [idA, a] = first;
+    const [idB, b] = second;
+    const angle = angleOf(a, b);
+    pinchRef.current = {
+      ids: [idA, idB],
+      startDistance: distanceOf(a, b),
+      startMid: midpointOf(a, b),
+      lastAngle: angle,
+      angle: 0
+    };
+  };
   const onPointerDown = (e) => {
     try {
       const target = e.currentTarget;
       target?.setPointerCapture?.(e.pointerId);
     } catch {
     }
-    stateRef.current = {
-      isDragging: true,
-      startX: e.clientX,
-      startY: e.clientY,
-      currentX: e.clientX,
-      currentY: e.clientY
-    };
-    try {
-      handlers.onDragStart?.(e);
-    } catch (error) {
-      console.error("[SpringKit] Gesture onDragStart error:", error);
+    pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (!dragRef.current) {
+      dragRef.current = { pointerId: e.pointerId, startX: e.clientX, startY: e.clientY };
+      call("onDragStart", handlers.onDragStart, e);
     }
+    if (pointersRef.current.size === 2) startPinch();
   };
   const onPointerMove = (e) => {
-    if (!stateRef.current.isDragging) return;
-    const deltaX = e.clientX - stateRef.current.startX;
-    const deltaY = e.clientY - stateRef.current.startY;
-    try {
-      handlers.onDrag?.({ x: deltaX, y: deltaY });
-    } catch (error) {
-      console.error("[SpringKit] Gesture onDrag error:", error);
+    const pointers = pointersRef.current;
+    if (!pointers.has(e.pointerId)) return;
+    pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const drag = dragRef.current;
+    if (drag && drag.pointerId === e.pointerId) {
+      call("onDrag", handlers.onDrag, { x: e.clientX - drag.startX, y: e.clientY - drag.startY });
     }
-    stateRef.current.currentX = e.clientX;
-    stateRef.current.currentY = e.clientY;
+    const pinch = pinchRef.current;
+    if (!pinch || !pinch.ids.includes(e.pointerId)) return;
+    const a = pointers.get(pinch.ids[0]);
+    const b = pointers.get(pinch.ids[1]);
+    if (!a || !b) return;
+    const angle = angleOf(a, b);
+    let delta = angle - pinch.lastAngle;
+    if (delta > 180) delta -= 360;
+    else if (delta < -180) delta += 360;
+    pinch.lastAngle = angle;
+    pinch.angle += delta;
+    const mid = midpointOf(a, b);
+    const state = {
+      x: mid.x - pinch.startMid.x,
+      y: mid.y - pinch.startMid.y,
+      scale: pinch.startDistance === 0 ? 1 : distanceOf(a, b) / pinch.startDistance,
+      angle: pinch.angle
+    };
+    call("onPinch", handlers.onPinch, state);
+    call("onRotate", handlers.onRotate, state);
   };
-  const onPointerUp = () => {
-    stateRef.current.isDragging = false;
-  };
-  const onPointerCancel = () => {
-    stateRef.current.isDragging = false;
+  const onPointerEnd = (e) => {
+    pointersRef.current.delete(e.pointerId);
+    if (pinchRef.current?.ids.includes(e.pointerId)) pinchRef.current = null;
+    if (dragRef.current?.pointerId === e.pointerId) dragRef.current = null;
   };
   return {
     onPointerDown,
     onPointerMove,
-    onPointerUp,
-    onPointerCancel
+    onPointerUp: onPointerEnd,
+    onPointerCancel: onPointerEnd
   };
+}
+function distanceOf(a, b) {
+  return Math.hypot(b.x - a.x, b.y - a.y);
+}
+function angleOf(a, b) {
+  return Math.atan2(b.y - a.y, b.x - a.x) * 180 / Math.PI;
+}
+function midpointOf(a, b) {
+  return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
 }
 
 // src/adapters/react/hooks/usePresence.ts
@@ -456,7 +573,7 @@ function usePresenceCustom() {
 
 // src/adapters/react/hooks/useAnimate.ts
 import { useRef as useRef8, useCallback as useCallback4, useEffect as useEffect6 } from "react";
-import { createSpringValue as createSpringValue3 } from "@oxog/springkit";
+import { createSpringValue as createSpringValue3, delay as animationDelay } from "@oxog/springkit";
 var TRANSFORM_DEFAULTS = {
   x: 0,
   y: 0,
@@ -558,15 +675,15 @@ function useAnimate() {
     });
   }, []);
   const animate = useCallback4(async (target, options = {}) => {
-    const { config = {}, delay = 0, onComplete } = options;
+    const { config = {}, delay: delay6 = 0, onComplete } = options;
     try {
-      if (delay > 0) {
+      if (delay6 > 0) {
         await trackedPromise((resolve) => {
-          const timeoutId = setTimeout(() => {
-            timeoutIdsRef.current.delete(timeoutId);
+          const cancel = animationDelay(delay6, () => {
+            timeoutIdsRef.current.delete(cancel);
             resolve();
-          }, delay);
-          timeoutIdsRef.current.add(timeoutId);
+          });
+          timeoutIdsRef.current.add(cancel);
         });
       }
       if (isDestroyedRef.current) return;
@@ -659,7 +776,7 @@ function useAnimate() {
       isDestroyedRef.current = true;
       rafIds.forEach((id) => cancelAnimationFrame(id));
       rafIds.clear();
-      timeoutIds.forEach((id) => clearTimeout(id));
+      timeoutIds.forEach((cancel) => cancel());
       timeoutIds.clear();
       cleanup.forEach((c) => c());
       springs.forEach((spring2) => spring2.destroy());
@@ -734,6 +851,7 @@ import { useRef as useRef10, useEffect as useEffect8, useMemo, useCallback as us
 import {
   createMotionValue as createMotionValue2,
   parseColorRGBA,
+  isColorString,
   mixColorsRGBA,
   formatRGBA
 } from "@oxog/springkit";
@@ -787,14 +905,15 @@ function useMotionValueEvent(value, event, callback) {
   const callbackRef = useRef10(callback);
   callbackRef.current = callback;
   useEffect8(() => {
-    if (event === "change") {
-      return value.subscribe((v) => callbackRef.current(v));
-    }
     return value.on(event, () => callbackRef.current(value.get()));
   }, [value, event]);
 }
 var STRING_TOKEN_REGEX = /#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3,4})\b|(?:rgba?|hsla?)\([^)]*\)|\btransparent\b|-?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?/gi;
 function parseAnimatableString(value) {
+  const trimmed = value.trim();
+  if (/^[a-z]+$/i.test(trimmed) && trimmed.toLowerCase() !== "transparent" && isColorString(trimmed)) {
+    return { parts: ["", ""], tokens: [parseColorRGBA(trimmed)] };
+  }
   const parts = [];
   const tokens = [];
   let last = 0;
@@ -834,20 +953,22 @@ function useTransform(source, inputRangeOrTransform, outputRange, options) {
     }
     const inputRange = inputRangeOrTransform;
     const locate = (value) => {
+      const descending = (inputRange[inputRange.length - 1] ?? 0) < (inputRange[0] ?? 0);
       let i = 0;
       for (; i < inputRange.length - 2; i++) {
         const nextVal = inputRange[i + 1];
-        if (nextVal !== void 0 && value <= nextVal) break;
+        if (nextVal !== void 0 && (descending ? value >= nextVal : value <= nextVal)) break;
       }
       const next = Math.min(i + 1, inputRange.length - 1);
       const inputMin = inputRange[i] ?? 0;
       const inputMax = inputRange[next] ?? 1;
       let t = inputMax !== inputMin ? (value - inputMin) / (inputMax - inputMin) : 0;
-      if (options?.ease) {
-        t = options.ease(t);
-      }
       if (options?.clamp) {
         t = Math.max(0, Math.min(1, t));
+      }
+      if (options?.ease) {
+        t = options.ease(t);
+        if (options.clamp) t = Math.max(0, Math.min(1, t));
       }
       return { i, next, t };
     };
@@ -960,10 +1081,11 @@ function useSpringTransform(source, inputRange, outputRange, springConfig) {
   const unsubscribeRef = useRef10(null);
   const transform = useMemo(() => {
     return (value) => {
+      const descending = (inputRange[inputRange.length - 1] ?? 0) < (inputRange[0] ?? 0);
       let i = 0;
       for (; i < inputRange.length - 2; i++) {
         const nextVal = inputRange[i + 1];
-        if (nextVal !== void 0 && value <= nextVal) break;
+        if (nextVal !== void 0 && (descending ? value >= nextVal : value <= nextVal)) break;
       }
       const inCurr = inputRange[i] ?? 0;
       const inNext = inputRange[i + 1] ?? 1;
@@ -1202,20 +1324,30 @@ function useDelay(source, frames) {
 import { useRef as useRef11, useCallback as useCallback6, useMemo as useMemo2 } from "react";
 function useDragControls() {
   const isDraggingRef = useRef11(false);
+  const activeCountRef = useRef11(0);
   const listenerRef = useRef11(null);
   const stopRef = useRef11(null);
+  const subscribersRef = useRef11(/* @__PURE__ */ new Set());
   const start = useCallback6((event, options) => {
     isDraggingRef.current = true;
     event.preventDefault();
-    if (listenerRef.current) {
-      const pointerEvent = "nativeEvent" in event ? event.nativeEvent : event;
-      listenerRef.current(pointerEvent, options);
+    const pointerEvent = "nativeEvent" in event ? event.nativeEvent : event;
+    listenerRef.current?.(pointerEvent, options);
+    for (const subscriber of Array.from(subscribersRef.current)) {
+      subscriber.start(pointerEvent, options);
     }
   }, []);
   const stop = useCallback6(() => {
     isDraggingRef.current = false;
-    if (stopRef.current) {
-      stopRef.current();
+    stopRef.current?.();
+    for (const subscriber of Array.from(subscribersRef.current)) {
+      subscriber.stop();
+    }
+  }, []);
+  const cancel = useCallback6(() => {
+    isDraggingRef.current = false;
+    for (const subscriber of Array.from(subscribersRef.current)) {
+      subscriber.cancel();
     }
   }, []);
   const isDragging = useCallback6(() => {
@@ -1224,22 +1356,31 @@ function useDragControls() {
   const controls = useMemo2(() => ({
     start,
     stop,
+    cancel,
     isDragging,
+    _subscribe: (subscriber) => {
+      subscribersRef.current.add(subscriber);
+      return () => {
+        subscribersRef.current.delete(subscriber);
+      };
+    },
     _setDragHandler: (handler) => {
       listenerRef.current = handler;
     },
     _setStopHandler: (handler) => {
       stopRef.current = handler;
     },
-    // Called by the dragged component when a drag starts / ends, including
-    // drags started by its own pointer listener
+    // Called by the dragged component when a gesture starts / ends, including
+    // gestures started by its own pointer listener
     _notifyDragStart: () => {
+      activeCountRef.current++;
       isDraggingRef.current = true;
     },
     _notifyDragEnd: () => {
-      isDraggingRef.current = false;
+      activeCountRef.current = Math.max(0, activeCountRef.current - 1);
+      if (activeCountRef.current === 0) isDraggingRef.current = false;
     }
-  }), [start, stop, isDragging]);
+  }), [start, stop, cancel, isDragging]);
   return controls;
 }
 
@@ -1343,6 +1484,9 @@ function useElementEffect(effect, getDeps) {
 }
 
 // src/adapters/react/hooks/useInView.ts
+function hasIntersectionObserver() {
+  return typeof IntersectionObserver !== "undefined";
+}
 function useInView(options = {}) {
   const {
     once = false,
@@ -1359,6 +1503,11 @@ function useInView(options = {}) {
     const element = ref.current;
     if (!element) return;
     if (once && hasTriggered.current) return;
+    if (!hasIntersectionObserver()) {
+      hasTriggered.current = true;
+      setInView(true);
+      return;
+    }
     let threshold;
     if (amount === "some") {
       threshold = 0;
@@ -1404,6 +1553,7 @@ function useInViewCallback(callback, options = {}) {
     const element = ref.current;
     if (!element) return;
     if (once && hasTriggered.current) return;
+    if (!hasIntersectionObserver()) return;
     let threshold;
     if (amount === "some") {
       threshold = 0;
@@ -1444,7 +1594,7 @@ function useInViewMultiple(options = {}) {
   const onceRef = useRef14(once);
   onceRef.current = once;
   useEffect11(() => {
-    if (!isBrowser) return;
+    if (!isBrowser || !hasIntersectionObserver()) return;
     let threshold;
     if (amount === "some") {
       threshold = 0;
@@ -1560,7 +1710,7 @@ function useScroll(options = {}) {
     const scrollYProgress = scrollYProgressRef.current;
     const containerEl = container?.current ?? null;
     const targetEl = target?.current ?? null;
-    const scrollContainer = containerEl ?? targetEl ?? window;
+    const scrollContainer = containerEl ?? window;
     const isWindow = scrollContainer === window;
     const getScrollPosition = () => {
       if (isWindow) {
@@ -1636,23 +1786,24 @@ function useScroll(options = {}) {
     handleScroll();
     const scrollTarget = isWindow ? window : scrollContainer;
     scrollTarget.addEventListener("scroll", handleScroll, { passive: true });
-    const listenToWindowScroll = !isWindow && !containerEl && !!targetEl;
-    if (listenToWindowScroll) {
-      window.addEventListener("scroll", handleScroll, { passive: true });
-    }
     window.addEventListener("resize", handleScroll, { passive: true });
     return () => {
       isActive = false;
       scrollTarget.removeEventListener("scroll", handleScroll);
-      if (listenToWindowScroll) {
-        window.removeEventListener("scroll", handleScroll);
-      }
       window.removeEventListener("resize", handleScroll);
       if (rafId !== null) {
         cancelAnimationFrame(rafId);
       }
     };
-  }, () => [container?.current ?? null, target?.current ?? null, offsetStart, offsetEnd, axis]);
+  }, () => [
+    container?.current ?? null,
+    target?.current ?? null,
+    offsetStart,
+    offsetEnd,
+    axis,
+    // Re-attach to recreated values (after a hidden <Activity> destroyed them)
+    scrollXRef.current
+  ]);
   useDestroyOnUnmount(() => {
     scrollXRef.current?.destroy();
     scrollYRef.current?.destroy();
@@ -1707,9 +1858,10 @@ function useScrollVelocity(axis = "y") {
   if (velocityRef.current === null || velocityRef.current.isDestroyed()) {
     velocityRef.current = createMotionValue3(0);
   }
+  const velocityValue = velocityRef.current;
   useEffect12(() => {
     if (!isBrowser) return;
-    const velocity = velocityRef.current;
+    const velocity = velocityValue;
     const readScroll = () => axis === "y" ? window.scrollY || window.pageYOffset : window.scrollX || window.pageXOffset;
     let lastScroll = readScroll();
     let lastTime = performance.now();
@@ -1735,7 +1887,7 @@ function useScrollVelocity(axis = "y") {
       window.removeEventListener("scroll", handleScroll);
       if (idleTimer !== null) clearTimeout(idleTimer);
     };
-  }, [axis]);
+  }, [axis, velocityValue]);
   useDestroyOnUnmount(() => {
     velocityRef.current?.destroy();
   });
@@ -1877,28 +2029,34 @@ function useGestureAnimation(states) {
 }
 
 // src/adapters/react/hooks/useReducedMotion.ts
-import { useState as useState9, useEffect as useEffect14 } from "react";
+import { useSyncExternalStore } from "react";
+var REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
+function noop() {
+}
+function subscribeToReducedMotion(onChange) {
+  if (!isBrowser || typeof window.matchMedia !== "function") return noop;
+  const mediaQuery = window.matchMedia(REDUCED_MOTION_QUERY);
+  if (!mediaQuery) return noop;
+  if (typeof mediaQuery.addEventListener === "function") {
+    mediaQuery.addEventListener("change", onChange);
+    return () => mediaQuery.removeEventListener("change", onChange);
+  }
+  mediaQuery.addListener?.(onChange);
+  return () => mediaQuery.removeListener?.(onChange);
+}
+function getServerReducedMotion() {
+  return false;
+}
 function useReducedMotion() {
-  const [prefersReducedMotion2, setPrefersReducedMotion] = useState9(false);
-  useEffect14(() => {
-    if (!isBrowser || typeof window.matchMedia !== "function") return;
-    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-    setPrefersReducedMotion(mediaQuery.matches);
-    const handleChange = (event) => {
-      setPrefersReducedMotion(event.matches);
-    };
-    if (mediaQuery.addEventListener) {
-      mediaQuery.addEventListener("change", handleChange);
-      return () => mediaQuery.removeEventListener("change", handleChange);
-    }
-    mediaQuery.addListener(handleChange);
-    return () => mediaQuery.removeListener(handleChange);
-  }, []);
-  return prefersReducedMotion2;
+  return useSyncExternalStore(
+    subscribeToReducedMotion,
+    getReducedMotionPreference,
+    getServerReducedMotion
+  );
 }
 function getReducedMotionPreference() {
   if (!isBrowser || typeof window.matchMedia !== "function") return false;
-  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  return window.matchMedia(REDUCED_MOTION_QUERY)?.matches ?? false;
 }
 function useReducedMotionConfig(configs) {
   const prefersReducedMotion2 = useReducedMotion();
@@ -1913,7 +2071,7 @@ function useReducedMotionValue(animatedValue, reducedValue) {
 }
 
 // src/adapters/react/hooks/useScrollLinked.ts
-import { useRef as useRef17, useState as useState10 } from "react";
+import { useRef as useRef17, useState as useState9 } from "react";
 import {
   createScrollProgress,
   createParallax,
@@ -1923,8 +2081,8 @@ import {
 function useScrollProgress(options = {}) {
   const { target, offset, smooth } = options;
   const smoothKey = JSON.stringify(smooth ?? null);
-  const [progress, setProgress] = useState10(0);
-  const [info, setInfo] = useState10({
+  const [progress, setProgress] = useState9(0);
+  const [info, setInfo] = useState9({
     progress: 0,
     scrollY: 0,
     velocity: 0,
@@ -1933,7 +2091,7 @@ function useScrollProgress(options = {}) {
     visibleRatio: 1
   });
   const scrollProgressRef = useRef17(null);
-  useIsomorphicLayoutEffect(() => {
+  useElementEffect(() => {
     const element = target?.current ?? null;
     const scrollProgress = createScrollProgress(element, { offset, smooth });
     scrollProgressRef.current = scrollProgress;
@@ -1945,7 +2103,7 @@ function useScrollProgress(options = {}) {
       unsubscribe();
       scrollProgress.destroy();
     };
-  }, [target?.current, offset?.[0], offset?.[1], smoothKey]);
+  }, () => [target?.current ?? null, offset?.[0], offset?.[1], smoothKey]);
   return {
     progress,
     info,
@@ -1954,10 +2112,12 @@ function useScrollProgress(options = {}) {
 }
 function useParallax(options = {}) {
   const ref = useRef17(null);
-  const [offset, setOffset] = useState10(0);
-  useIsomorphicLayoutEffect(() => {
+  const [offset, setOffset] = useState9(0);
+  const optionsRef = useRef17(options);
+  optionsRef.current = options;
+  useElementEffect(() => {
     if (!ref.current) return;
-    const parallax = createParallax(ref.current, options);
+    const parallax = createParallax(ref.current, optionsRef.current);
     let rafId = null;
     let isActive = true;
     const update = () => {
@@ -1973,18 +2133,20 @@ function useParallax(options = {}) {
       }
       parallax.destroy();
     };
-  }, [options.speed, options.direction, options.rootMargin]);
+  }, () => [ref.current, options.speed, options.direction, options.rootMargin]);
   return { ref, offset };
 }
 function useScrollTrigger(options = {}) {
   const ref = useRef17(null);
-  const [isActive, setIsActive] = useState10(false);
-  const [progress, setProgress] = useState10(0);
-  const [hasEntered, setHasEntered] = useState10(false);
-  useIsomorphicLayoutEffect(() => {
+  const [isActive, setIsActive] = useState9(false);
+  const [progress, setProgress] = useState9(0);
+  const [hasEntered, setHasEntered] = useState9(false);
+  const optionsRef = useRef17(options);
+  optionsRef.current = options;
+  useElementEffect(() => {
     if (!ref.current) return;
     const trigger = createScrollTrigger(ref.current, {
-      ...options,
+      ...optionsRef.current,
       onEnter: () => setHasEntered(true),
       onProgress: (info) => {
         setIsActive(info.progress > 0 && info.progress < 1);
@@ -1992,7 +2154,8 @@ function useScrollTrigger(options = {}) {
       }
     });
     return () => trigger.destroy();
-  }, [
+  }, () => [
+    ref.current,
     options.start,
     options.end,
     options.startOffset,
@@ -2003,7 +2166,7 @@ function useScrollTrigger(options = {}) {
   return { ref, isActive, progress, hasEntered };
 }
 function useScrollLinkedValue(scrollProgress, config) {
-  const [value, setValue] = useState10(config.outputRange[0] ?? 0);
+  const [value, setValue] = useState9(config.outputRange[0] ?? 0);
   const configRef = useRef17(config);
   configRef.current = config;
   const inputRangeKey = JSON.stringify(config.inputRange);
@@ -2024,13 +2187,13 @@ function useScrollLinkedValue(scrollProgress, config) {
 }
 
 // src/adapters/react/hooks/useTimeline.ts
-import { useRef as useRef18, useCallback as useCallback9, useMemo as useMemo3, useState as useState11 } from "react";
+import { useRef as useRef18, useCallback as useCallback9, useMemo as useMemo3, useState as useState10 } from "react";
 import {
   createTimeline
 } from "@oxog/springkit";
 function useTimeline(options = {}) {
   const timelineRef = useRef18(null);
-  const [timeline, setTimeline] = useState11(null);
+  const [timeline, setTimeline] = useState10(null);
   const optionsRef = useRef18(options);
   optionsRef.current = options;
   useIsomorphicLayoutEffect(() => {
@@ -2113,7 +2276,7 @@ function useTimeline(options = {}) {
   return returnValue;
 }
 function useTimelineState(timeline) {
-  const [state, setState] = useState11({
+  const [state, setState] = useState10({
     progress: 0,
     isPlaying: false,
     isPaused: true,
@@ -2154,14 +2317,14 @@ function useTimelineState(timeline) {
 }
 
 // src/adapters/react/hooks/useMorph.ts
-import { useState as useState12, useRef as useRef19, useCallback as useCallback10 } from "react";
+import { useState as useState11, useRef as useRef19, useCallback as useCallback10 } from "react";
 import {
   createMorph,
   createMorphSequence
 } from "@oxog/springkit";
 function useMorph(initialPath, options = {}) {
-  const [path, setPath] = useState12(initialPath);
-  const [progress, setProgressState] = useState12(0);
+  const [path, setPath] = useState11(initialPath);
+  const [progress, setProgressState] = useState11(0);
   const morphRef = useRef19(null);
   const activeRef = useRef19(null);
   const isMountedRef = useRef19(false);
@@ -2197,7 +2360,7 @@ function useMorph(initialPath, options = {}) {
       isMountedRef.current = false;
       unsubscribe();
     };
-  }, [initialPath]);
+  }, [initialPath, controller]);
   useDestroyOnUnmount(() => {
     const current = morphRef.current?.controller ?? null;
     current?.destroy();
@@ -2220,8 +2383,8 @@ function useMorph(initialPath, options = {}) {
   };
 }
 function useMorphSequence(paths, options = {}) {
-  const [path, setPath] = useState12(paths[0] ?? "");
-  const [currentIndex, setCurrentIndex] = useState12(0);
+  const [path, setPath] = useState11(paths[0] ?? "");
+  const [currentIndex, setCurrentIndex] = useState11(0);
   const isMountedRef = useRef19(false);
   const sequenceRef = useRef19(null);
   const optionsRef = useRef19(options);
@@ -2261,7 +2424,7 @@ function useMorphSequence(paths, options = {}) {
   };
 }
 function useMorphRef(initialPath, options = {}) {
-  const [progress, setProgressState] = useState12(0);
+  const [progress, setProgressState] = useState11(0);
   const morphRef = useRef19(null);
   const elementRef = useRef19(null);
   const unsubscribeRef = useRef19(null);
@@ -2307,7 +2470,7 @@ function useMorphRef(initialPath, options = {}) {
 }
 
 // src/adapters/react/hooks/useLayoutAnimation.ts
-import { useRef as useRef20, useCallback as useCallback11, useState as useState13, createContext as createContext2 } from "react";
+import { useRef as useRef20, useCallback as useCallback11, useState as useState12, createContext as createContext2 } from "react";
 import * as React from "react";
 import {
   createLayoutGroup,
@@ -2320,7 +2483,7 @@ import {
 var LayoutGroupContext = createContext2(null);
 var SharedLayoutContextReact = createContext2(null);
 function useLayoutGroup(options = {}) {
-  const [layoutGroup] = useState13(() => createLayoutGroup(options));
+  const [layoutGroup] = useState12(() => createLayoutGroup(options));
   useDestroyOnUnmount(() => {
     layoutGroup.destroy();
   });
@@ -2347,7 +2510,7 @@ function useLayoutGroup(options = {}) {
 function useLayoutId(layoutId, options = {}) {
   const { group, ...config } = options;
   const elementRef = useRef20(null);
-  const [localGroup] = useState13(() => createLayoutGroup(config));
+  const [localGroup] = useState12(() => createLayoutGroup(config));
   useDestroyOnUnmount(() => {
     localGroup.destroy();
   });
@@ -2430,7 +2593,7 @@ function LayoutGroupProvider({
   children,
   config
 }) {
-  const [layoutGroup] = useState13(() => createLayoutGroup(config));
+  const [layoutGroup] = useState12(() => createLayoutGroup(config));
   useDestroyOnUnmount(() => {
     layoutGroup.destroy();
   });
@@ -2443,7 +2606,7 @@ function LayoutGroupProvider({
 function SharedLayoutProvider({
   children
 }) {
-  const [sharedContext] = useState13(() => createSharedLayoutContext());
+  const [sharedContext] = useState12(() => createSharedLayoutContext());
   useDestroyOnUnmount(() => {
     sharedContext.destroy();
   });
@@ -2455,14 +2618,317 @@ function SharedLayoutProvider({
 }
 
 // src/adapters/react/hooks/useVariants.ts
-import { useRef as useRef21, useCallback as useCallback12, useEffect as useEffect15, useMemo as useMemo4, useState as useState14, createContext as createContext3, useContext as useContext2 } from "react";
+import { useRef as useRef22, useCallback as useCallback13, useEffect as useEffect15, useMemo as useMemo4, useState as useState14, createContext as createContext3, useContext as useContext2 } from "react";
 import * as React2 from "react";
 import {
   getVariant,
   calculateStaggerDelays,
   buildTransformString,
-  isTransformProperty
+  isTransformProperty,
+  solveSpring,
+  delay as delay3
 } from "@oxog/springkit";
+
+// src/adapters/react/utils/useAnimatableValues.ts
+import { useCallback as useCallback12, useEffect as useEffect14, useRef as useRef21, useState as useState13 } from "react";
+import { createSpringGroup as createSpringGroup3 } from "@oxog/springkit";
+
+// src/adapters/react/utils/animatable.ts
+import { isColorString as isColorString2, parseColorRGBA as parseColorRGBA2, formatRGBA as formatRGBA2 } from "@oxog/springkit";
+var NUMERIC_TEMPLATE = {
+  id: "number",
+  numeric: true,
+  parts: ["", ""],
+  kinds: ["n"],
+  size: 1
+};
+var TOKEN_REGEX = /\burl\([^)]*\)|#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3,4})\b|(?:rgba?|hsla?)\([^)]*\)|[a-z][a-z0-9-]*|[-+]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?/gi;
+var ALPHA_EPSILON = 1e-6;
+function parseString(value) {
+  const parts = [];
+  const kinds = [];
+  const channels = [];
+  const colors = [];
+  let literal = "";
+  let last = 0;
+  for (const match of value.matchAll(TOKEN_REGEX)) {
+    const text = match[0];
+    const index = match.index ?? 0;
+    const first = text.charCodeAt(0);
+    const isNumber = first >= 48 && first <= 57 || text[0] === "." || text[0] === "-" || text[0] === "+";
+    let color = null;
+    if (!isNumber) {
+      const isFunction = text.endsWith(")");
+      const nested = isFunction && text.indexOf("(") !== text.lastIndexOf("(");
+      const isCall = !isFunction && value[index + text.length] === "(";
+      if (!nested && !isCall && isColorString2(text)) color = parseColorRGBA2(text);
+      if (!color) continue;
+    }
+    literal += value.slice(last, index);
+    parts.push(literal);
+    literal = "";
+    last = index + text.length;
+    if (color) {
+      kinds.push("c");
+      const a = Math.max(0, Math.min(1, color.a));
+      channels.push(color.r * a, color.g * a, color.b * a, a);
+      colors.push(color);
+    } else {
+      kinds.push("n");
+      channels.push(parseFloat(text));
+      colors.push(void 0);
+    }
+  }
+  literal += value.slice(last);
+  parts.push(literal);
+  return {
+    raw: value,
+    template: {
+      id: `${kinds.join("")}${parts.join("")}`,
+      numeric: false,
+      parts,
+      kinds,
+      size: channels.length
+    },
+    channels,
+    colors
+  };
+}
+var cache = /* @__PURE__ */ new Map();
+var CACHE_LIMIT = 500;
+function parseAnimatableValue(value) {
+  if (typeof value === "number") {
+    return { raw: value, template: NUMERIC_TEMPLATE, channels: [value], colors: [] };
+  }
+  let parsed = cache.get(value);
+  if (!parsed) {
+    parsed = parseString(value);
+    if (cache.size >= CACHE_LIMIT) cache.clear();
+    cache.set(value, parsed);
+  }
+  return parsed;
+}
+var formatNumber2 = (value) => String(Math.round(value * 1e6) / 1e6 || 0);
+function composeAnimatableValue(target, channels) {
+  const { template } = target;
+  if (template.numeric) return channels[0] ?? target.raw;
+  let exact = true;
+  for (let i = 0; i < template.size; i++) {
+    const value = channels[i];
+    if (value === void 0) return target.raw;
+    if (value !== target.channels[i]) exact = false;
+  }
+  if (exact) return target.raw;
+  let result = template.parts[0] ?? "";
+  let c = 0;
+  for (let i = 0; i < template.kinds.length; i++) {
+    if (template.kinds[i] === "n") {
+      result += formatNumber2(channels[c]);
+      c += 1;
+    } else {
+      const alpha = channels[c + 3];
+      if (alpha <= ALPHA_EPSILON) {
+        const color = target.colors[i] ?? { r: 0, g: 0, b: 0, a: 0 };
+        result += formatRGBA2({ r: color.r, g: color.g, b: color.b, a: 0 });
+      } else {
+        result += formatRGBA2({
+          r: channels[c] / alpha,
+          g: channels[c + 1] / alpha,
+          b: channels[c + 2] / alpha,
+          a: alpha
+        });
+      }
+      c += 4;
+    }
+    result += template.parts[i + 1] ?? "";
+  }
+  return result;
+}
+function hiddenChannelKey(key, index) {
+  return `\0${key}\0${index}`;
+}
+var defaultChannelKeysOf = (key, value) => {
+  if (value.template.numeric) return [key];
+  const keys = [];
+  for (let i = 0; i < value.template.size; i++) keys.push(hiddenChannelKey(key, i));
+  return keys;
+};
+function parseAnimatableRecord(values) {
+  const result = {};
+  for (const key in values) result[key] = parseAnimatableValue(values[key]);
+  return result;
+}
+function channelValuesOf(values, keysOf) {
+  const result = {};
+  for (const key in values) {
+    const value = values[key];
+    const keys = keysOf(key, value);
+    for (let i = 0; i < keys.length; i++) result[keys[i]] = value.channels[i];
+  }
+  return result;
+}
+function composeAnimatableRecord(values, channels, keysOf) {
+  const result = {};
+  for (const key in values) {
+    const value = values[key];
+    result[key] = composeAnimatableValue(
+      value,
+      keysOf(key, value).map((channelKey) => channels[channelKey])
+    );
+  }
+  return result;
+}
+function animatableSignature(values) {
+  let signature = "";
+  for (const key in values) {
+    const value = values[key];
+    signature += `${key}${typeof value === "number" ? "n" : "s"}${String(value)}`;
+  }
+  return signature;
+}
+function planTransition(from, to, keysOf, instant) {
+  const plan = { jump: {}, set: {}, structural: false };
+  for (const key in to) {
+    const next = to[key];
+    const previous = from[key];
+    const sameTemplate = previous !== void 0 && previous.template.id === next.template.id;
+    if (!sameTemplate) plan.structural = true;
+    const destination = sameTemplate && !instant ? plan.set : plan.jump;
+    const keys = keysOf(key, next);
+    for (let i = 0; i < keys.length; i++) destination[keys[i]] = next.channels[i];
+  }
+  for (const key in from) {
+    if (!(key in to)) plan.structural = true;
+  }
+  return plan;
+}
+function hasKeys(record) {
+  for (const _ in record) return true;
+  return false;
+}
+
+// src/adapters/react/utils/useAnimatableValues.ts
+function sameChannels(a, b) {
+  const keys = Object.keys(a);
+  if (keys.length !== Object.keys(b).length) return false;
+  return keys.every((key) => a[key] === b[key]);
+}
+function useAnimatableValues(target, physics) {
+  const [state, setState] = useState13(() => {
+    const values = parseAnimatableRecord(target);
+    return { values, channels: channelValuesOf(values, defaultChannelKeysOf) };
+  });
+  const shownRef = useRef21(state);
+  const appliedRef = useRef21(state.values);
+  const signatureRef = useRef21(null);
+  if (signatureRef.current === null) signatureRef.current = animatableSignature(target);
+  const springRef = useRef21(null);
+  const unsubscribeRef = useRef21(null);
+  const latestRef = useRef21(state.channels);
+  const mountedRef = useRef21(false);
+  const physicsRef = useRef21(physics);
+  physicsRef.current = physics;
+  const show = useCallback12((values, channels) => {
+    const shown = shownRef.current;
+    if (shown.values === values && sameChannels(shown.channels, channels)) return;
+    const next = { values, channels };
+    shownRef.current = next;
+    if (mountedRef.current) setState(next);
+  }, []);
+  useEffect14(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+  useDestroyOnUnmount(() => {
+    unsubscribeRef.current?.();
+    unsubscribeRef.current = null;
+    springRef.current?.destroy();
+    springRef.current = null;
+  });
+  const ensureGroup = useCallback12(
+    (keys, startAt) => {
+      const current = springRef.current;
+      if (current && !current.isDestroyed() && keys.every((key) => key in latestRef.current)) {
+        return current;
+      }
+      const start = {};
+      for (const key of keys) start[key] = latestRef.current[key] ?? startAt[key] ?? 0;
+      unsubscribeRef.current?.();
+      current?.destroy();
+      const group = createSpringGroup3(start);
+      springRef.current = group;
+      latestRef.current = start;
+      unsubscribeRef.current = group.subscribe((channels) => {
+        latestRef.current = channels;
+        show(appliedRef.current, channels);
+      });
+      return group;
+    },
+    [show]
+  );
+  useEffect14(() => {
+    const signature = animatableSignature(target);
+    if (signature === signatureRef.current) return;
+    signatureRef.current = signature;
+    const next = parseAnimatableRecord(target);
+    const plan = planTransition(appliedRef.current, next, defaultChannelKeysOf, false);
+    const nextChannels = channelValuesOf(next, defaultChannelKeysOf);
+    const keys = Object.keys(nextChannels);
+    const spring2 = keys.length > 0 ? ensureGroup(keys, plan.jump) : springRef.current;
+    appliedRef.current = next;
+    if (spring2) {
+      if (hasKeys(plan.jump)) spring2.jump(plan.jump);
+      if (hasKeys(plan.set)) {
+        const { stiffness, damping, mass } = physicsRef.current;
+        spring2.set(plan.set, { stiffness, damping, mass });
+      }
+    }
+    if (plan.structural || hasKeys(plan.jump)) {
+      show(next, spring2 ? spring2.get() : {});
+    }
+  });
+  return composeAnimatableRecord(state.values, state.channels, defaultChannelKeysOf);
+}
+
+// src/adapters/react/hooks/useVariants.ts
+var DEFAULT_PHYSICS = { stiffness: 100, damping: 15, mass: 1 };
+var DEFAULT_VALUES = {
+  x: 0,
+  y: 0,
+  scale: 1,
+  scaleX: 1,
+  scaleY: 1,
+  rotate: 0,
+  opacity: 1
+};
+function settleTime(spring2) {
+  const duration = solveSpring(
+    {
+      stiffness: spring2.stiffness ?? DEFAULT_PHYSICS.stiffness,
+      damping: spring2.damping ?? DEFAULT_PHYSICS.damping,
+      mass: spring2.mass ?? DEFAULT_PHYSICS.mass
+    },
+    0,
+    1
+  ).duration;
+  return Math.min(duration, 1e4);
+}
+var PX_REGEX = /^\s*(-?(?:\d+\.?\d*|\.\d+))px\s*$/;
+function toAnimatable(values, fallback) {
+  const result = { ...DEFAULT_VALUES };
+  for (const source of [fallback, values]) {
+    if (!source) continue;
+    for (const key in source) {
+      const value = source[key];
+      if (key === "transition" || typeof value !== "number" && typeof value !== "string") continue;
+      const px = (key === "x" || key === "y") && typeof value === "string" ? PX_REGEX.exec(value) : null;
+      result[key] = px ? parseFloat(px[1]) : value;
+    }
+  }
+  return result;
+}
 var VariantContext = createContext3({
   variant: void 0
 });
@@ -2480,10 +2946,10 @@ function useVariants(options) {
     onAnimationComplete
   } = options;
   const parentContext = useVariantContext();
-  const currentVariantRef = useRef21(void 0);
-  const isAnimatingRef = useRef21(false);
+  const currentVariantRef = useRef22(void 0);
+  const isAnimatingRef = useRef22(false);
   const [variantOverride, setVariantOverride] = useState14(null);
-  const animateRef = useRef21(animate);
+  const animateRef = useRef22(animate);
   animateRef.current = animate;
   const overrideName = variantOverride && variantOverride.animate === animate ? variantOverride.name : void 0;
   const targetVariant = useMemo4(() => {
@@ -2525,87 +2991,65 @@ function useVariants(options) {
     }
     return parentContext.transition || {};
   }, [targetVariant, variants, custom, parentContext.transition]);
+  const stiffness = springConfig?.stiffness ?? transition.spring?.stiffness ?? DEFAULT_PHYSICS.stiffness;
+  const damping = springConfig?.damping ?? transition.spring?.damping ?? DEFAULT_PHYSICS.damping;
+  const mass = springConfig?.mass ?? transition.spring?.mass ?? DEFAULT_PHYSICS.mass;
+  const parentTransition = parentContext.transition;
   const staggerDelay = useMemo4(() => {
-    const parentTransition = parentContext.transition;
     const staggerChildren = parentTransition?.staggerChildren ?? transition.staggerChildren;
     const delayChildren = parentTransition?.delayChildren ?? transition.delayChildren;
     const staggerDirection = parentTransition?.staggerDirection ?? transition.staggerDirection;
     const index = parentContext.staggerIndex;
+    const parentFirst = parentTransition?.when === "beforeChildren" && parentContext.variant !== void 0 ? (parentTransition.delay ?? 0) + settleTime(parentTransition.spring ?? DEFAULT_PHYSICS) : 0;
     if (index !== void 0 && staggerChildren) {
       const count = parentContext.staggerCount;
       const position = staggerDirection === -1 && count !== void 0 ? count - 1 - index : index;
-      return position * staggerChildren + (delayChildren || 0);
+      return parentFirst + position * staggerChildren + (delayChildren || 0);
     }
-    return transition.delay || 0;
-  }, [parentContext.staggerIndex, parentContext.staggerCount, parentContext.transition, transition]);
-  const toNumber = (val, fallback) => {
-    if (val === void 0) return fallback;
-    if (typeof val === "number") return val;
-    const parsed = parseFloat(val);
-    return isNaN(parsed) ? fallback : parsed;
-  };
-  const computeSpringValues = useCallback12((values, fallbackValues) => ({
-    x: toNumber(values.x ?? fallbackValues?.x, 0),
-    y: toNumber(values.y ?? fallbackValues?.y, 0),
-    scale: values.scale ?? fallbackValues?.scale ?? 1,
-    scaleX: values.scaleX ?? fallbackValues?.scaleX ?? 1,
-    scaleY: values.scaleY ?? fallbackValues?.scaleY ?? 1,
-    rotate: values.rotate ?? fallbackValues?.rotate ?? 0,
-    opacity: values.opacity ?? fallbackValues?.opacity ?? 1
-  }), []);
-  const initialSpringValues = useMemo4(
-    () => computeSpringValues(initialValues),
-    [initialValues, computeSpringValues]
+    return parentFirst + (transition.delay || 0);
+  }, [parentContext.staggerIndex, parentContext.staggerCount, parentContext.variant, parentTransition, transition]);
+  const initialAnimatable = useMemo4(() => toAnimatable(initialValues), [initialValues]);
+  const targetAnimatable = useMemo4(
+    () => toAnimatable(targetValues, initialValues),
+    [targetValues, initialValues]
   );
-  const animatedTargetValues = useMemo4(
-    () => computeSpringValues(targetValues, initialValues),
-    [targetValues, initialValues, computeSpringValues]
-  );
-  const hasInitializedRef = useRef21(false);
   const [releasedTarget, setReleasedTarget] = useState14(null);
-  const latestTargetRef = useRef21(animatedTargetValues);
-  latestTargetRef.current = animatedTargetValues;
+  const latestTargetRef = useRef22(targetAnimatable);
+  latestTargetRef.current = targetAnimatable;
   const hasDelay = staggerDelay > 0;
-  const { x: tx, y: ty, scale: ts, scaleX: tsx, scaleY: tsy, rotate: tr, opacity: to } = animatedTargetValues;
+  const targetSignature = animatableSignature(targetAnimatable);
   useEffect15(() => {
     if (!hasDelay) return;
-    const timer = setTimeout(() => {
+    return delay3(staggerDelay, () => {
       setReleasedTarget(latestTargetRef.current);
-    }, staggerDelay);
-    return () => clearTimeout(timer);
-  }, [hasDelay, staggerDelay, tx, ty, ts, tsx, tsy, tr, to]);
-  const springTarget = hasDelay ? releasedTarget ?? initialSpringValues : hasInitializedRef.current ? animatedTargetValues : initialSpringValues;
-  const springValues = useSpring(
-    springTarget,
-    {
-      stiffness: springConfig?.stiffness ?? transition.spring?.stiffness ?? 100,
-      damping: springConfig?.damping ?? transition.spring?.damping ?? 15,
-      mass: springConfig?.mass ?? transition.spring?.mass ?? 1
-    }
-  );
-  useIsomorphicLayoutEffect(() => {
-    if (!hasInitializedRef.current) {
-      hasInitializedRef.current = true;
-    }
+    });
+  }, [hasDelay, staggerDelay, targetSignature]);
+  const [isMounted, setIsMounted] = useState14(false);
+  useEffect15(() => {
+    setIsMounted(true);
   }, []);
+  const springTarget = hasDelay ? releasedTarget ?? initialAnimatable : isMounted ? targetAnimatable : initialAnimatable;
+  const springValues = useAnimatableValues(springTarget, { stiffness, damping, mass });
+  const onAnimationCompleteRef = useRef22(onAnimationComplete);
+  onAnimationCompleteRef.current = onAnimationComplete;
+  const completedVariantRef = useRef22(void 0);
   useIsomorphicLayoutEffect(() => {
-    if (targetVariant && targetVariant !== currentVariantRef.current) {
+    if (!targetVariant) return;
+    if (targetVariant !== currentVariantRef.current) {
       currentVariantRef.current = targetVariant;
-      isAnimatingRef.current = true;
-      const capturedVariant = targetVariant;
-      const capturedCallback = onAnimationComplete;
-      const damping = springConfig?.damping ?? 15;
-      const mass = springConfig?.mass ?? 1;
-      const estimatedDuration = Math.max(200, Math.min(2e3, 8 * mass / damping * 1e3));
-      const totalDelay = staggerDelay + estimatedDuration;
-      const timer = setTimeout(() => {
-        isAnimatingRef.current = false;
-        capturedCallback?.(capturedVariant);
-      }, totalDelay);
-      return () => clearTimeout(timer);
+      completedVariantRef.current = void 0;
     }
-  }, [targetVariant, staggerDelay, onAnimationComplete, springConfig?.stiffness, springConfig?.damping, springConfig?.mass]);
-  const setVariant = useCallback12((name) => {
+    if (completedVariantRef.current === targetVariant) return;
+    isAnimatingRef.current = true;
+    const settleDuration = settleTime({ stiffness, damping, mass });
+    const variant = targetVariant;
+    return delay3(staggerDelay + settleDuration, () => {
+      isAnimatingRef.current = false;
+      completedVariantRef.current = variant;
+      onAnimationCompleteRef.current?.(variant);
+    });
+  }, [targetVariant, staggerDelay, stiffness, damping, mass]);
+  const setVariant = useCallback13((name) => {
     setVariantOverride({ name, animate: animateRef.current });
   }, []);
   return {
@@ -2655,11 +3099,11 @@ function useStaggerChildren(options) {
       staggerDirection
     });
   }, [count, staggerChildren, delayChildren, staggerDirection]);
-  const getDelay = useCallback12(
+  const getDelay = useCallback13(
     (index) => delays[index] || 0,
     [delays]
   );
-  const getChildProps = useCallback12(
+  const getChildProps = useCallback13(
     (index) => ({
       style: { transitionDelay: `${getDelay(index)}ms` }
     }),
@@ -2717,18 +3161,31 @@ function createMotionComponent(element, options = {}) {
 }
 
 // src/adapters/react/hooks/usePhysics.ts
-import { useRef as useRef22, useEffect as useEffect16, useCallback as useCallback13, useState as useState15 } from "react";
-import { createMotionValue as createMotionValue4 } from "@oxog/springkit";
+import { useRef as useRef23, useEffect as useEffect16, useCallback as useCallback14, useState as useState15 } from "react";
+import { createMotionValue as createMotionValue4, globalLoop, delay as delay4 } from "@oxog/springkit";
 import { createSpringValue as createSpringValue4 } from "@oxog/springkit";
+var FRAME_MS = 1e3 / 60;
+var MAX_FRAMES_PER_TICK = 4;
+function elapsedFrames(lastTimeRef, now2) {
+  const time = typeof now2 === "number" ? now2 : performance.now();
+  const last = lastTimeRef.current;
+  lastTimeRef.current = time;
+  const frames = last === null ? 1 : Math.min(Math.max((time - last) / FRAME_MS, 0), MAX_FRAMES_PER_TICK);
+  return frames * globalLoop.getTimeScale();
+}
+function smoothingFactor(perFrame, frames) {
+  const f = Math.min(Math.max(perFrame, 0), 1);
+  return 1 - Math.pow(1 - f, frames);
+}
 function useSpringState(initialValue = 0, options = {}) {
   const { initial = initialValue, onChange, ...springConfig } = options;
   const [state, setState] = useState15(initial);
-  const springRef = useRef22(null);
-  const motionValueRef = useRef22(null);
-  const onChangeRef = useRef22(onChange);
+  const springRef = useRef23(null);
+  const motionValueRef = useRef23(null);
+  const onChangeRef = useRef23(onChange);
   onChangeRef.current = onChange;
   if (springRef.current === null || springRef.current.isDestroyed()) {
-    springRef.current = createSpringValue4(initial, {
+    springRef.current = createSpringValue4(state, {
       ...springConfig,
       onUpdate: (value) => {
         setState(value);
@@ -2739,17 +3196,18 @@ function useSpringState(initialValue = 0, options = {}) {
   if (motionValueRef.current === null || motionValueRef.current.isDestroyed()) {
     motionValueRef.current = createMotionValue4(initial);
   }
+  const springValue = springRef.current;
   useEffect16(() => {
-    const unsub = springRef.current?.subscribe((v) => {
+    const unsub = springValue.subscribe((v) => {
       motionValueRef.current?.jump(v);
     });
-    return () => unsub?.();
-  }, []);
+    return () => unsub();
+  }, [springValue]);
   useDestroyOnUnmount(() => {
     springRef.current?.destroy();
     springRef.current = null;
   });
-  const setValue = useCallback13((value) => {
+  const setValue = useCallback14((value) => {
     springRef.current?.set(value);
   }, []);
   return [state, setValue, motionValueRef.current];
@@ -2761,11 +3219,11 @@ function useMomentum(options = {}) {
     bounds,
     onRest
   } = options;
-  const valueRef = useRef22(null);
-  const velocityRef = useRef22(null);
-  const frameRef = useRef22(null);
-  const isActiveRef = useRef22(false);
-  const optionsRef = useRef22({ friction, minVelocity, bounds, onRest });
+  const valueRef = useRef23(null);
+  const velocityRef = useRef23(null);
+  const frameRef = useRef23(null);
+  const isActiveRef = useRef23(false);
+  const optionsRef = useRef23({ friction, minVelocity, bounds, onRest });
   optionsRef.current = { friction, minVelocity, bounds, onRest };
   if (valueRef.current === null || valueRef.current.isDestroyed()) {
     valueRef.current = createMotionValue4(0);
@@ -2773,7 +3231,7 @@ function useMomentum(options = {}) {
   if (velocityRef.current === null || velocityRef.current.isDestroyed()) {
     velocityRef.current = createMotionValue4(0);
   }
-  const applyBounds = useCallback13((val) => {
+  const applyBounds = useCallback14((val) => {
     const { bounds: bounds2 } = optionsRef.current;
     if (!bounds2) return val;
     let result = val;
@@ -2781,13 +3239,15 @@ function useMomentum(options = {}) {
     if (bounds2.max !== void 0) result = Math.min(bounds2.max, result);
     return result;
   }, []);
-  const tick = useCallback13(() => {
+  const lastTimeRef = useRef23(null);
+  const tick = useCallback14((now2) => {
     if (!isActiveRef.current) return;
     const { friction: friction2, minVelocity: minVelocity2, bounds: bounds2, onRest: onRest2 } = optionsRef.current;
+    const frames = elapsedFrames(lastTimeRef, now2);
     const currentVelocity = velocityRef.current?.get() ?? 0;
     const currentValue = valueRef.current?.get() ?? 0;
-    const newVelocity = currentVelocity * friction2;
-    const newValue = applyBounds(currentValue + newVelocity);
+    const newVelocity = currentVelocity * Math.pow(friction2, frames);
+    const newValue = applyBounds(currentValue + newVelocity * frames);
     valueRef.current?.jump(newValue);
     velocityRef.current?.jump(newVelocity);
     if (Math.abs(newVelocity) < minVelocity2) {
@@ -2806,21 +3266,22 @@ function useMomentum(options = {}) {
     }
     frameRef.current = requestAnimationFrame(tick);
   }, [applyBounds]);
-  const push = useCallback13((velocity) => {
+  const push = useCallback14((velocity) => {
     if (!Number.isFinite(velocity)) return;
     velocityRef.current?.jump(velocity);
     isActiveRef.current = true;
+    lastTimeRef.current = null;
     if (frameRef.current) cancelAnimationFrame(frameRef.current);
     frameRef.current = requestAnimationFrame(tick);
   }, [tick]);
-  const stop = useCallback13(() => {
+  const stop = useCallback14(() => {
     isActiveRef.current = false;
     if (frameRef.current) {
       cancelAnimationFrame(frameRef.current);
     }
     velocityRef.current?.jump(0);
   }, []);
-  const set = useCallback13((value) => {
+  const set = useCallback14((value) => {
     if (!Number.isFinite(value)) return;
     valueRef.current?.jump(applyBounds(value));
   }, [applyBounds]);
@@ -2845,8 +3306,8 @@ function useElastic(options = {}) {
     maxStretch = 100,
     spring: spring2 = { stiffness: 300, damping: 30 }
   } = options;
-  const motionValueRef = useRef22(null);
-  const springRef = useRef22(null);
+  const motionValueRef = useRef23(null);
+  const springRef = useRef23(null);
   if (motionValueRef.current === null || motionValueRef.current.isDestroyed()) {
     motionValueRef.current = createMotionValue4(0);
   }
@@ -2856,24 +3317,24 @@ function useElastic(options = {}) {
       onUpdate: (v) => motionValueRef.current?.jump(v)
     });
   }
-  const rawValueRef = useRef22(0);
-  const applyElasticity = useCallback13((input) => {
+  const rawValueRef = useRef23(0);
+  const applyElasticity = useCallback14((input) => {
     const sign = input >= 0 ? 1 : -1;
     const absInput = Math.abs(input);
     const factor = 1 - absInput / (maxStretch * 2) * (1 - elasticity);
     return sign * absInput * Math.max(0.1, factor);
   }, [elasticity, maxStretch]);
-  const stretch = useCallback13((amount) => {
+  const stretch = useCallback14((amount) => {
     if (!Number.isFinite(amount)) return;
     rawValueRef.current = amount;
     const elasticValue = applyElasticity(amount);
     motionValueRef.current?.jump(elasticValue);
   }, [applyElasticity]);
-  const release = useCallback13(() => {
+  const release = useCallback14(() => {
     rawValueRef.current = 0;
     springRef.current?.set(0);
   }, []);
-  const set = useCallback13((value) => {
+  const set = useCallback14((value) => {
     if (!Number.isFinite(value)) return;
     rawValueRef.current = value;
     springRef.current?.set(value);
@@ -2899,23 +3360,25 @@ function useBounce(options = {}) {
     ceiling = 0,
     restitution = 0.7
   } = options;
-  const motionValueRef = useRef22(null);
+  const motionValueRef = useRef23(null);
   if (motionValueRef.current === null || motionValueRef.current.isDestroyed()) {
     motionValueRef.current = createMotionValue4(ceiling);
   }
   const motionValue = motionValueRef.current;
-  const velocityRef = useRef22(0);
-  const frameRef = useRef22(null);
-  const isActiveRef = useRef22(false);
-  const optionsRef = useRef22({ dampening, gravity, floor, ceiling, restitution });
+  const velocityRef = useRef23(0);
+  const frameRef = useRef23(null);
+  const isActiveRef = useRef23(false);
+  const optionsRef = useRef23({ dampening, gravity, floor, ceiling, restitution });
   optionsRef.current = { dampening, gravity, floor, ceiling, restitution };
-  const tick = useCallback13(() => {
+  const lastTimeRef = useRef23(null);
+  const tick = useCallback14((now2) => {
     if (!isActiveRef.current) return;
     const { dampening: dampening2, gravity: gravity2, floor: floor2, ceiling: ceiling2, restitution: restitution2 } = optionsRef.current;
+    const frames = elapsedFrames(lastTimeRef, now2);
     const currentValue = motionValue.get();
-    velocityRef.current += gravity2;
-    velocityRef.current *= 1 - dampening2;
-    let newValue = currentValue + velocityRef.current;
+    velocityRef.current += gravity2 * frames;
+    velocityRef.current *= Math.pow(1 - dampening2, frames);
+    let newValue = currentValue + velocityRef.current * frames;
     if (newValue >= floor2) {
       newValue = floor2;
       velocityRef.current = -velocityRef.current * restitution2;
@@ -2933,23 +3396,25 @@ function useBounce(options = {}) {
     motionValue.jump(newValue);
     frameRef.current = requestAnimationFrame(tick);
   }, [motionValue]);
-  const drop = useCallback13((fromY = ceiling, initialVelocity = 0) => {
+  const drop = useCallback14((fromY = ceiling, initialVelocity = 0) => {
     const safeFromY = Number.isFinite(fromY) ? fromY : ceiling;
     const safeVelocity = Number.isFinite(initialVelocity) ? initialVelocity : 0;
     motionValue.jump(safeFromY);
     velocityRef.current = safeVelocity;
     isActiveRef.current = true;
+    lastTimeRef.current = null;
     if (frameRef.current) cancelAnimationFrame(frameRef.current);
     frameRef.current = requestAnimationFrame(tick);
   }, [motionValue, ceiling, tick]);
-  const bounce = useCallback13((velocity) => {
+  const bounce = useCallback14((velocity) => {
     if (!Number.isFinite(velocity)) return;
     velocityRef.current = velocity;
     isActiveRef.current = true;
+    lastTimeRef.current = null;
     if (frameRef.current) cancelAnimationFrame(frameRef.current);
     frameRef.current = requestAnimationFrame(tick);
   }, [tick]);
-  const stop = useCallback13(() => {
+  const stop = useCallback14(() => {
     isActiveRef.current = false;
     if (frameRef.current) cancelAnimationFrame(frameRef.current);
     velocityRef.current = 0;
@@ -2978,8 +3443,8 @@ function useGravity(options = {}) {
     bounds,
     bounciness = 0.7
   } = options;
-  const xRef = useRef22(null);
-  const yRef = useRef22(null);
+  const xRef = useRef23(null);
+  const yRef = useRef23(null);
   if (xRef.current === null || xRef.current.isDestroyed()) {
     xRef.current = createMotionValue4(0);
   }
@@ -2988,22 +3453,25 @@ function useGravity(options = {}) {
   }
   const xMotion = xRef.current;
   const yMotion = yRef.current;
-  const velocityRef = useRef22({ x: 0, y: 0 });
-  const frameRef = useRef22(null);
-  const isActiveRef = useRef22(false);
-  const optionsRef = useRef22({ gravity, drag, bounds, bounciness });
+  const velocityRef = useRef23({ x: 0, y: 0 });
+  const frameRef = useRef23(null);
+  const isActiveRef = useRef23(false);
+  const optionsRef = useRef23({ gravity, drag, bounds, bounciness });
   optionsRef.current = { gravity, drag, bounds, bounciness };
-  const tick = useCallback13(() => {
+  const lastTimeRef = useRef23(null);
+  const tick = useCallback14((now2) => {
     if (!isActiveRef.current) return;
     const { gravity: gravity2, drag: drag2, bounds: bounds2, bounciness: bounciness2 } = optionsRef.current;
+    const frames = elapsedFrames(lastTimeRef, now2);
     const currentX = xMotion.get();
     const currentY = yMotion.get();
-    velocityRef.current.x += gravity2.x;
-    velocityRef.current.y += gravity2.y;
-    velocityRef.current.x *= 1 - drag2;
-    velocityRef.current.y *= 1 - drag2;
-    let newX = currentX + velocityRef.current.x;
-    let newY = currentY + velocityRef.current.y;
+    velocityRef.current.x += gravity2.x * frames;
+    velocityRef.current.y += gravity2.y * frames;
+    const dragFactor = Math.pow(1 - drag2, frames);
+    velocityRef.current.x *= dragFactor;
+    velocityRef.current.y *= dragFactor;
+    let newX = currentX + velocityRef.current.x * frames;
+    let newY = currentY + velocityRef.current.y * frames;
     if (bounds2) {
       if (bounds2.left !== void 0 && newX <= bounds2.left) {
         newX = bounds2.left;
@@ -3035,29 +3503,31 @@ function useGravity(options = {}) {
       isActiveRef.current = false;
     }
   }, [xMotion, yMotion]);
-  const launch = useCallback13((velocity) => {
+  const launch = useCallback14((velocity) => {
     const safeX = Number.isFinite(velocity.x) ? velocity.x : 0;
     const safeY = Number.isFinite(velocity.y) ? velocity.y : 0;
     velocityRef.current = { x: safeX, y: safeY };
     isActiveRef.current = true;
+    lastTimeRef.current = null;
     if (frameRef.current) cancelAnimationFrame(frameRef.current);
     frameRef.current = requestAnimationFrame(tick);
   }, [tick]);
-  const setPosition = useCallback13((pos) => {
+  const setPosition = useCallback14((pos) => {
     const safeX = Number.isFinite(pos.x) ? pos.x : xMotion.get();
     const safeY = Number.isFinite(pos.y) ? pos.y : yMotion.get();
     xMotion.jump(safeX);
     yMotion.jump(safeY);
   }, [xMotion, yMotion]);
-  const stop = useCallback13(() => {
+  const stop = useCallback14(() => {
     isActiveRef.current = false;
     if (frameRef.current) cancelAnimationFrame(frameRef.current);
     frameRef.current = null;
     velocityRef.current = { x: 0, y: 0 };
   }, []);
-  const start = useCallback13(() => {
+  const start = useCallback14(() => {
     if (!isActiveRef.current) {
       isActiveRef.current = true;
+      lastTimeRef.current = null;
       if (frameRef.current) cancelAnimationFrame(frameRef.current);
       frameRef.current = requestAnimationFrame(tick);
     }
@@ -3080,88 +3550,92 @@ function useGravity(options = {}) {
   };
 }
 function useChain(steps, initialValues = {}) {
-  const valuesRef = useRef22({});
-  const springsRef = useRef22({});
+  const valuesRef = useRef23({});
+  const springsRef = useRef23({});
   const [currentStep, setCurrentStep] = useState15(-1);
   const [isPlaying, setIsPlaying] = useState15(false);
-  const timeoutRef = useRef22(null);
-  useEffect16(() => {
-    const allKeys = /* @__PURE__ */ new Set();
-    steps.forEach((step) => {
-      Object.keys(step.to).forEach((key) => allKeys.add(key));
-    });
-    allKeys.forEach((key) => {
-      if (!valuesRef.current[key] || valuesRef.current[key].isDestroyed()) {
+  const stepsRef = useRef23(steps);
+  stepsRef.current = steps;
+  const initialValuesRef = useRef23(initialValues);
+  initialValuesRef.current = initialValues;
+  const runIdRef = useRef23(0);
+  const cancelDelayRef = useRef23(null);
+  for (const step of steps) {
+    for (const key of Object.keys(step.to)) {
+      const existing = valuesRef.current[key];
+      if (!existing || existing.isDestroyed()) {
         valuesRef.current[key] = createMotionValue4(initialValues[key] ?? 0);
       }
-      if (!springsRef.current[key] || springsRef.current[key].isDestroyed()) {
-        springsRef.current[key] = createSpringValue4(valuesRef.current[key].get(), {
+    }
+  }
+  useEffect16(() => {
+    const springs = springsRef.current;
+    const runId = runIdRef;
+    for (const key of Object.keys(valuesRef.current)) {
+      const existing = springs[key];
+      if (!existing || existing.isDestroyed()) {
+        springs[key] = createSpringValue4(valuesRef.current[key].get(), {
           onUpdate: (v) => valuesRef.current[key]?.jump(v)
         });
       }
-    });
-    const springs = springsRef.current;
+    }
     return () => {
+      runId.current++;
+      cancelDelayRef.current?.();
+      cancelDelayRef.current = null;
       Object.values(springs).forEach((s) => s.destroy());
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
   }, []);
-  const runStep = useCallback13((stepIndex) => {
-    if (stepIndex >= steps.length) {
+  const runStep = useCallback14((stepIndex, runId) => {
+    if (runIdRef.current !== runId) return;
+    const step = stepsRef.current[stepIndex];
+    if (!step) {
       setIsPlaying(false);
       setCurrentStep(-1);
       return;
     }
-    const step = steps[stepIndex];
-    if (!step) return;
     const execute = () => {
+      cancelDelayRef.current = null;
+      if (runIdRef.current !== runId) return;
       setCurrentStep(stepIndex);
-      Object.entries(step.to).forEach(([key, value]) => {
+      const finished = [];
+      for (const [key, value] of Object.entries(step.to)) {
         const spring2 = springsRef.current[key];
-        if (spring2) {
-          if (step.config) {
-            spring2.setConfig(step.config);
-          }
-          spring2.set(value);
-        }
-      });
-      const estimatedDuration = step.config?.stiffness ? Math.max(300, 1e3 / (step.config.stiffness / 100)) : 500;
-      timeoutRef.current = window.setTimeout(() => {
-        runStep(stepIndex + 1);
-      }, estimatedDuration);
+        if (!spring2 || spring2.isDestroyed()) continue;
+        if (step.config) spring2.setConfig(step.config);
+        spring2.set(value);
+        finished.push(spring2.finished);
+      }
+      void Promise.all(finished).then(() => runStep(stepIndex + 1, runId));
     };
     if (step.delay && step.delay > 0) {
-      timeoutRef.current = window.setTimeout(execute, step.delay);
+      cancelDelayRef.current = delay4(step.delay, execute);
     } else {
       execute();
     }
-  }, [steps]);
-  const play = useCallback13(() => {
+  }, []);
+  const play = useCallback14(() => {
     if (isPlaying) return;
     setIsPlaying(true);
-    runStep(0);
+    runStep(0, ++runIdRef.current);
   }, [isPlaying, runStep]);
-  const reset = useCallback13(() => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
+  const reset = useCallback14(() => {
+    runIdRef.current++;
+    cancelDelayRef.current?.();
+    cancelDelayRef.current = null;
     setIsPlaying(false);
     setCurrentStep(-1);
     Object.keys(valuesRef.current).forEach((key) => {
-      const initial = initialValues[key] ?? 0;
+      const initial = initialValuesRef.current[key] ?? 0;
       springsRef.current[key]?.jump(initial);
+      valuesRef.current[key]?.jump(initial);
     });
-  }, [initialValues]);
-  const stop = useCallback13(() => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-    }
-    setIsPlaying(false);
   }, []);
-  useEffect16(() => {
-    return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    };
+  const stop = useCallback14(() => {
+    runIdRef.current++;
+    cancelDelayRef.current?.();
+    cancelDelayRef.current = null;
+    setIsPlaying(false);
   }, []);
   return {
     values: valuesRef.current,
@@ -3174,12 +3648,12 @@ function useChain(steps, initialValues = {}) {
 }
 function usePointer(options = {}) {
   const { target, smooth = 0, hoverOnly = false } = options;
-  const xRef = useRef22(null);
-  const yRef = useRef22(null);
-  const rawXRef = useRef22(0);
-  const rawYRef = useRef22(0);
+  const xRef = useRef23(null);
+  const yRef = useRef23(null);
+  const rawXRef = useRef23(0);
+  const rawYRef = useRef23(0);
   const [isHovering, setIsHovering] = useState15(false);
-  const frameRef = useRef22(null);
+  const frameRef = useRef23(null);
   if (xRef.current === null || xRef.current.isDestroyed()) xRef.current = createMotionValue4(0);
   if (yRef.current === null || yRef.current.isDestroyed()) yRef.current = createMotionValue4(0);
   useElementEffect(() => {
@@ -3206,11 +3680,13 @@ function usePointer(options = {}) {
     const handleEnter = () => setIsHovering(true);
     const handleLeave = () => setIsHovering(false);
     if (smooth > 0) {
-      const smoothLoop = () => {
+      const lastTime = { current: null };
+      const smoothLoop = (now2) => {
+        const k = smoothingFactor(smooth, elapsedFrames(lastTime, now2));
         const currentX = xRef.current?.get() ?? 0;
         const currentY = yRef.current?.get() ?? 0;
-        const newX = currentX + (rawXRef.current - currentX) * smooth;
-        const newY = currentY + (rawYRef.current - currentY) * smooth;
+        const newX = currentX + (rawXRef.current - currentX) * k;
+        const newY = currentY + (rawYRef.current - currentY) * k;
         xRef.current?.jump(newX);
         yRef.current?.jump(newY);
         frameRef.current = requestAnimationFrame(smoothLoop);
@@ -3257,24 +3733,26 @@ function usePointer(options = {}) {
 }
 function useGyroscope(options = {}) {
   const { multiplier = 1, clamp = 45, smooth = 0.1 } = options;
-  const tiltXRef = useRef22(null);
-  const tiltYRef = useRef22(null);
-  const rawXRef = useRef22(0);
-  const rawYRef = useRef22(0);
+  const tiltXRef = useRef23(null);
+  const tiltYRef = useRef23(null);
+  const rawXRef = useRef23(0);
+  const rawYRef = useRef23(0);
   const [isSupported, setIsSupported] = useState15(false);
-  const frameRef = useRef22(null);
+  const frameRef = useRef23(null);
   if (tiltXRef.current === null || tiltXRef.current.isDestroyed()) tiltXRef.current = createMotionValue4(0);
   if (tiltYRef.current === null || tiltYRef.current.isDestroyed()) tiltYRef.current = createMotionValue4(0);
-  const clampValue2 = useCallback13((value) => {
+  const clampValue2 = useCallback14((value) => {
     return Math.max(-clamp, Math.min(clamp, value * multiplier));
   }, [clamp, multiplier]);
   useEffect16(() => {
     const hasOrientation = "DeviceOrientationEvent" in window;
-    const smoothLoop = () => {
+    const lastTime = { current: null };
+    const smoothLoop = (now2) => {
+      const k = smoothingFactor(smooth, elapsedFrames(lastTime, now2));
       const currentX = tiltXRef.current?.get() ?? 0;
       const currentY = tiltYRef.current?.get() ?? 0;
-      const newX = currentX + (rawXRef.current - currentX) * smooth;
-      const newY = currentY + (rawYRef.current - currentY) * smooth;
+      const newX = currentX + (rawXRef.current - currentX) * k;
+      const newY = currentY + (rawYRef.current - currentY) * k;
       tiltXRef.current?.jump(newX);
       tiltYRef.current?.jump(newY);
       frameRef.current = requestAnimationFrame(smoothLoop);
@@ -3339,11 +3817,11 @@ function useGyroscope(options = {}) {
 var GYROSCOPE_FALLBACK_MS = 500;
 
 // src/adapters/react/components/Spring.tsx
-import { useEffect as useEffect17, useRef as useRef24, useState as useState16 } from "react";
-import { createSpringGroup as createSpringGroup3 } from "@oxog/springkit";
+import { useEffect as useEffect17, useRef as useRef25, useState as useState16 } from "react";
+import { createSpringGroup as createSpringGroup4 } from "@oxog/springkit";
 
 // src/adapters/react/utils/config.ts
-import { useRef as useRef23 } from "react";
+import { useRef as useRef24 } from "react";
 var PHYSICS_KEYS = [
   "stiffness",
   "damping",
@@ -3358,7 +3836,7 @@ function samePhysics(a, b) {
 }
 function useStableSpringConfig(config, fallback) {
   const next = config ?? fallback;
-  const ref = useRef23(next);
+  const ref = useRef24(next);
   if (!samePhysics(ref.current, next)) {
     ref.current = next;
   }
@@ -3376,20 +3854,28 @@ var Spring = ({
   children
 }) => {
   const config = useStableSpringConfig(configProp, DEFAULT_SPRING_CONFIG);
-  const springRef = useRef24(null);
+  const springRef = useRef25(null);
   const [values, setValues] = useState16(from);
-  const toRef = useRef24(to);
+  const toRef = useRef25(to);
   toRef.current = to;
-  const onRestRef = useRef24(onRest);
+  const onRestRef = useRef25(onRest);
   onRestRef.current = onRest;
-  const handleRest = useRef24(() => onRestRef.current?.()).current;
+  const runIdRef = useRef25(0);
+  const animateTo = useRef25((spring2, springConfig) => {
+    const runId = ++runIdRef.current;
+    spring2.set(toRef.current, springConfig);
+    spring2.finished.then(() => {
+      if (runIdRef.current !== runId || spring2.isDestroyed() || spring2.isAnimating()) return;
+      onRestRef.current?.();
+    });
+  }).current;
   const toSignature = Object.keys(to).map((key) => `${key}:${to[key]}`).join("|");
   useEffect17(() => {
-    const spring2 = createSpringGroup3(from, config);
+    const spring2 = createSpringGroup4(from, config);
     const unsubscribe = spring2.subscribe(setValues);
     springRef.current = spring2;
     const rafId = requestAnimationFrame(() => {
-      spring2.set(toRef.current, { ...config, onRest: handleRest });
+      animateTo(spring2, config);
     });
     return () => {
       cancelAnimationFrame(rafId);
@@ -3398,27 +3884,31 @@ var Spring = ({
       springRef.current = null;
     };
   }, []);
-  const isFirstUpdateRef = useRef24(true);
+  const isFirstUpdateRef = useRef25(true);
   useEffect17(() => {
     if (isFirstUpdateRef.current) {
       isFirstUpdateRef.current = false;
       return;
     }
-    springRef.current?.set(toRef.current, { ...config, onRest: handleRest });
-  }, [toSignature, config, handleRest]);
+    if (springRef.current) animateTo(springRef.current, config);
+  }, [toSignature, config, animateTo]);
   return /* @__PURE__ */ jsx(Fragment2, { children: children(values) });
 };
 
 // src/adapters/react/components/Animated.tsx
 import * as React3 from "react";
-import { useEffect as useEffect20, useRef as useRef26, useState as useState19, useContext as useContext5, useCallback as useCallback15, memo } from "react";
-import { createSpringGroup as createSpringGroup4 } from "@oxog/springkit";
+import { useEffect as useEffect19, useRef as useRef27, useState as useState18, useContext as useContext6, useCallback as useCallback16, memo } from "react";
+import { createSpringGroup as createSpringGroup5 } from "@oxog/springkit";
 
 // src/adapters/react/components/MotionConfig.tsx
-import { createContext as createContext4, useContext as useContext3, useMemo as useMemo5, useState as useState17, useEffect as useEffect18 } from "react";
+import { createContext as createContext4, useContext as useContext3, useMemo as useMemo5, useSyncExternalStore as useSyncExternalStore2 } from "react";
 import { jsx as jsx2 } from "react/jsx-runtime";
+function noop2() {
+}
+function subscribeNoop() {
+  return noop2;
+}
 var EMPTY_CONFIG = {};
-var REDUCED_MOTION_QUERY = "(prefers-reduced-motion: reduce)";
 var defaultContext = {
   config: {},
   reducedMotion: "user",
@@ -3429,26 +3919,12 @@ var MotionContext = createContext4(defaultContext);
 function useMotionConfig() {
   return useContext3(MotionContext);
 }
-function checkReducedMotion() {
-  if (typeof window === "undefined") return false;
-  return window.matchMedia?.(REDUCED_MOTION_QUERY)?.matches ?? false;
-}
 function usePrefersReducedMotion(enabled) {
-  const [prefersReducedMotion2, setPrefersReducedMotion] = useState17(checkReducedMotion);
-  useEffect18(() => {
-    if (!enabled || typeof window === "undefined" || !window.matchMedia) return;
-    const mediaQuery = window.matchMedia(REDUCED_MOTION_QUERY);
-    if (!mediaQuery) return;
-    const update = () => setPrefersReducedMotion(mediaQuery.matches);
-    update();
-    if (typeof mediaQuery.addEventListener === "function") {
-      mediaQuery.addEventListener("change", update);
-      return () => mediaQuery.removeEventListener("change", update);
-    }
-    mediaQuery.addListener?.(update);
-    return () => mediaQuery.removeListener?.(update);
-  }, [enabled]);
-  return prefersReducedMotion2;
+  return useSyncExternalStore2(
+    enabled ? subscribeToReducedMotion : subscribeNoop,
+    enabled ? getReducedMotionPreference : getServerReducedMotion,
+    getServerReducedMotion
+  );
 }
 function MotionConfig({
   config: configProp,
@@ -3484,16 +3960,28 @@ function MotionConfig({
   return /* @__PURE__ */ jsx2(MotionContext.Provider, { value, children });
 }
 
+// src/adapters/react/utils/reducedMotion.ts
+import { useContext as useContext4 } from "react";
+function useShouldReduceMotion() {
+  const motionConfig = useContext4(MotionContext);
+  const prefersReducedMotion2 = useReducedMotion();
+  if (motionConfig.reducedMotion === "always") return true;
+  if (motionConfig.reducedMotion === "never") return false;
+  return motionConfig.isReducedMotion || prefersReducedMotion2;
+}
+
 // src/adapters/react/components/useAnimatedDrag.ts
-import { useCallback as useCallback14, useContext as useContext4, useEffect as useEffect19, useRef as useRef25, useState as useState18 } from "react";
+import { useCallback as useCallback15, useContext as useContext5, useEffect as useEffect18, useRef as useRef26, useState as useState17 } from "react";
 import { decay, spring } from "@oxog/springkit";
 var ZERO = { x: 0, y: 0 };
 var UNBOUNDED = [-Infinity, Infinity];
 var DEFAULT_ELASTIC = 0.5;
 var VELOCITY_WINDOW_MS = 100;
 var DIRECTION_LOCK_THRESHOLD = 3;
+var DEFAULT_DRAG_THRESHOLD = 3;
 var DEFAULT_BOUNCE_STIFFNESS = 200;
 var DEFAULT_BOUNCE_DAMPING = 40;
+var LISTENER_OPTIONS = { capture: true };
 function now() {
   return typeof performance !== "undefined" ? performance.now() : Date.now();
 }
@@ -3592,47 +4080,76 @@ function safeCall(fn, ...args) {
     console.error("[SpringKit] Error in drag callback:", error);
   }
 }
+function captureTargetOf(target) {
+  if (!target || typeof target.setPointerCapture !== "function") return null;
+  return target;
+}
+function capturePointer(target, pointerId) {
+  if (!target || typeof pointerId !== "number") return null;
+  try {
+    target.setPointerCapture(pointerId);
+  } catch {
+    return null;
+  }
+  return () => {
+    try {
+      const has = typeof target.hasPointerCapture === "function" ? target.hasPointerCapture(pointerId) : true;
+      if (has && typeof target.releasePointerCapture === "function") target.releasePointerCapture(pointerId);
+    } catch {
+    }
+  };
+}
 function useAnimatedDrag(props, elementRef) {
-  const { drag, dragControls } = props;
-  const motionConfig = useContext4(MotionContext);
-  const [dragOffset, setDragOffset] = useState18(ZERO);
-  const [isDragging, setIsDragging] = useState18(false);
-  const offsetRef = useRef25(ZERO);
-  const activeRef = useRef25(null);
-  const animationsRef = useRef25({
-    x: null,
-    y: null
-  });
-  const boundsRef = useRef25({ x: UNBOUNDED, y: UNBOUNDED });
-  const lockedAxisRef = useRef25(null);
-  const mountedRef = useRef25(false);
-  const propsRef = useRef25(props);
+  const { drag, dragControls, dragConstraints } = props;
+  const motionConfig = useContext5(MotionContext);
+  const [dragOffset, setDragOffset] = useState17(ZERO);
+  const [isDragging, setIsDragging] = useState17(false);
+  const offsetRef = useRef26(ZERO);
+  const activeRef = useRef26(null);
+  const animationsRef = useRef26({ x: null, y: null });
+  const boundsRef = useRef26({ x: UNBOUNDED, y: UNBOUNDED });
+  const lockedAxisRef = useRef26(null);
+  const transitionRef = useRef26(null);
+  const dragCountRef = useRef26(0);
+  const mountedRef = useRef26(false);
+  const propsRef = useRef26(props);
   propsRef.current = props;
-  const motionConfigRef = useRef25(motionConfig);
+  const motionConfigRef = useRef26(motionConfig);
   motionConfigRef.current = motionConfig;
-  const shouldReduceMotion = useCallback14(() => {
+  const shouldReduceMotion = useCallback15(() => {
     const config = motionConfigRef.current;
     if (config.reducedMotion === "always") return true;
     if (config.reducedMotion === "never") return false;
     return config.isReducedMotion || prefersReducedMotion();
   }, []);
-  const setOffset = useCallback14((next) => {
+  const setOffset = useCallback15((next) => {
     offsetRef.current = next;
     if (mountedRef.current) setDragOffset(next);
   }, []);
-  const setAxis = useCallback14((axis, value) => {
+  const setAxis = useCallback15((axis, value) => {
+    if (offsetRef.current[axis] === value) return;
     setOffset({ ...offsetRef.current, [axis]: value });
   }, [setOffset]);
-  const stopAnimation = useCallback14((axis) => {
-    const animation = animationsRef.current[axis];
+  const stopAnimation = useCallback15((axis) => {
+    const entry = animationsRef.current[axis];
     animationsRef.current[axis] = null;
-    animation?.destroy();
+    entry?.animation.destroy();
   }, []);
-  const stopAnimations = useCallback14(() => {
+  const stopAnimations = useCallback15(() => {
     stopAnimation("x");
     stopAnimation("y");
   }, [stopAnimation]);
-  const detach = useCallback14(() => {
+  const checkTransition = useCallback15((token) => {
+    if (transitionRef.current !== token || !token.armed || token.axes.size > 0) return;
+    transitionRef.current = null;
+    safeCall(propsRef.current.onDragTransitionEnd);
+  }, []);
+  const completeAxis = useCallback15((token, axis) => {
+    if (!token) return;
+    token.axes.delete(axis);
+    checkTransition(token);
+  }, [checkTransition]);
+  const detach = useCallback15(() => {
     const active = activeRef.current;
     if (!active) return null;
     activeRef.current = null;
@@ -3641,14 +4158,15 @@ function useAnimatedDrag(props, elementRef) {
     propsRef.current.dragControls?._notifyDragEnd?.();
     return active;
   }, []);
-  const getAxes = useCallback14(() => {
+  const getAxes = useCallback15(() => {
     const axis = propsRef.current.drag;
     if (!axis) return [];
     if (axis === "x" || axis === "y") return [axis];
     return ["x", "y"];
   }, []);
-  const springAxis = useCallback14((axis, from, to, velocity) => {
+  const springAxis = useCallback15((axis, from, to, velocity, token) => {
     const transition = propsRef.current.dragTransition;
+    token?.axes.add(axis);
     let starting = true;
     const animation = spring(from, to, {
       stiffness: finiteOr(transition?.bounceStiffness, DEFAULT_BOUNCE_STIFFNESS),
@@ -3657,51 +4175,66 @@ function useAnimatedDrag(props, elementRef) {
       restDelta: 0.1,
       restSpeed: 1,
       onUpdate: (value) => {
-        if (!starting) setAxis(axis, value);
+        if (!starting && animationsRef.current[axis] === entry) setAxis(axis, value);
       },
       onComplete: () => {
-        if (animationsRef.current[axis] === animation) animationsRef.current[axis] = null;
+        if (animationsRef.current[axis] !== entry) return;
+        animationsRef.current[axis] = null;
+        setAxis(axis, to);
+        completeAxis(token, axis);
       }
     });
-    animationsRef.current[axis] = animation;
+    const entry = { animation, token, target: to };
+    animationsRef.current[axis] = entry;
     animation.start();
     starting = false;
-  }, [setAxis]);
-  const decayAxis = useCallback14((axis, from, velocity, range, elastic) => {
+  }, [setAxis, completeAxis]);
+  const decayAxis = useCallback15((axis, from, velocity, elastic, token) => {
     const transition = propsRef.current.dragTransition;
+    token?.axes.add(axis);
     let starting = true;
+    const apply = (value) => {
+      const range = boundsRef.current[axis];
+      if (value >= range[0] && value <= range[1]) {
+        setAxis(axis, value);
+        return true;
+      }
+      const boundary = value < range[0] ? range[0] : range[1];
+      const sideElastic = value < range[0] ? elastic[0] : elastic[1];
+      const currentVelocity = animation.getVelocity();
+      animationsRef.current[axis] = null;
+      animation.destroy();
+      if (sideElastic > 0 && !shouldReduceMotion()) {
+        setAxis(axis, value);
+        springAxis(axis, value, boundary, currentVelocity, token);
+      } else {
+        setAxis(axis, boundary);
+        completeAxis(token, axis);
+      }
+      return false;
+    };
     const animation = decay({
       from,
       velocity,
       deceleration: transition?.deceleration,
       modifyTarget: transition?.modifyTarget,
       onUpdate: (value) => {
-        if (starting || animationsRef.current[axis] !== animation) return;
-        if (value >= range[0] && value <= range[1]) {
-          setAxis(axis, value);
-          return;
-        }
-        const boundary = value < range[0] ? range[0] : range[1];
-        const sideElastic = value < range[0] ? elastic[0] : elastic[1];
-        const currentVelocity = animation.getVelocity();
-        animationsRef.current[axis] = null;
-        animation.destroy();
-        if (sideElastic > 0 && !shouldReduceMotion()) {
-          setAxis(axis, value);
-          springAxis(axis, value, boundary, currentVelocity);
-        } else {
-          setAxis(axis, boundary);
-        }
+        if (starting || animationsRef.current[axis] !== entry) return;
+        apply(value);
       },
       onComplete: () => {
-        if (animationsRef.current[axis] === animation) animationsRef.current[axis] = null;
+        if (animationsRef.current[axis] !== entry) return;
+        if (starting && !apply(animation.getValue())) return;
+        animationsRef.current[axis] = null;
+        completeAxis(token, axis);
       }
     });
-    animationsRef.current[axis] = animation;
+    const entry = { animation, token };
+    animationsRef.current[axis] = entry;
     animation.start();
     starting = false;
-  }, [setAxis, springAxis, shouldReduceMotion]);
-  const settle = useCallback14((velocity, allowMomentum, allowAnimation) => {
+  }, [setAxis, springAxis, completeAxis, shouldReduceMotion]);
+  const settle = useCallback15((velocity, allowMomentum, allowAnimation, token) => {
     const { dragSnapToOrigin, dragMomentum = true, dragTransition, dragElastic } = propsRef.current;
     const bounds = boundsRef.current;
     const elastic = resolveElastic(dragElastic);
@@ -3719,7 +4252,7 @@ function useAnimatedDrag(props, elementRef) {
         target = clampValue(from, range);
       } else if (allowMomentum && dragMomentum && axisVelocity !== 0) {
         if (animate) {
-          decayAxis(axis, from, axisVelocity, range, elastic[axis]);
+          decayAxis(axis, from, axisVelocity, elastic[axis], token);
           continue;
         }
         const probe = decay({
@@ -3733,52 +4266,81 @@ function useAnimatedDrag(props, elementRef) {
       }
       if (target === null || target === from) continue;
       if (animate) {
-        springAxis(axis, from, target, axisVelocity);
+        springAxis(axis, from, target, axisVelocity, token);
       } else {
         setAxis(axis, target);
       }
     }
   }, [getAxes, stopAnimation, decayAxis, springAxis, setAxis, shouldReduceMotion]);
-  const finishDrag = useCallback14((event, info, withMomentum) => {
+  const finishDrag = useCallback15((event, info, mode) => {
     const active = detach();
     if (!active) return;
-    const endInfo = info ?? { ...active.lastInfo, velocity: ZERO };
-    settle(endInfo.velocity, withMomentum, event !== null);
+    if (!active.started) {
+      settle(ZERO, false, mode !== "stop", null);
+      return;
+    }
+    const endInfo = info ?? { ...active.lastInfo, delta: ZERO, velocity: ZERO };
+    const token = { axes: /* @__PURE__ */ new Set(), armed: false };
+    transitionRef.current = token;
+    settle(endInfo.velocity, mode === "release", mode !== "stop", token);
     safeCall(propsRef.current.onDragEnd, event ?? active.lastEvent, endInfo);
-  }, [detach, settle]);
-  const startDrag = useCallback14((event, options) => {
+    token.armed = true;
+    checkTransition(token);
+  }, [detach, settle, checkTransition]);
+  const observationRef = useRef26(null);
+  const syncObservedContainer = useCallback15(() => {
+    const observation = observationRef.current;
+    if (!observation) return;
+    const constraints = propsRef.current.dragConstraints;
+    const container = constraints && isRefConstraints(constraints) ? constraints.current : null;
+    if (container === observation.container) return;
+    try {
+      if (observation.container) observation.observer?.unobserve(observation.container);
+      if (container) observation.observer?.observe(container);
+    } catch {
+    }
+    observation.container = container;
+  }, []);
+  const startDrag = useCallback15((event, options, fromControls = false) => {
     const axisProp = propsRef.current.drag;
     if (!axisProp || !isBrowser) return;
+    if (activeRef.current?.startEvent === event) return;
+    if (activeRef.current && event.isPrimary === false) return;
     detach();
+    transitionRef.current = null;
     stopAnimations();
+    syncObservedContainer();
     const axes = getAxes();
     const element = elementRef.current;
-    const { dragConstraints, dragElastic, dragDirectionLock } = propsRef.current;
+    const { dragConstraints: constraints, dragElastic, dragDirectionLock, dragThreshold } = propsRef.current;
     const elastic = resolveElastic(dragElastic);
-    const bounds = resolveBounds(dragConstraints, element, offsetRef.current);
-    boundsRef.current = bounds;
+    boundsRef.current = resolveBounds(constraints, element, offsetRef.current);
+    const startBounds = boundsRef.current;
     lockedAxisRef.current = null;
     const useDirectionLock = Boolean(dragDirectionLock) && axes.length === 2;
+    const threshold = Math.max(0, finiteOr(dragThreshold, DEFAULT_DRAG_THRESHOLD));
+    const captureTarget = captureTargetOf(fromControls ? event.target : null) ?? captureTargetOf(element);
     let origin = offsetRef.current;
     if (options?.snapToCursor && element) {
       const rect = element.getBoundingClientRect();
       const dx = event.clientX - (options.cursorOffset?.x ?? 0) - (rect.left + rect.width / 2);
       const dy = event.clientY - (options.cursorOffset?.y ?? 0) - (rect.top + rect.height / 2);
       origin = {
-        x: axes.includes("x") ? applyElastic(origin.x + dx, bounds.x, elastic.x) : origin.x,
-        y: axes.includes("y") ? applyElastic(origin.y + dy, bounds.y, elastic.y) : origin.y
+        x: axes.includes("x") ? applyElastic(origin.x + dx, startBounds.x, elastic.x) : origin.x,
+        y: axes.includes("y") ? applyElastic(origin.y + dy, startBounds.y, elastic.y) : origin.y
       };
       setOffset(origin);
     }
     const rawOrigin = {
-      x: removeElastic(origin.x, bounds.x, elastic.x),
-      y: removeElastic(origin.y, bounds.y, elastic.y)
+      x: removeElastic(origin.x, startBounds.x, elastic.x),
+      y: removeElastic(origin.y, startBounds.y, elastic.y)
     };
     const startX = event.clientX;
     const startY = event.clientY;
     const pointerId = event.pointerId;
     const samples = [{ x: startX, y: startY, t: now() }];
     let lastPoint = { x: startX, y: startY };
+    let releaseCapture = null;
     const isOtherPointer = (e) => pointerId !== void 0 && e.pointerId !== void 0 && e.pointerId !== pointerId;
     const makeInfo = (point, time) => {
       const info = {
@@ -3796,15 +4358,27 @@ function useAnimatedDrag(props, elementRef) {
       samples.push({ x: point.x, y: point.y, t: time });
       while (samples.length > 2 && time - samples[0].t > VELOCITY_WINDOW_MS * 2) samples.shift();
     };
+    const begin = (active2, e, info) => {
+      active2.started = true;
+      dragCountRef.current++;
+      releaseCapture = capturePointer(captureTarget, pointerId);
+      if (mountedRef.current) setIsDragging(true);
+      safeCall(propsRef.current.onDragStart, e, info);
+    };
     const handleMove = (e) => {
-      const active = activeRef.current;
-      if (!active || isOtherPointer(e)) return;
+      const active2 = activeRef.current;
+      if (!active2 || isOtherPointer(e)) return;
       const time = now();
       const point = { x: e.clientX, y: e.clientY };
       record(point, time);
       const info = makeInfo(point, time);
-      active.lastEvent = e;
-      active.lastInfo = info;
+      active2.lastEvent = e;
+      active2.lastInfo = info;
+      if (!active2.started) {
+        if (Math.hypot(info.offset.x, info.offset.y) < threshold) return;
+        begin(active2, e, info);
+        if (activeRef.current !== active2) return;
+      }
       if (useDirectionLock && lockedAxisRef.current === null) {
         const ax = Math.abs(info.offset.x);
         const ay = Math.abs(info.offset.y);
@@ -3816,6 +4390,7 @@ function useAnimatedDrag(props, elementRef) {
       const locked = lockedAxisRef.current;
       const move = (axis) => axes.includes(axis) && (!locked || locked === axis);
       const currentElastic = resolveElastic(propsRef.current.dragElastic);
+      const bounds = boundsRef.current;
       setOffset({
         x: move("x") ? applyElastic(rawOrigin.x + info.offset.x, bounds.x, currentElastic.x) : offsetRef.current.x,
         y: move("y") ? applyElastic(rawOrigin.y + info.offset.y, bounds.y, currentElastic.y) : offsetRef.current.y
@@ -3823,8 +4398,8 @@ function useAnimatedDrag(props, elementRef) {
       safeCall(propsRef.current.onDrag, e, info);
     };
     const handleUp = (e) => {
-      const active = activeRef.current;
-      if (!active || isOtherPointer(e)) return;
+      const active2 = activeRef.current;
+      if (!active2 || isOtherPointer(e)) return;
       const time = now();
       const point = { x: e.clientX, y: e.clientY };
       let info;
@@ -3832,69 +4407,156 @@ function useAnimatedDrag(props, elementRef) {
         record(point, time);
         info = makeInfo(point, time);
       } else {
-        info = { ...active.lastInfo, delta: ZERO, velocity: computeVelocity(samples, time) };
+        info = { ...active2.lastInfo, delta: ZERO, velocity: computeVelocity(samples, time) };
       }
-      finishDrag(e, info, true);
+      finishDrag(e, info, "release");
     };
     const handleCancel = (e) => {
-      const active = activeRef.current;
-      if (!active || isOtherPointer(e)) return;
-      finishDrag(e, { ...active.lastInfo, delta: ZERO, velocity: ZERO }, false);
+      const active2 = activeRef.current;
+      if (!active2 || isOtherPointer(e)) return;
+      finishDrag(e, { ...active2.lastInfo, delta: ZERO, velocity: ZERO }, "cancel");
     };
-    window.addEventListener("pointermove", handleMove);
-    window.addEventListener("pointerup", handleUp);
-    window.addEventListener("pointercancel", handleCancel);
+    window.addEventListener("pointermove", handleMove, LISTENER_OPTIONS);
+    window.addEventListener("pointerup", handleUp, LISTENER_OPTIONS);
+    window.addEventListener("pointercancel", handleCancel, LISTENER_OPTIONS);
     const startInfo = {
       point: { x: startX, y: startY },
       delta: ZERO,
       offset: ZERO,
       velocity: ZERO
     };
-    activeRef.current = {
+    const active = {
+      startEvent: event,
+      started: false,
       removeListeners: () => {
-        window.removeEventListener("pointermove", handleMove);
-        window.removeEventListener("pointerup", handleUp);
-        window.removeEventListener("pointercancel", handleCancel);
+        window.removeEventListener("pointermove", handleMove, LISTENER_OPTIONS);
+        window.removeEventListener("pointerup", handleUp, LISTENER_OPTIONS);
+        window.removeEventListener("pointercancel", handleCancel, LISTENER_OPTIONS);
+        releaseCapture?.();
+        releaseCapture = null;
       },
       lastEvent: event,
       lastInfo: startInfo
     };
-    setIsDragging(true);
+    activeRef.current = active;
     propsRef.current.dragControls?._notifyDragStart?.();
-    safeCall(propsRef.current.onDragStart, event, startInfo);
-  }, [detach, stopAnimations, getAxes, elementRef, setOffset, finishDrag]);
-  const stopDrag = useCallback14(() => {
+    if (threshold <= 0) begin(active, event, startInfo);
+  }, [detach, stopAnimations, syncObservedContainer, getAxes, elementRef, setOffset, finishDrag]);
+  const stopDrag = useCallback15(() => {
     if (activeRef.current) {
-      finishDrag(null, null, false);
+      finishDrag(null, null, "stop");
     } else {
-      settle(ZERO, false, false);
+      transitionRef.current = null;
+      settle(ZERO, false, false, null);
     }
   }, [finishDrag, settle]);
-  useEffect19(() => {
+  const cancelDrag = useCallback15(() => {
+    if (activeRef.current) {
+      finishDrag(null, null, "cancel");
+    } else {
+      transitionRef.current = null;
+      settle(ZERO, false, true, null);
+    }
+  }, [finishDrag, settle]);
+  const remeasure = useCallback15(() => {
+    const { dragConstraints: constraints, dragSnapToOrigin } = propsRef.current;
+    if (!constraints || !isRefConstraints(constraints)) return;
+    const element = elementRef.current;
+    if (!element || !constraints.current) return;
+    const bounds = resolveBounds(constraints, element, offsetRef.current);
+    boundsRef.current = bounds;
+    if (activeRef.current || dragSnapToOrigin) return;
+    for (const axis of getAxes()) {
+      const range = bounds[axis];
+      const value = offsetRef.current[axis];
+      const entry = animationsRef.current[axis];
+      let target;
+      if (entry) {
+        if (entry.target === void 0) continue;
+        target = clampValue(entry.target, range);
+        if (target === entry.target) continue;
+      } else {
+        target = clampValue(value, range);
+        if (target === value) continue;
+      }
+      const token = entry?.token && entry.token === transitionRef.current ? entry.token : null;
+      const velocity = entry ? entry.animation.getVelocity() : 0;
+      stopAnimation(axis);
+      if (shouldReduceMotion() || target === value) {
+        setAxis(axis, target);
+        completeAxis(token, axis);
+      } else {
+        springAxis(axis, value, target, velocity, token);
+      }
+    }
+  }, [elementRef, getAxes, stopAnimation, shouldReduceMotion, setAxis, completeAxis, springAxis]);
+  useEffect18(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
       detach();
+      transitionRef.current = null;
       stopAnimations();
     };
   }, [detach, stopAnimations]);
   const isDragEnabled = Boolean(drag);
-  useEffect19(() => {
+  useEffect18(() => {
     if (isDragEnabled) return;
-    detach();
+    const active = detach();
+    transitionRef.current = null;
     stopAnimations();
+    if (active?.started) {
+      safeCall(propsRef.current.onDragEnd, active.lastEvent, { ...active.lastInfo, delta: ZERO, velocity: ZERO });
+    }
   }, [isDragEnabled, detach, stopAnimations]);
-  useEffect19(() => {
+  useEffect18(() => {
     const controls = dragControls;
     if (!controls || !isDragEnabled) return;
-    controls._setDragHandler?.(startDrag);
+    const start = (event, options) => startDrag(event, options, true);
+    if (typeof controls._subscribe === "function") {
+      return controls._subscribe({ start, stop: stopDrag, cancel: cancelDrag });
+    }
+    controls._setDragHandler?.(start);
     controls._setStopHandler?.(stopDrag);
     return () => {
       controls._setDragHandler?.(null);
       controls._setStopHandler?.(null);
     };
-  }, [dragControls, isDragEnabled, startDrag, stopDrag]);
-  return { dragOffset, isDragging, startDrag };
+  }, [dragControls, isDragEnabled, startDrag, stopDrag, cancelDrag]);
+  const constraintsRef = dragConstraints && isRefConstraints(dragConstraints) ? dragConstraints : null;
+  useEffect18(() => {
+    if (!isDragEnabled || !constraintsRef || !isBrowser) return;
+    const handleResize = () => {
+      syncObservedContainer();
+      remeasure();
+    };
+    window.addEventListener("resize", handleResize);
+    let observer = null;
+    if (typeof ResizeObserver === "function") {
+      try {
+        observer = new ResizeObserver(handleResize);
+      } catch {
+        observer = null;
+      }
+    }
+    observationRef.current = { observer, container: null };
+    syncObservedContainer();
+    try {
+      const element = elementRef.current;
+      if (element) observer?.observe(element);
+    } catch {
+    }
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      observer?.disconnect();
+      observationRef.current = null;
+    };
+  }, [isDragEnabled, constraintsRef, elementRef, remeasure, syncObservedContainer]);
+  useEffect18(() => {
+    syncObservedContainer();
+  });
+  const getDragCount = useCallback15(() => dragCountRef.current, []);
+  return { dragOffset, isDragging, startDrag, getDragCount };
 }
 
 // src/adapters/react/components/Animated.tsx
@@ -3918,16 +4580,21 @@ var TRANSFORM_KEYS = [
   "skewY"
 ];
 var TRANSFORM_KEY_SET = new Set(TRANSFORM_KEYS);
-var DEFAULT_VALUES = {
+var DEFAULT_VALUES2 = {
   opacity: 1,
   scale: 1,
   scaleX: 1,
   scaleY: 1
 };
-function getNumber(source, key) {
+function getValue(source, key) {
   if (!source) return void 0;
   const value = source[key];
-  return typeof value === "number" ? value : void 0;
+  return typeof value === "number" || typeof value === "string" ? value : void 0;
+}
+function sameChannels2(a, b) {
+  const aKeys = Object.keys(a);
+  if (aKeys.length !== Object.keys(b).length) return false;
+  return aKeys.every((key) => a[key] === b[key]);
 }
 function pickKeys(values, keys) {
   const result = {};
@@ -3936,12 +4603,6 @@ function pickKeys(values, keys) {
     if (value !== void 0) result[key] = value;
   }
   return result;
-}
-function shallowEqualValues(a, b) {
-  if (!a) return false;
-  const aKeys = Object.keys(a);
-  if (aKeys.length !== Object.keys(b).length) return false;
-  return aKeys.every((key) => a[key] === b[key]);
 }
 function isIdentityTransform(key, value) {
   if (typeof value === "string") return false;
@@ -3973,15 +4634,6 @@ function buildStyle(values, staticTransform) {
   }
   return style;
 }
-function extractStringValues(style) {
-  const result = {};
-  for (const key in style) {
-    if (typeof style[key] === "string") {
-      result[key] = style[key];
-    }
-  }
-  return result;
-}
 function createAnimatedComponent(tag) {
   const AnimatedComponent = React3.forwardRef(
     ({
@@ -4012,10 +4664,12 @@ function createAnimatedComponent(tag) {
       dragTransition,
       dragSnapToOrigin,
       dragDirectionLock,
+      dragThreshold,
       onDirectionLock,
       onDragStart,
       onDrag,
       onDragEnd,
+      onDragTransitionEnd,
       onMouseEnter: propsOnMouseEnter,
       onMouseLeave: propsOnMouseLeave,
       onPointerEnter: propsOnPointerEnter,
@@ -4026,25 +4680,26 @@ function createAnimatedComponent(tag) {
       onBlur: propsOnBlur,
       ...props
     }, forwardedRef) => {
-      const springRef = useRef26(null);
-      const unsubscribeRef = useRef26(null);
-      const elementRef = useRef26(null);
-      const hasCalledSafeToRemove = useRef26(false);
-      const isDestroyedRef = useRef26(false);
-      const hasMountedRef = useRef26(false);
-      const lastTargetRef = useRef26(null);
-      const latestValuesRef = useRef26({});
-      const [isHovered, setIsHovered] = useState19(false);
-      const [isPressed, setIsPressed] = useState19(false);
-      const [isFocused, setIsFocused] = useState19(false);
-      const [isInViewport, setIsInViewport] = useState19(false);
-      const hasTriggeredInView = useRef26(false);
-      const isPressedRef = useRef26(false);
-      const removeGlobalPressListenersRef = useRef26(null);
-      const lastPointerTypeRef = useRef26(null);
-      const onTapCancelRef = useRef26(onTapCancel);
+      const springRef = useRef27(null);
+      const unsubscribeRef = useRef27(null);
+      const elementRef = useRef27(null);
+      const hasCalledSafeToRemove = useRef27(false);
+      const isDestroyedRef = useRef27(false);
+      const hasMountedRef = useRef27(false);
+      const hasCommittedRef = useRef27(false);
+      const lastTargetRef = useRef27(null);
+      const latestValuesRef = useRef27({});
+      const [isHovered, setIsHovered] = useState18(false);
+      const [isPressed, setIsPressed] = useState18(false);
+      const [isFocused, setIsFocused] = useState18(false);
+      const [isInViewport, setIsInViewport] = useState18(false);
+      const hasTriggeredInView = useRef27(false);
+      const isPressedRef = useRef27(false);
+      const removeGlobalPressListenersRef = useRef27(null);
+      const lastPointerTypeRef = useRef27(null);
+      const onTapCancelRef = useRef27(onTapCancel);
       onTapCancelRef.current = onTapCancel;
-      const { dragOffset, isDragging, startDrag } = useAnimatedDrag(
+      const { dragOffset, isDragging, startDrag, getDragCount } = useAnimatedDrag(
         {
           drag,
           dragControls,
@@ -4055,21 +4710,24 @@ function createAnimatedComponent(tag) {
           dragTransition,
           dragSnapToOrigin,
           dragDirectionLock,
+          dragThreshold,
           onDirectionLock,
           onDragStart,
           onDrag,
-          onDragEnd
+          onDragEnd,
+          onDragTransitionEnd
         },
         elementRef
       );
-      const presenceContext = useContext5(PresenceContext);
+      const pressDragCountRef = useRef27(0);
+      const presenceContext = useContext6(PresenceContext);
       const isPresent = presenceContext?.isPresent ?? true;
       const safeToRemove = presenceContext?.safeToRemove;
-      const motionConfig = useContext5(MotionContext);
-      const reducedMotion = motionConfig.isReducedMotion;
+      const motionConfig = useContext6(MotionContext);
+      const reducedMotion = useShouldReduceMotion();
       const springConfig = { ...motionConfig.config, ...config };
       const skipInitial = initial === false || presenceContext?.initial === false || motionConfig.initial === false;
-      const setRef = useCallback15((node) => {
+      const setRef = useCallback16((node) => {
         elementRef.current = node;
         if (typeof forwardedRef === "function") {
           forwardedRef(node);
@@ -4077,10 +4735,15 @@ function createAnimatedComponent(tag) {
           forwardedRef.current = node;
         }
       }, [forwardedRef]);
-      useEffect20(() => {
+      useEffect19(() => {
         if (!whileInView || !isBrowser) return;
         const element = elementRef.current;
         if (!element) return;
+        if (typeof IntersectionObserver === "undefined") {
+          hasTriggeredInView.current = true;
+          setIsInViewport(true);
+          return;
+        }
         const threshold = viewport?.amount === "all" ? 1 : viewport?.amount === "some" ? 0 : typeof viewport?.amount === "number" ? viewport.amount : 0.5;
         const observer = new IntersectionObserver(
           (entries) => {
@@ -4107,8 +4770,7 @@ function createAnimatedComponent(tag) {
           observer.disconnect();
         };
       }, [whileInView, viewport?.once, viewport?.margin, viewport?.amount]);
-      const numericKeySet = /* @__PURE__ */ new Set();
-      for (const source of [
+      const animationSources = [
         initial === false ? void 0 : initial,
         animate,
         exit,
@@ -4116,17 +4778,60 @@ function createAnimatedComponent(tag) {
         whileTap,
         whileFocus,
         whileDrag,
-        whileInView,
-        style
-      ]) {
+        whileInView
+      ];
+      const numericKeySet = /* @__PURE__ */ new Set();
+      const stringKeySet = /* @__PURE__ */ new Set();
+      for (const source of animationSources) {
         if (!source) continue;
         for (const key in source) {
-          if (typeof source[key] === "number") numericKeySet.add(key);
+          const value = source[key];
+          if (typeof value === "number") numericKeySet.add(key);
+          else if (typeof value === "string") stringKeySet.add(key);
         }
       }
+      for (const key in style) {
+        if (typeof style[key] === "number") numericKeySet.add(key);
+      }
+      for (const key of stringKeySet) numericKeySet.delete(key);
       const numericKeys = Array.from(numericKeySet).sort();
-      const numericKeysSignature = numericKeys.join("|");
-      const getBaseValue = (key) => getNumber(animate, key) ?? getNumber(style, key) ?? DEFAULT_VALUES[key] ?? 0;
+      const stringKeys = Array.from(stringKeySet).sort();
+      const channelKeysOf = (key, value) => {
+        if (!stringKeySet.has(key)) return [key];
+        const keys = [];
+        for (let i = 0; i < value.template.size; i++) keys.push(hiddenChannelKey(key, i));
+        return keys;
+      };
+      const getTransformIdentity = (key) => {
+        if (!TRANSFORM_KEY_SET.has(key)) return void 0;
+        for (const source of animationSources) {
+          const value = getValue(source, key);
+          if (typeof value !== "string") continue;
+          const { template } = parseAnimatableValue(value);
+          if (template.kinds.length === 1 && template.kinds[0] === "n") {
+            return `${template.parts[0]}${key.startsWith("scale") ? 1 : 0}${template.parts[1]}`;
+          }
+        }
+        return void 0;
+      };
+      const getBaseValue = (key) => {
+        if (stringKeySet.has(key)) {
+          return getValue(animate, key) ?? getValue(style, key) ?? getTransformIdentity(key);
+        }
+        const value = getValue(animate, key) ?? getValue(style, key);
+        return typeof value === "number" ? value : DEFAULT_VALUES2[key] ?? 0;
+      };
+      const channelKeys = [...numericKeys];
+      for (const key of stringKeys) {
+        let size = 0;
+        for (const source of [...animationSources, style]) {
+          const value = getValue(source, key);
+          if (value !== void 0) size = Math.max(size, parseAnimatableValue(value).template.size);
+        }
+        for (let i = 0; i < size; i++) channelKeys.push(hiddenChannelKey(key, i));
+      }
+      channelKeys.sort();
+      const channelKeysSignature = channelKeys.join("|");
       const getTargetStyle = () => {
         if (!isPresent && exit) {
           return exit;
@@ -4149,60 +4854,112 @@ function createAnimatedComponent(tag) {
         }
         return target;
       };
-      const getNumericTarget = () => {
+      const getTargetValues = () => {
         const target = getTargetStyle();
         const result = {};
         for (const key of numericKeys) {
-          result[key] = getNumber(target, key) ?? getBaseValue(key);
+          const value = getValue(target, key);
+          result[key] = typeof value === "number" ? value : getBaseValue(key);
         }
-        return result;
-      };
-      const getInitialValues = () => {
-        const target = getNumericTarget();
-        if (skipInitial || reducedMotion || !initial) return target;
-        const result = { ...target };
-        for (const key of numericKeys) {
-          const value = getNumber(initial, key);
+        for (const key of stringKeys) {
+          const value = getValue(target, key) ?? getBaseValue(key);
           if (value !== void 0) result[key] = value;
         }
         return result;
       };
-      const [animatedStyle, setAnimatedStyle] = useState19(getInitialValues);
-      const getNumericTargetRef = useRef26(getNumericTarget);
-      getNumericTargetRef.current = getNumericTarget;
-      const getInitialValuesRef = useRef26(getInitialValues);
-      getInitialValuesRef.current = getInitialValues;
-      const reducedMotionRef = useRef26(reducedMotion);
+      const getInitialValues = () => {
+        const target = getTargetValues();
+        if (skipInitial || reducedMotion || !initial) return target;
+        const result = { ...target };
+        for (const key of [...numericKeys, ...stringKeys]) {
+          const value = getValue(initial, key);
+          if (value !== void 0) result[key] = value;
+        }
+        return result;
+      };
+      const [animatedState, setAnimatedState] = useState18(() => {
+        const values = parseAnimatableRecord(getInitialValues());
+        return { values, channels: channelValuesOf(values, channelKeysOf) };
+      });
+      const appliedRef = useRef27(animatedState.values);
+      const getTargetValuesRef = useRef27(getTargetValues);
+      getTargetValuesRef.current = getTargetValues;
+      const channelKeysOfRef = useRef27(channelKeysOf);
+      channelKeysOfRef.current = channelKeysOf;
+      const channelKeysRef = useRef27(channelKeys);
+      channelKeysRef.current = channelKeys;
+      const reducedMotionRef = useRef27(reducedMotion);
       reducedMotionRef.current = reducedMotion;
-      useEffect20(() => {
-        const target = getNumericTargetRef.current();
-        const keys = Object.keys(target);
+      const shownRef = useRef27(animatedState);
+      const showState = useCallback16(
+        (values, channels) => {
+          const shown = shownRef.current;
+          if (shown.values === values && sameChannels2(shown.channels, channels)) return;
+          const state = { values, channels };
+          shownRef.current = state;
+          setAnimatedState(state);
+        },
+        []
+      );
+      const applyTarget = useCallback16(
+        (targetValues, instant) => {
+          const spring2 = springRef.current;
+          const next = parseAnimatableRecord(targetValues);
+          const plan = planTransition(appliedRef.current, next, channelKeysOfRef.current, instant);
+          appliedRef.current = next;
+          lastTargetRef.current = { signature: animatableSignature(targetValues), values: next };
+          if (spring2) {
+            if (hasKeys(plan.jump)) spring2.jump(plan.jump);
+            if (hasKeys(plan.set)) spring2.set(plan.set);
+          }
+          if (plan.structural || hasKeys(plan.jump)) {
+            showState(next, spring2 ? spring2.get() : {});
+          }
+        },
+        [showState]
+      );
+      useEffect19(() => {
+        const keys = channelKeysRef.current;
         if (keys.length === 0) {
           return;
         }
-        const startValues = hasMountedRef.current ? { ...target, ...pickKeys(latestValuesRef.current, keys) } : getInitialValuesRef.current();
+        const startValues = {};
+        for (const key of keys) startValues[key] = 0;
+        Object.assign(
+          startValues,
+          pickKeys(channelValuesOf(appliedRef.current, channelKeysOfRef.current), keys)
+        );
+        if (hasMountedRef.current) Object.assign(startValues, pickKeys(latestValuesRef.current, keys));
         hasMountedRef.current = true;
+        const isMount = !hasCommittedRef.current;
         isDestroyedRef.current = false;
-        const spring2 = createSpringGroup4(startValues, springConfig);
+        const spring2 = createSpringGroup5(startValues, springConfig);
         unsubscribeRef.current = spring2.subscribe((values) => {
           latestValuesRef.current = values;
           if (!isDestroyedRef.current) {
-            setAnimatedStyle(values);
+            showState(appliedRef.current, values);
           }
         });
         springRef.current = spring2;
-        lastTargetRef.current = target;
+        const targetValues = getTargetValuesRef.current();
+        const signature = animatableSignature(targetValues);
+        const targetChannels = channelValuesOf(
+          parseAnimatableRecord(targetValues),
+          channelKeysOfRef.current
+        );
+        const appliedValues = {};
+        for (const key in appliedRef.current) appliedValues[key] = appliedRef.current[key].raw;
+        const needsAnimation = animatableSignature(appliedValues) !== signature || Object.keys(targetChannels).some((key) => startValues[key] !== targetChannels[key]);
+        lastTargetRef.current = { signature, values: parseAnimatableRecord(targetValues) };
         let rafId = null;
-        const needsAnimation = keys.some((key) => startValues[key] !== target[key]);
         if (needsAnimation) {
-          if (reducedMotionRef.current) {
-            spring2.jump(target);
+          if (reducedMotionRef.current || !isMount) {
+            applyTarget(targetValues, reducedMotionRef.current);
           } else {
             rafId = safeRequestAnimationFrame(() => {
               rafId = null;
-              if (!isDestroyedRef.current) {
-                spring2.set(target);
-              }
+              if (isDestroyedRef.current) return;
+              applyTarget(getTargetValuesRef.current(), reducedMotionRef.current);
             });
           }
         }
@@ -4216,77 +4973,77 @@ function createAnimatedComponent(tag) {
           spring2.destroy();
           springRef.current = null;
         };
-      }, [springConfig.stiffness, springConfig.damping, springConfig.mass, numericKeysSignature]);
-      useEffect20(() => {
+      }, [springConfig.stiffness, springConfig.damping, springConfig.mass, channelKeysSignature]);
+      useEffect19(() => {
+        hasCommittedRef.current = true;
         const spring2 = springRef.current;
-        if (!spring2) return;
-        const target = getNumericTarget();
-        if (shallowEqualValues(lastTargetRef.current, target)) return;
-        lastTargetRef.current = target;
-        if (reducedMotion) {
-          spring2.jump(target);
-        } else {
-          spring2.set(target);
+        const targetValues = getTargetValues();
+        if (reducedMotion && spring2 && spring2.isAnimating() && lastTargetRef.current) {
+          spring2.jump(channelValuesOf(lastTargetRef.current.values, channelKeysOf));
         }
+        if (lastTargetRef.current?.signature === animatableSignature(targetValues)) return;
+        applyTarget(targetValues, reducedMotion);
       });
-      useEffect20(() => {
+      const onAnimationCompleteRef = useRef27(onAnimationComplete);
+      onAnimationCompleteRef.current = onAnimationComplete;
+      const hasExit = Boolean(exit);
+      useEffect19(() => {
         if (isPresent || !safeToRemove || hasCalledSafeToRemove.current) return;
         const complete = () => {
           if (hasCalledSafeToRemove.current) return;
           hasCalledSafeToRemove.current = true;
           safeToRemove();
-          onAnimationComplete?.();
+          onAnimationCompleteRef.current?.();
         };
-        if (!exit) {
+        const spring2 = springRef.current;
+        if (!hasExit || !spring2 || spring2.isDestroyed()) {
           complete();
           return;
         }
-        let cancelled = false;
-        let timeout = null;
-        const checkComplete = () => {
-          if (cancelled) return;
-          const spring2 = springRef.current;
-          if (!spring2 || spring2.isDestroyed() || !spring2.isAnimating()) {
-            complete();
-            return;
-          }
-          timeout = setTimeout(checkComplete, 50);
-        };
-        timeout = setTimeout(checkComplete, 50);
+        let unsubscribe = null;
+        unsubscribe = spring2.subscribe(() => {
+          if (spring2.isAnimating()) return;
+          unsubscribe?.();
+          unsubscribe = null;
+          complete();
+        });
+        if (hasCalledSafeToRemove.current) {
+          unsubscribe?.();
+          unsubscribe = null;
+        }
         return () => {
-          cancelled = true;
-          if (timeout !== null) clearTimeout(timeout);
+          unsubscribe?.();
         };
-      }, [isPresent, exit, safeToRemove, onAnimationComplete]);
-      useEffect20(() => {
+      }, [isPresent, hasExit, safeToRemove, springConfig.stiffness, springConfig.damping, springConfig.mass, channelKeysSignature]);
+      useEffect19(() => {
         if (isPresent) {
           hasCalledSafeToRemove.current = false;
         }
       }, [isPresent]);
-      const endPress = useCallback15(() => {
+      const endPress = useCallback16(() => {
         isPressedRef.current = false;
         setIsPressed(false);
         removeGlobalPressListenersRef.current?.();
         removeGlobalPressListenersRef.current = null;
       }, []);
-      useEffect20(() => {
+      useEffect19(() => {
         return () => {
           removeGlobalPressListenersRef.current?.();
           removeGlobalPressListenersRef.current = null;
         };
       }, []);
-      const handlePointerEnter = useCallback15((e) => {
+      const handlePointerEnter = useCallback16((e) => {
         lastPointerTypeRef.current = e.pointerType || null;
         propsOnPointerEnter?.(e);
       }, [propsOnPointerEnter]);
-      const handleMouseEnter = useCallback15((e) => {
+      const handleMouseEnter = useCallback16((e) => {
         if (lastPointerTypeRef.current !== "touch") {
           if (whileHover) setIsHovered(true);
           onHoverStart?.(e);
         }
         propsOnMouseEnter?.(e);
       }, [whileHover, onHoverStart, propsOnMouseEnter]);
-      const handleMouseLeave = useCallback15((e) => {
+      const handleMouseLeave = useCallback16((e) => {
         if (lastPointerTypeRef.current !== "touch") {
           if (whileHover) setIsHovered(false);
           if (isPressedRef.current) {
@@ -4297,9 +5054,10 @@ function createAnimatedComponent(tag) {
         }
         propsOnMouseLeave?.(e);
       }, [whileHover, onHoverEnd, propsOnMouseLeave]);
-      const handlePointerDown = useCallback15((e) => {
+      const handlePointerDown = useCallback16((e) => {
         if (e.pointerType) lastPointerTypeRef.current = e.pointerType;
         isPressedRef.current = true;
+        pressDragCountRef.current = getDragCount();
         if (whileTap) setIsPressed(true);
         if (isBrowser && !removeGlobalPressListenersRef.current) {
           const handleGlobalPointerUp = (event) => {
@@ -4316,48 +5074,41 @@ function createAnimatedComponent(tag) {
         }
         onTapStart?.(e);
         propsOnPointerDown?.(e);
-      }, [whileTap, onTapStart, propsOnPointerDown, endPress]);
-      const handlePointerUp = useCallback15((e) => {
+      }, [whileTap, onTapStart, propsOnPointerDown, endPress, getDragCount]);
+      const handlePointerUp = useCallback16((e) => {
         if (isPressedRef.current) {
           endPress();
-          onTap?.(e);
+          if (getDragCount() !== pressDragCountRef.current) {
+            onTapCancel?.(e);
+          } else {
+            onTap?.(e);
+          }
         }
         propsOnPointerUp?.(e);
-      }, [onTap, propsOnPointerUp, endPress]);
-      const handlePointerCancel = useCallback15((e) => {
+      }, [onTap, onTapCancel, propsOnPointerUp, endPress, getDragCount]);
+      const handlePointerCancel = useCallback16((e) => {
         if (isPressedRef.current || removeGlobalPressListenersRef.current) {
           endPress();
           onTapCancel?.(e);
         }
         propsOnPointerCancel?.(e);
       }, [onTapCancel, propsOnPointerCancel, endPress]);
-      const handleFocus = useCallback15((e) => {
+      const handleFocus = useCallback16((e) => {
         if (whileFocus) setIsFocused(true);
         propsOnFocus?.(e);
       }, [whileFocus, propsOnFocus]);
-      const handleBlur = useCallback15((e) => {
+      const handleBlur = useCallback16((e) => {
         if (whileFocus) setIsFocused(false);
         propsOnBlur?.(e);
       }, [whileFocus, propsOnBlur]);
       const staticStyle = Object.fromEntries(
         Object.entries(style).filter(([_, v]) => typeof v !== "number")
       );
-      const gestureStringStyles = {};
-      if (whileInView && isInViewport) {
-        Object.assign(gestureStringStyles, extractStringValues(whileInView));
-      }
-      if (whileFocus && isFocused) {
-        Object.assign(gestureStringStyles, extractStringValues(whileFocus));
-      }
-      if (whileHover && isHovered) {
-        Object.assign(gestureStringStyles, extractStringValues(whileHover));
-      }
-      if (whileDrag && isDragging) {
-        Object.assign(gestureStringStyles, extractStringValues(whileDrag));
-      }
-      if (whileTap && isPressed) {
-        Object.assign(gestureStringStyles, extractStringValues(whileTap));
-      }
+      const animatedValues = composeAnimatableRecord(
+        animatedState.values,
+        animatedState.channels,
+        channelKeysOf
+      );
       const eventHandlers = {
         onMouseEnter: propsOnMouseEnter,
         onMouseLeave: propsOnMouseLeave,
@@ -4394,7 +5145,7 @@ function createAnimatedComponent(tag) {
         // Keep touch input from scrolling the page instead of dragging
         ...isDragListener ? { touchAction: drag === "x" ? "pan-y" : drag === "y" ? "pan-x" : "none" } : void 0,
         ...staticStyle,
-        ...buildStyle({ ...animatedStyle, ...gestureStringStyles }, staticStyle.transform)
+        ...buildStyle(animatedValues, staticStyle.transform)
       };
       if (dragOffset.x !== 0 || dragOffset.y !== 0) {
         const rest = elementStyle.transform && elementStyle.transform !== "none" ? ` ${elementStyle.transform}` : "";
@@ -4449,7 +5200,7 @@ var Animated = {
 
 // src/adapters/react/components/Trail.tsx
 import * as React4 from "react";
-import { useEffect as useEffect21, useRef as useRef27, useState as useState20 } from "react";
+import { useEffect as useEffect20, useRef as useRef28, useState as useState19 } from "react";
 import { createTrail } from "@oxog/springkit";
 import { Fragment as Fragment4, jsx as jsx3 } from "react/jsx-runtime";
 var DEFAULT_TRAIL_CONFIG = {};
@@ -4463,103 +5214,125 @@ var Trail = ({
   children
 }) => {
   const config = useStableSpringConfig(configProp, DEFAULT_TRAIL_CONFIG);
-  const trailsRef = useRef27(/* @__PURE__ */ new Map());
-  const [values, setValues] = useState20(
+  const stateRef = useRef28(null);
+  const [values, setValues] = useState19(
     () => items.map(() => ({ ...from }))
   );
-  const fromRef = useRef27(from);
+  const fromRef = useRef28(from);
   fromRef.current = from;
-  const toRef = useRef27(to);
+  const toRef = useRef28(to);
   toRef.current = to;
-  const reverseRef = useRef27(reverse);
+  const reverseRef = useRef28(reverse);
   reverseRef.current = reverse;
   const valueKeysSignature = Object.keys(to).join("|");
   const toSignature = Object.keys(to).map((key) => `${key}:${to[key]}`).join("|");
-  useEffect21(() => {
+  useEffect20(() => {
     const count = items.length;
     const fromValues = fromRef.current;
     const toValues = toRef.current;
     const keys2 = Object.keys(toValues);
-    const trails = /* @__PURE__ */ new Map();
-    const current = {};
-    const unsubscribes = [];
+    let state = stateRef.current;
+    if (!state || state.config !== config || state.keysSignature !== valueKeysSignature) {
+      state?.segments.forEach((segment) => segment.trails.forEach((trail) => trail.destroy()));
+      state = { config, keysSignature: valueKeysSignature, segments: [] };
+      stateRef.current = state;
+    }
+    const segments = state.segments;
+    const capacity = segments.reduce((total, segment) => total + segment.size, 0);
+    if (capacity < count) {
+      const size = count - capacity;
+      const segment = { size, trails: /* @__PURE__ */ new Map(), current: {} };
+      for (const key of keys2) {
+        const start = fromValues[key] ?? toValues[key] ?? 0;
+        const trail = createTrail(size, config);
+        trail.jump(start);
+        segment.trails.set(key, trail);
+        segment.current[key] = new Array(size).fill(start);
+      }
+      segments.push(segment);
+      for (const key of keys2) {
+        const target = toValues[key];
+        if (typeof target === "number") segment.trails.get(key)?.set(target);
+      }
+    }
     const publish = () => {
       const isReversed = reverseRef.current;
+      const all = {};
+      for (const key of keys2) {
+        all[key] = segments.flatMap((segment) => segment.current[key] ?? []);
+      }
       setValues(
         Array.from({ length: count }, (_, index) => {
           const itemValues = { ...fromValues };
           const trailIndex = isReversed ? count - 1 - index : index;
           for (const key of keys2) {
-            itemValues[key] = current[key]?.[trailIndex] ?? fromValues[key] ?? toValues[key] ?? 0;
+            itemValues[key] = all[key]?.[trailIndex] ?? fromValues[key] ?? toValues[key] ?? 0;
           }
           return itemValues;
         })
       );
     };
-    for (const key of keys2) {
-      const start = fromValues[key] ?? toValues[key] ?? 0;
-      const trail = createTrail(count, config);
-      trail.jump(start);
-      current[key] = new Array(count).fill(start);
-      unsubscribes.push(
-        trail.subscribe((vals) => {
-          current[key] = vals;
-          publish();
-        })
-      );
-      trails.set(key, trail);
-    }
-    trailsRef.current = trails;
-    for (const key of keys2) {
-      const target = toValues[key];
-      if (typeof target === "number") trails.get(key)?.set(target);
+    const unsubscribes = [];
+    for (const segment of segments) {
+      segment.trails.forEach((trail, key) => {
+        unsubscribes.push(
+          trail.subscribe((vals) => {
+            segment.current[key] = vals;
+            publish();
+          })
+        );
+      });
     }
     return () => {
       unsubscribes.forEach((unsubscribe) => unsubscribe());
-      trails.forEach((trail) => trail.destroy());
-      trailsRef.current = /* @__PURE__ */ new Map();
     };
   }, [items.length, config, valueKeysSignature]);
-  const isFirstUpdateRef = useRef27(true);
-  useEffect21(() => {
+  useEffect20(() => {
+    return () => {
+      stateRef.current?.segments.forEach(
+        (segment) => segment.trails.forEach((trail) => trail.destroy())
+      );
+      stateRef.current = null;
+    };
+  }, []);
+  const isFirstUpdateRef = useRef28(true);
+  useEffect20(() => {
     if (isFirstUpdateRef.current) {
       isFirstUpdateRef.current = false;
       return;
     }
     const toValues = toRef.current;
-    trailsRef.current.forEach((trail, key) => {
-      const target = toValues[key];
-      if (typeof target === "number") trail.set(target);
+    stateRef.current?.segments.forEach((segment) => {
+      segment.trails.forEach((trail, key) => {
+        const target = toValues[key];
+        if (typeof target === "number") trail.set(target);
+      });
     });
   }, [toSignature]);
   return /* @__PURE__ */ jsx3(Fragment4, { children: items.map((item, index) => {
-    const itemValues = values[index];
-    if (!itemValues) {
-      console.warn(`[SpringKit] Trail: No values found for item at index ${index}`);
-      return null;
-    }
+    const itemValues = values[index] ?? from;
     return /* @__PURE__ */ jsx3(React4.Fragment, { children: children(itemValues, item, index) }, keys(item, index));
   }) });
 };
 
 // src/adapters/react/components/AnimatePresence.tsx
 import {
-  useRef as useRef30,
-  useState as useState21,
+  useRef as useRef31,
+  useState as useState20,
   useLayoutEffect as useLayoutEffect2,
-  useEffect as useEffect23,
-  useCallback as useCallback18,
+  useEffect as useEffect22,
+  useCallback as useCallback19,
   Children as Children2,
   isValidElement as isValidElement2,
   cloneElement as cloneElement2
 } from "react";
 
 // src/adapters/react/components/PresenceChild.tsx
-import { useMemo as useMemo6, useCallback as useCallback17, useRef as useRef29, useEffect as useEffect22 } from "react";
+import { useMemo as useMemo6, useCallback as useCallback18, useRef as useRef30, useEffect as useEffect21 } from "react";
 
 // src/adapters/react/components/PopChild.tsx
 import * as React5 from "react";
-import { useRef as useRef28, useCallback as useCallback16, cloneElement } from "react";
+import { useRef as useRef29, useCallback as useCallback17, cloneElement } from "react";
 import { jsx as jsx4 } from "react/jsx-runtime";
 var PopChildMeasure = class extends React5.Component {
   getSnapshotBeforeUpdate(prevProps) {
@@ -4594,10 +5367,10 @@ function PopChild({
   children,
   isPresent
 }) {
-  const elementRef = useRef28(null);
-  const layoutRef = useRef28(null);
+  const elementRef = useRef29(null);
+  const layoutRef = useRef29(null);
   const childRef = getElementRef(children);
-  const setRef = useCallback16(
+  const setRef = useCallback17(
     (node) => {
       elementRef.current = node;
       if (typeof childRef === "function") {
@@ -4651,14 +5424,14 @@ function PresenceChild({
   initial,
   popLayout = false
 }) {
-  const presenceIdRef = useRef29(id);
-  const onExitCompleteRef = useRef29(onExitComplete);
+  const presenceIdRef = useRef30(id);
+  const onExitCompleteRef = useRef30(onExitComplete);
   presenceIdRef.current = id;
   onExitCompleteRef.current = onExitComplete;
-  const safeToRemove = useCallback17(() => {
+  const safeToRemove = useCallback18(() => {
     onExitCompleteRef.current(presenceIdRef.current);
   }, []);
-  const hasExitHandlerRef = useRef29(false);
+  const hasExitHandlerRef = useRef30(false);
   const contextValue = useMemo6(
     () => ({
       id,
@@ -4672,7 +5445,7 @@ function PresenceChild({
     }),
     [id, isPresent, safeToRemove, custom, initial]
   );
-  useEffect22(() => {
+  useEffect21(() => {
     if (isPresent) return;
     if (!hasExitHandlerRef.current) {
       safeToRemove();
@@ -4687,7 +5460,7 @@ function PresenceChild({
 
 // src/adapters/react/components/AnimatePresence.tsx
 import { Fragment as Fragment5, jsx as jsx6 } from "react/jsx-runtime";
-var useIsomorphicLayoutEffect2 = typeof window !== "undefined" ? useLayoutEffect2 : useEffect23;
+var useIsomorphicLayoutEffect2 = typeof window !== "undefined" ? useLayoutEffect2 : useEffect22;
 function getChildKey(child) {
   return child.key !== null ? String(child.key) : "";
 }
@@ -4710,12 +5483,12 @@ function AnimatePresence({
   mode = "sync",
   onExitComplete
 }) {
-  const isInitialMount = useRef30(true);
-  const [exitingChildren, setExitingChildren] = useState21({});
-  const prevChildrenRef = useRef30({});
-  const prevOrderRef = useRef30([]);
-  const exitingRef = useRef30({});
-  const onExitCompleteRef = useRef30(onExitComplete);
+  const isInitialMount = useRef31(true);
+  const [exitingChildren, setExitingChildren] = useState20({});
+  const prevChildrenRef = useRef31({});
+  const prevOrderRef = useRef31([]);
+  const exitingRef = useRef31({});
+  const onExitCompleteRef = useRef31(onExitComplete);
   onExitCompleteRef.current = onExitComplete;
   const currentChildren = getChildrenMap(children);
   const currentKeys = [];
@@ -4738,7 +5511,7 @@ function AnimatePresence({
     }
   }
   const showEntering = mode !== "wait" || Object.keys(derivedExiting).length === 0;
-  const renderedOrder = showEntering ? [...currentKeys] : [];
+  const renderedOrder = showEntering ? [...currentKeys] : currentKeys.filter((key) => prevOrder.includes(key));
   const exitingKeys = Object.keys(derivedExiting).sort(
     (a, b) => prevOrder.indexOf(a) - prevOrder.indexOf(b)
   );
@@ -4766,7 +5539,7 @@ function AnimatePresence({
       isInitialMount.current = false;
     }
   });
-  const handleExitComplete = useCallback18((key) => {
+  const handleExitComplete = useCallback19((key) => {
     if (!(key in exitingRef.current)) return;
     const next = { ...exitingRef.current };
     delete next[key];
@@ -4819,18 +5592,18 @@ function AnimatePresence({
 import * as React6 from "react";
 import {
   createContext as createContext5,
-  useContext as useContext6,
-  useRef as useRef31,
-  useState as useState22,
-  useEffect as useEffect24,
-  useCallback as useCallback19,
+  useContext as useContext7,
+  useRef as useRef32,
+  useState as useState21,
+  useEffect as useEffect23,
+  useCallback as useCallback20,
   useMemo as useMemo7
 } from "react";
 import { createSpringValue as createSpringValue5 } from "@oxog/springkit";
 var DEFAULT_REORDER_CONFIG = { stiffness: 300, damping: 30 };
 var ReorderContext = createContext5(null);
 function useReorderContext() {
-  const context = useContext6(ReorderContext);
+  const context = useContext7(ReorderContext);
   if (!context) {
     throw new Error("Reorder.Item must be used within a Reorder.Group");
   }
@@ -4847,32 +5620,32 @@ function ReorderGroupComponent({
   as: Component2 = "ul",
   layoutDuration = 200
 }, ref) {
-  const itemsRef = useRef31(/* @__PURE__ */ new Map());
-  const sizesRef = useRef31(/* @__PURE__ */ new Map());
-  const [draggingValue, setDraggingValue] = useState22(null);
-  const [offsets, setOffsetsState] = useState22(/* @__PURE__ */ new Map());
-  const offsetsRef = useRef31(offsets);
-  const setOffsets = useCallback19((next) => {
+  const itemsRef = useRef32(/* @__PURE__ */ new Map());
+  const sizesRef = useRef32(/* @__PURE__ */ new Map());
+  const [draggingValue, setDraggingValue] = useState21(null);
+  const [offsets, setOffsetsState] = useState21(/* @__PURE__ */ new Map());
+  const offsetsRef = useRef32(offsets);
+  const setOffsets = useCallback20((next) => {
     offsetsRef.current = next;
     setOffsetsState(next);
   }, []);
-  const dragStartIndexRef = useRef31(-1);
-  const currentOrderRef = useRef31(values);
-  const onReorderRef = useRef31(onReorder);
+  const dragStartIndexRef = useRef32(-1);
+  const currentOrderRef = useRef32(values);
+  const onReorderRef = useRef32(onReorder);
   onReorderRef.current = onReorder;
-  useEffect24(() => {
+  useEffect23(() => {
     currentOrderRef.current = values;
   }, [values]);
-  const registerItem = useCallback19((value, element) => {
+  const registerItem = useCallback20((value, element) => {
     itemsRef.current.set(value, element);
     const rect = element.getBoundingClientRect();
     sizesRef.current.set(value, axis === "y" ? rect.height : rect.width);
   }, [axis]);
-  const unregisterItem = useCallback19((value) => {
+  const unregisterItem = useCallback20((value) => {
     itemsRef.current.delete(value);
     sizesRef.current.delete(value);
   }, []);
-  const handleDragStart = useCallback19((value) => {
+  const handleDragStart = useCallback20((value) => {
     setDraggingValue(value);
     dragStartIndexRef.current = currentOrderRef.current.indexOf(value);
     itemsRef.current.forEach((element, itemValue) => {
@@ -4880,7 +5653,7 @@ function ReorderGroupComponent({
       sizesRef.current.set(itemValue, axis === "y" ? rect.height : rect.width);
     });
   }, [axis]);
-  const handleDrag = useCallback19((value, offset) => {
+  const handleDrag = useCallback20((value, offset) => {
     const currentIndex = currentOrderRef.current.indexOf(value);
     if (currentIndex === -1) return;
     const sizes = sizesRef.current;
@@ -4915,7 +5688,7 @@ function ReorderGroupComponent({
     }
     setOffsets(newOffsets);
   }, [setOffsets]);
-  const handleDragEnd = useCallback19((value) => {
+  const handleDragEnd = useCallback20((value) => {
     const currentIndex = currentOrderRef.current.indexOf(value);
     if (currentIndex === -1) {
       setDraggingValue(null);
@@ -4943,7 +5716,7 @@ function ReorderGroupComponent({
     setDraggingValue(null);
     setOffsets(/* @__PURE__ */ new Map());
   }, [setOffsets]);
-  const moveItem = useCallback19((value, toIndex) => {
+  const moveItem = useCallback20((value, toIndex) => {
     const order = [...currentOrderRef.current];
     const fromIndex = order.indexOf(value);
     if (fromIndex === -1) return;
@@ -4953,8 +5726,8 @@ function ReorderGroupComponent({
     order.splice(clampedIndex, 0, value);
     onReorderRef.current(order);
   }, []);
-  const getDraggingValue = useCallback19(() => draggingValue, [draggingValue]);
-  const getItemOffset = useCallback19((value) => offsets.get(value) || 0, [offsets]);
+  const getDraggingValue = useCallback20(() => draggingValue, [draggingValue]);
+  const getItemOffset = useCallback20((value) => offsets.get(value) || 0, [offsets]);
   const contextValue = useMemo7(() => ({
     values,
     axis,
@@ -5016,14 +5789,14 @@ function ReorderItemComponent({
 }, ref) {
   const context = useReorderContext();
   const { registerItem, unregisterItem } = context;
-  const elementRef = useRef31(null);
-  const springRef = useRef31(null);
-  const [offset, setOffset] = useState22(0);
-  const [isDragging, setIsDragging] = useState22(false);
-  const isDraggingRef = useRef31(false);
-  const dragStartPos = useRef31({ x: 0, y: 0 });
-  const dragOffset = useRef31(0);
-  const setRef = useCallback19((node) => {
+  const elementRef = useRef32(null);
+  const springRef = useRef32(null);
+  const [offset, setOffset] = useState21(0);
+  const [isDragging, setIsDragging] = useState21(false);
+  const isDraggingRef = useRef32(false);
+  const dragStartPos = useRef32({ x: 0, y: 0 });
+  const dragOffset = useRef32(0);
+  const setRef = useCallback20((node) => {
     elementRef.current = node;
     if (typeof ref === "function") {
       ref(node);
@@ -5031,14 +5804,14 @@ function ReorderItemComponent({
       ref.current = node;
     }
   }, [ref]);
-  useEffect24(() => {
+  useEffect23(() => {
     const element = elementRef.current;
     if (element) registerItem(value, element);
     return () => {
       unregisterItem(value);
     };
   }, [value, registerItem, unregisterItem]);
-  useEffect24(() => {
+  useEffect23(() => {
     return () => {
       springRef.current?.destroy();
       springRef.current = null;
@@ -5046,7 +5819,11 @@ function ReorderItemComponent({
   }, []);
   const targetOffset = context.getItemOffset(value);
   const springConfig = context.config;
-  useEffect24(() => {
+  const index = context.values.indexOf(value);
+  const indexRef = useRef32(index);
+  useEffect23(() => {
+    const moved = indexRef.current !== index;
+    indexRef.current = index;
     if (isDragging) return;
     if (!springRef.current) {
       springRef.current = createSpringValue5(0, {
@@ -5054,9 +5831,14 @@ function ReorderItemComponent({
         onUpdate: setOffset
       });
     }
-    springRef.current.set(targetOffset);
-  }, [targetOffset, isDragging, springConfig]);
-  const handlePointerDown = useCallback19((e) => {
+    if (moved) {
+      springRef.current.jump(targetOffset);
+      setOffset(targetOffset);
+    } else {
+      springRef.current.set(targetOffset);
+    }
+  }, [targetOffset, isDragging, springConfig, index]);
+  const handlePointerDown = useCallback20((e) => {
     if (!dragEnabled) return;
     e.preventDefault();
     e.stopPropagation();
@@ -5075,13 +5857,13 @@ function ReorderItemComponent({
       }
     }
   }, [dragEnabled, context, value, onDragStart]);
-  const handlePointerMove = useCallback19((e) => {
+  const handlePointerMove = useCallback20((e) => {
     if (!isDraggingRef.current) return;
     dragOffset.current = context.axis === "y" ? e.clientY - dragStartPos.current.y : e.clientX - dragStartPos.current.x;
     context.onDrag(value, dragOffset.current);
     setOffset(dragOffset.current);
   }, [context, value]);
-  const handlePointerUp = useCallback19((e) => {
+  const handlePointerUp = useCallback20((e) => {
     if (!isDraggingRef.current) return;
     isDraggingRef.current = false;
     const element = elementRef.current;
@@ -5099,7 +5881,7 @@ function ReorderItemComponent({
     dragOffset.current = 0;
   }, [context, value, onDragEnd]);
   const transformProp = context.axis === "y" ? `translateY(${offset}px)` : `translateX(${offset}px)`;
-  const handleKeyDown = useCallback19((e) => {
+  const handleKeyDown = useCallback20((e) => {
     if (!dragEnabled) return;
     const currentIndex = context.values.indexOf(value);
     if (currentIndex === -1) return;
@@ -5184,8 +5966,8 @@ var Reorder = {
 
 // src/adapters/react/components/SpringText.tsx
 import * as React7 from "react";
-import { useRef as useRef32, useEffect as useEffect25, useState as useState23, useMemo as useMemo8, memo as memo2 } from "react";
-import { createSpringValue as createSpringValue6 } from "@oxog/springkit";
+import { useRef as useRef33, useEffect as useEffect24, useState as useState22, useMemo as useMemo8, memo as memo2 } from "react";
+import { createSpringValue as createSpringValue6, delay as delay5 } from "@oxog/springkit";
 import { jsx as jsx7, jsxs } from "react/jsx-runtime";
 var graphemeSegmenter;
 function splitCharacters(text) {
@@ -5226,13 +6008,13 @@ var SpringText = memo2(function SpringText2({
 }) {
   const config = useStableSpringConfig(configProp, DEFAULT_TEXT_CONFIG);
   const elements = useMemo8(() => splitText(children, mode), [children, mode]);
-  const [animatedValues, setAnimatedValues] = useState23(
+  const [animatedValues, setAnimatedValues] = useState22(
     () => new Array(elements.length).fill(animateOnMount ? 0 : 1)
   );
-  const onCompleteRef = useRef32(onComplete);
+  const onCompleteRef = useRef33(onComplete);
   onCompleteRef.current = onComplete;
-  const prevTriggerRef = useRef32(trigger);
-  useEffect25(() => {
+  const prevTriggerRef = useRef33(trigger);
+  useEffect24(() => {
     const triggerChanged = prevTriggerRef.current !== trigger;
     prevTriggerRef.current = trigger;
     const shouldAnimate = animateOnMount || triggerChanged;
@@ -5242,8 +6024,7 @@ var SpringText = memo2(function SpringText2({
       return;
     }
     let cancelled = false;
-    const timeouts = /* @__PURE__ */ new Set();
-    const rafIds = /* @__PURE__ */ new Set();
+    const cancelDelays = /* @__PURE__ */ new Set();
     let completed = 0;
     setAnimatedValues(new Array(elements.length).fill(0));
     const springs = elements.map(
@@ -5256,41 +6037,32 @@ var SpringText = memo2(function SpringText2({
             next[index] = value;
             return next;
           });
+        },
+        onComplete: () => {
+          if (cancelled) return;
+          completed++;
+          if (completed === springs.length) {
+            onCompleteRef.current?.();
+          }
         }
       })
     );
     springs.forEach((spring2, index) => {
-      const startTimeout = setTimeout(() => {
-        timeouts.delete(startTimeout);
+      const ms = index * stagger;
+      if (!(ms > 0)) {
+        spring2.set(1);
+        return;
+      }
+      const cancel = delay5(ms, () => {
+        cancelDelays.delete(cancel);
         if (cancelled) return;
         spring2.set(1);
-        const checkComplete = () => {
-          if (cancelled) return;
-          if (!spring2.isAnimating()) {
-            completed++;
-            if (completed === springs.length) {
-              onCompleteRef.current?.();
-            }
-          } else {
-            const rafId = requestAnimationFrame(() => {
-              rafIds.delete(rafId);
-              checkComplete();
-            });
-            rafIds.add(rafId);
-          }
-        };
-        const checkTimeout = setTimeout(() => {
-          timeouts.delete(checkTimeout);
-          checkComplete();
-        }, 50);
-        timeouts.add(checkTimeout);
-      }, index * stagger);
-      timeouts.add(startTimeout);
+      });
+      cancelDelays.add(cancel);
     });
     return () => {
       cancelled = true;
-      timeouts.forEach((id) => clearTimeout(id));
-      rafIds.forEach((id) => cancelAnimationFrame(id));
+      cancelDelays.forEach((cancel) => cancel());
       springs.forEach((s) => s.destroy());
     };
   }, [elements, stagger, config, animateOnMount, trigger]);
@@ -5342,10 +6114,10 @@ var SpringNumber = memo2(function SpringNumber2({
   className,
   style
 }) {
-  const [displayValue, setDisplayValue] = useState23(value);
-  const springRef = useRef32(null);
-  const lastValueRef = useRef32(value);
-  useEffect25(() => {
+  const [displayValue, setDisplayValue] = useState22(value);
+  const springRef = useRef33(null);
+  const lastValueRef = useRef33(value);
+  useEffect24(() => {
     springRef.current = createSpringValue6(value, {
       ...config,
       onUpdate: setDisplayValue
@@ -5355,7 +6127,7 @@ var SpringNumber = memo2(function SpringNumber2({
       springRef.current = null;
     };
   }, []);
-  useEffect25(() => {
+  useEffect24(() => {
     if (springRef.current && value !== lastValueRef.current) {
       springRef.current.set(value);
       lastValueRef.current = value;
@@ -5376,7 +6148,7 @@ var SpringNumber = memo2(function SpringNumber2({
 var TypeWriter = memo2(function TypeWriter2({
   children,
   speed = 50,
-  delay = 0,
+  delay: delay6 = 0,
   cursor = true,
   cursorChar = "|",
   loop = false,
@@ -5386,13 +6158,13 @@ var TypeWriter = memo2(function TypeWriter2({
   className,
   style
 }) {
-  const [displayText, setDisplayText] = useState23("");
-  const [showCursor, setShowCursor] = useState23(cursor);
-  const [_isDeleting, setIsDeleting] = useState23(false);
-  const timeoutRef = useRef32(null);
-  const onCompleteRef = useRef32(onComplete);
+  const [displayText, setDisplayText] = useState22("");
+  const [showCursor, setShowCursor] = useState22(cursor);
+  const [_isDeleting, setIsDeleting] = useState22(false);
+  const timeoutRef = useRef33(null);
+  const onCompleteRef = useRef33(onComplete);
   onCompleteRef.current = onComplete;
-  useEffect25(() => {
+  useEffect24(() => {
     const characters = splitCharacters(children);
     let currentIndex = 0;
     let isDeleteMode = false;
@@ -5424,12 +6196,12 @@ var TypeWriter = memo2(function TypeWriter2({
         }
       }
     };
-    timeoutRef.current = window.setTimeout(tick, delay);
+    timeoutRef.current = window.setTimeout(tick, delay6);
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
     };
-  }, [children, speed, delay, loop, pauseAtEnd, deleteSpeed]);
-  useEffect25(() => {
+  }, [children, speed, delay6, loop, pauseAtEnd, deleteSpeed]);
+  useEffect24(() => {
     if (!cursor) return;
     const blink = setInterval(() => {
       setShowCursor((prev) => !prev);
@@ -5454,24 +6226,14 @@ var SplitText = memo2(function SplitText2({
 
 // src/adapters/react/components/Magnetic.tsx
 import {
-  useRef as useRef33,
-  useEffect as useEffect26,
-  useState as useState24,
-  useCallback as useCallback20,
+  useRef as useRef34,
+  useEffect as useEffect25,
+  useState as useState23,
+  useCallback as useCallback21,
   memo as memo3,
   forwardRef as forwardRef4
 } from "react";
 import { createSpringValue as createSpringValue7 } from "@oxog/springkit";
-
-// src/adapters/react/utils/reducedMotion.ts
-import { useContext as useContext7 } from "react";
-function useShouldReduceMotion() {
-  const motionConfig = useContext7(MotionContext);
-  const prefersReducedMotion2 = useReducedMotion();
-  if (motionConfig.reducedMotion === "always") return true;
-  if (motionConfig.reducedMotion === "never") return false;
-  return motionConfig.isReducedMotion || prefersReducedMotion2;
-}
 
 // src/adapters/react/utils/dom.ts
 function onPointerLeaveWindow(handler) {
@@ -5505,7 +6267,7 @@ var Magnetic = memo3(forwardRef4(
     const config = useStableSpringConfig(configProp, DEFAULT_MAGNETIC_CONFIG);
     const reduceMotion = useShouldReduceMotion();
     const isActive = enabled && !reduceMotion;
-    const innerRef = useRef33(null);
+    const innerRef = useRef34(null);
     const combinedRef = (node) => {
       innerRef.current = node;
       if (typeof ref === "function") {
@@ -5514,12 +6276,12 @@ var Magnetic = memo3(forwardRef4(
         ref.current = node;
       }
     };
-    const springXRef = useRef33(null);
-    const springYRef = useRef33(null);
-    const springScaleRef = useRef33(null);
-    const [transform, setTransform] = useState24({ x: 0, y: 0, scale: 1 });
-    const isAttractedRef = useRef33(false);
-    useEffect26(() => {
+    const springXRef = useRef34(null);
+    const springYRef = useRef34(null);
+    const springScaleRef = useRef34(null);
+    const [transform, setTransform] = useState23({ x: 0, y: 0, scale: 1 });
+    const isAttractedRef = useRef34(false);
+    useEffect25(() => {
       springXRef.current = createSpringValue7(0, {
         ...config,
         onUpdate: (x) => setTransform((t) => ({ ...t, x }))
@@ -5538,11 +6300,11 @@ var Magnetic = memo3(forwardRef4(
         springScaleRef.current?.destroy();
       };
     }, [config]);
-    const onAttractRef = useRef33(onAttract);
-    const onReleaseRef = useRef33(onRelease);
+    const onAttractRef = useRef34(onAttract);
+    const onReleaseRef = useRef34(onRelease);
     onAttractRef.current = onAttract;
     onReleaseRef.current = onRelease;
-    const handleMouseMove = useCallback20(
+    const handleMouseMove = useCallback21(
       (e) => {
         if (!isActive || !innerRef.current) return;
         const rect = innerRef.current.getBoundingClientRect();
@@ -5579,7 +6341,7 @@ var Magnetic = memo3(forwardRef4(
       },
       [isActive, range, strength, maxOffset, scaleOnHover]
     );
-    const handleMouseLeave = useCallback20(() => {
+    const handleMouseLeave = useCallback21(() => {
       springXRef.current?.set(0);
       springYRef.current?.set(0);
       springScaleRef.current?.set(1);
@@ -5588,13 +6350,14 @@ var Magnetic = memo3(forwardRef4(
         onReleaseRef.current?.();
       }
     }, []);
-    useEffect26(() => {
+    useEffect25(() => {
       if (!isActive) {
         handleMouseLeave();
         if (reduceMotion) {
           springXRef.current?.jump(0);
           springYRef.current?.jump(0);
           springScaleRef.current?.jump(1);
+          setTransform({ x: 0, y: 0, scale: 1 });
         }
         return;
       }
@@ -5643,10 +6406,10 @@ var MagneticCursor = memo3(function MagneticCursor2({
   const config = useStableSpringConfig(configProp, DEFAULT_CURSOR_CONFIG);
   const offsetX = offset?.x ?? 0;
   const offsetY = offset?.y ?? 0;
-  const [position, setPosition] = useState24({ x: 0, y: 0 });
-  const springXRef = useRef33(null);
-  const springYRef = useRef33(null);
-  useEffect26(() => {
+  const [position, setPosition] = useState23({ x: 0, y: 0 });
+  const springXRef = useRef34(null);
+  const springYRef = useRef34(null);
+  useEffect25(() => {
     springXRef.current = createSpringValue7(0, {
       ...config,
       onUpdate: (x) => setPosition((p) => ({ ...p, x }))
@@ -5660,7 +6423,7 @@ var MagneticCursor = memo3(function MagneticCursor2({
       springYRef.current?.destroy();
     };
   }, [config]);
-  useEffect26(() => {
+  useEffect25(() => {
     const handleMouseMove = (e) => {
       springXRef.current?.set(e.clientX + offsetX);
       springYRef.current?.set(e.clientY + offsetY);
@@ -5709,13 +6472,13 @@ function useMagnetic(options = {}) {
   const config = useStableSpringConfig(configOption, DEFAULT_MAGNETIC_CONFIG);
   const reduceMotion = useShouldReduceMotion();
   const isActive = enabled && !reduceMotion;
-  const ref = useRef33(null);
-  const springXRef = useRef33(null);
-  const springYRef = useRef33(null);
-  const [position, setPosition] = useState24({ x: 0, y: 0 });
-  const isAttractedRef = useRef33(false);
-  const [isAttracted, setIsAttracted] = useState24(false);
-  useEffect26(() => {
+  const ref = useRef34(null);
+  const springXRef = useRef34(null);
+  const springYRef = useRef34(null);
+  const [position, setPosition] = useState23({ x: 0, y: 0 });
+  const isAttractedRef = useRef34(false);
+  const [isAttracted, setIsAttracted] = useState23(false);
+  useEffect25(() => {
     springXRef.current = createSpringValue7(0, {
       ...config,
       onUpdate: (x) => setPosition((p) => ({ ...p, x }))
@@ -5729,11 +6492,12 @@ function useMagnetic(options = {}) {
       springYRef.current?.destroy();
     };
   }, [config]);
-  useEffect26(() => {
+  useEffect25(() => {
     if (!isActive) {
       if (reduceMotion) {
         springXRef.current?.jump(0);
         springYRef.current?.jump(0);
+        setPosition({ x: 0, y: 0 });
       } else {
         springXRef.current?.set(0);
         springYRef.current?.set(0);
@@ -5788,7 +6552,7 @@ function useMagnetic(options = {}) {
       removeLeaveListener();
     };
   }, [isActive, reduceMotion, range, strength, maxOffset]);
-  const reset = useCallback20(() => {
+  const reset = useCallback21(() => {
     springXRef.current?.set(0);
     springYRef.current?.set(0);
     isAttractedRef.current = false;
@@ -5806,10 +6570,10 @@ function useMagnetic(options = {}) {
 // src/adapters/react/components/Parallax.tsx
 import * as React8 from "react";
 import {
-  useRef as useRef34,
-  useEffect as useEffect27,
-  useState as useState25,
-  useCallback as useCallback21,
+  useRef as useRef35,
+  useEffect as useEffect26,
+  useState as useState24,
+  useCallback as useCallback22,
   useMemo as useMemo9,
   memo as memo4,
   forwardRef as forwardRef5,
@@ -5839,7 +6603,7 @@ var Parallax = memo4(forwardRef5(
     const isActive = enabled && !reduceMotion;
     const offsetX = offset?.x ?? 0;
     const offsetY = offset?.y ?? 0;
-    const innerRef = useRef34(null);
+    const innerRef = useRef35(null);
     const combinedRef = (node) => {
       innerRef.current = node;
       if (typeof ref === "function") {
@@ -5848,11 +6612,11 @@ var Parallax = memo4(forwardRef5(
         ref.current = node;
       }
     };
-    const springXRef = useRef34(null);
-    const springYRef = useRef34(null);
-    const [transform, setTransform] = useState25({ x: offsetX, y: offsetY });
-    const [isInView, setIsInView] = useState25(false);
-    useEffect27(() => {
+    const springXRef = useRef35(null);
+    const springYRef = useRef35(null);
+    const [transform, setTransform] = useState24({ x: offsetX, y: offsetY });
+    const [isInView, setIsInView] = useState24(false);
+    useEffect26(() => {
       springXRef.current = createSpringValue8(offsetX, {
         ...config,
         onUpdate: (x) => setTransform((t) => ({ ...t, x }))
@@ -5866,8 +6630,12 @@ var Parallax = memo4(forwardRef5(
         springYRef.current?.destroy();
       };
     }, [config, offsetX, offsetY]);
-    useEffect27(() => {
+    useEffect26(() => {
       if (!innerRef.current) return;
+      if (typeof IntersectionObserver === "undefined") {
+        setIsInView(true);
+        return;
+      }
       const observer = new IntersectionObserver(
         ([entry]) => {
           setIsInView(entry?.isIntersecting ?? false);
@@ -5877,10 +6645,11 @@ var Parallax = memo4(forwardRef5(
       observer.observe(innerRef.current);
       return () => observer.disconnect();
     }, [rootMargin]);
-    useEffect27(() => {
+    useEffect26(() => {
       if (reduceMotion) {
         springXRef.current?.jump(offsetX);
         springYRef.current?.jump(offsetY);
+        setTransform({ x: offsetX, y: offsetY });
         return;
       }
       if (!isActive || !isInView) return;
@@ -5948,10 +6717,10 @@ var MouseParallax = memo4(forwardRef5(
   }, ref) {
     const config = useStableSpringConfig(configProp, DEFAULT_MOUSE_PARALLAX_CONFIG);
     const reduceMotion = useShouldReduceMotion();
-    const springXRef = useRef34(null);
-    const springYRef = useRef34(null);
-    const [transform, setTransform] = useState25({ x: 0, y: 0 });
-    useEffect27(() => {
+    const springXRef = useRef35(null);
+    const springYRef = useRef35(null);
+    const [transform, setTransform] = useState24({ x: 0, y: 0 });
+    useEffect26(() => {
       springXRef.current = createSpringValue8(0, {
         ...config,
         onUpdate: (x) => setTransform((t) => ({ ...t, x }))
@@ -5965,10 +6734,11 @@ var MouseParallax = memo4(forwardRef5(
         springYRef.current?.destroy();
       };
     }, [config]);
-    useEffect27(() => {
+    useEffect26(() => {
       if (reduceMotion) {
         springXRef.current?.jump(0);
         springYRef.current?.jump(0);
+        setTransform({ x: 0, y: 0 });
         return;
       }
       if (!enabled) return;
@@ -6055,7 +6825,7 @@ var TiltCard = memo4(forwardRef5(
     const config = useStableSpringConfig(configProp, DEFAULT_TILT_CONFIG);
     const reduceMotion = useShouldReduceMotion();
     const isActive = enabled && !reduceMotion;
-    const innerRef = useRef34(null);
+    const innerRef = useRef35(null);
     const combinedRef = (node) => {
       innerRef.current = node;
       if (typeof ref === "function") {
@@ -6064,12 +6834,12 @@ var TiltCard = memo4(forwardRef5(
         ref.current = node;
       }
     };
-    const springTiltXRef = useRef34(null);
-    const springTiltYRef = useRef34(null);
-    const springScaleRef = useRef34(null);
-    const springGlareRef = useRef34(null);
-    const [tilt, setTilt] = useState25({ x: 0, y: 0, scale: 1, glareX: 50, glareY: 50, glareOpacity: 0 });
-    useEffect27(() => {
+    const springTiltXRef = useRef35(null);
+    const springTiltYRef = useRef35(null);
+    const springScaleRef = useRef35(null);
+    const springGlareRef = useRef35(null);
+    const [tilt, setTilt] = useState24({ x: 0, y: 0, scale: 1, glareX: 50, glareY: 50, glareOpacity: 0 });
+    useEffect26(() => {
       springTiltXRef.current = createSpringValue8(0, {
         ...config,
         onUpdate: (x) => setTilt((t) => ({ ...t, x }))
@@ -6093,7 +6863,7 @@ var TiltCard = memo4(forwardRef5(
         springGlareRef.current?.destroy();
       };
     }, [config]);
-    const handleMouseMove = useCallback21(
+    const handleMouseMove = useCallback22(
       (e) => {
         if (!isActive || !innerRef.current) return;
         const rect = innerRef.current.getBoundingClientRect();
@@ -6116,18 +6886,19 @@ var TiltCard = memo4(forwardRef5(
       },
       [isActive, maxTilt, scale, glare, glareOpacity, onTilt]
     );
-    const handleMouseLeave = useCallback21(() => {
+    const handleMouseLeave = useCallback22(() => {
       springTiltXRef.current?.set(0);
       springTiltYRef.current?.set(0);
       springScaleRef.current?.set(1);
       springGlareRef.current?.set(0);
     }, []);
-    useEffect27(() => {
+    useEffect26(() => {
       if (!reduceMotion) return;
       springTiltXRef.current?.jump(0);
       springTiltYRef.current?.jump(0);
       springScaleRef.current?.jump(1);
       springGlareRef.current?.jump(0);
+      setTilt((t) => ({ ...t, x: 0, y: 0, scale: 1, glareOpacity: 0 }));
     }, [reduceMotion]);
     return /* @__PURE__ */ jsx9(
       "div",
@@ -6178,9 +6949,9 @@ var ParallaxContainer = memo4(function ParallaxContainer2({
   className,
   style
 }) {
-  const containerRef = useRef34(null);
-  const [scrollProgress, setScrollProgress] = useState25(0);
-  useEffect27(() => {
+  const containerRef = useRef35(null);
+  const [scrollProgress, setScrollProgress] = useState24(0);
+  useEffect26(() => {
     const container = containerRef.current;
     if (!container) return;
     const handleScroll = () => {
@@ -6194,8 +6965,8 @@ var ParallaxContainer = memo4(function ParallaxContainer2({
     return () => container.removeEventListener("scroll", handleScroll);
   }, []);
   const contextValue = useMemo9(
-    () => ({ scrollProgress, containerRef }),
-    [scrollProgress]
+    () => ({ scrollProgress, containerRef, pages }),
+    [scrollProgress, pages]
   );
   return /* @__PURE__ */ jsx9(ParallaxContext.Provider, { value: contextValue, children: /* @__PURE__ */ jsx9(
     "div",
@@ -6222,34 +6993,24 @@ var ParallaxLayer = memo4(function ParallaxLayer2({
   style
 }) {
   const context = useContext8(ParallaxContext);
-  const [transform, setTransform] = useState25({ x: 0, y: 0 });
-  useEffect27(() => {
+  const [transform, setTransform] = useState24({ x: 0, y: 0 });
+  useEffect26(() => {
     if (!context) return;
-    const progress = context.scrollProgress;
     const pageHeight = 100;
+    const scrolledPages = context.scrollProgress * Math.max(0, context.pages - 1);
     if (sticky) {
-      const stickyRange = sticky.end - sticky.start;
-      if (progress >= sticky.start && progress <= sticky.end && stickyRange > 0) {
-        const _stickyProgress = (progress - sticky.start) / stickyRange;
-        setTransform({
-          x: 0,
-          y: sticky.start * pageHeight
-        });
-      } else if (progress < sticky.start) {
-        setTransform({ x: 0, y: offset * pageHeight });
-      } else {
-        setTransform({ x: 0, y: sticky.end * pageHeight });
-      }
+      const stickyPage = Math.min(Math.max(scrolledPages, sticky.start), Math.max(sticky.start, sticky.end));
+      setTransform({ x: 0, y: stickyPage * pageHeight });
     } else {
       const base = offset * pageHeight;
-      const parallaxOffset = progress * pageHeight * (1 - speed);
+      const parallaxOffset = scrolledPages * pageHeight * (1 - speed);
       if (horizontal) {
         setTransform({ x: parallaxOffset, y: base });
       } else {
         setTransform({ x: 0, y: base + parallaxOffset });
       }
     }
-  }, [context?.scrollProgress, offset, speed, horizontal, sticky]);
+  }, [context?.scrollProgress, context?.pages, offset, speed, horizontal, sticky?.start, sticky?.end]);
   return /* @__PURE__ */ jsx9(
     "div",
     {
@@ -6274,7 +7035,7 @@ function useParallaxContext() {
 
 // src/adapters/react/components/LazyMotion.tsx
 import * as React9 from "react";
-import { createContext as createContext7, useContext as useContext9, useState as useState26, useEffect as useEffect28, useMemo as useMemo10 } from "react";
+import { createContext as createContext7, useContext as useContext9, useState as useState25, useEffect as useEffect27, useMemo as useMemo10 } from "react";
 var domAnimation = {
   animations: true,
   gestures: true
@@ -6306,11 +7067,11 @@ function LazyMotion({
   strict = false,
   children
 }) {
-  const [loadedFeatures, setLoadedFeatures] = useState26(
+  const [loadedFeatures, setLoadedFeatures] = useState25(
     typeof features === "function" ? null : features
   );
-  const [isLoaded, setIsLoaded] = useState26(typeof features !== "function");
-  useEffect28(() => {
+  const [isLoaded, setIsLoaded] = useState25(typeof features !== "function");
+  useEffect27(() => {
     if (typeof features !== "function") {
       setLoadedFeatures(features);
       setIsLoaded(true);
@@ -6339,9 +7100,6 @@ function LazyMotion({
     isStrict: strict,
     isLoaded
   }), [loadedFeatures, strict, isLoaded]);
-  if (!isLoaded) {
-    return React9.createElement(React9.Fragment, null, null);
-  }
   return React9.createElement(
     LazyMotionContext.Provider,
     { value: contextValue },

@@ -20,7 +20,10 @@ export interface SpringGroup<T extends Record<string, number>> {
   subscribe(callback: (values: T) => void): () => void
   /** Check if any spring is animating */
   isAnimating(): boolean
-  /** Promise that resolves when all animations complete */
+  /**
+   * Promise that resolves once every animating key has settled (or the
+   * group is stopped / destroyed). Each set() creates a new one.
+   */
   finished: Promise<void>
   /** Clean up resources */
   destroy(): void
@@ -95,10 +98,20 @@ class SpringGroupImpl<T extends Record<string, number>> implements SpringGroup<T
       }
     }
 
-    // Resolve when all animations complete
-    Promise.all(promises).then(() => {
-      resolveBatch?.()
-    })
+    // Resolve once every key has settled, including keys still animating
+    // from an earlier set(). A value's `finished` also settles when it is
+    // retargeted, so re-check until nothing is animating.
+    const settle = (): void => {
+      const pending: Promise<void>[] = []
+      if (!this.destroyed) {
+        for (const springValue of this.values.values()) {
+          if (springValue.isAnimating()) pending.push(springValue.finished)
+        }
+      }
+      if (pending.length === 0) resolveBatch?.()
+      else void Promise.all(pending).then(settle)
+    }
+    void Promise.all(promises).then(settle)
   }
 
   jump(values: Partial<T>): void {

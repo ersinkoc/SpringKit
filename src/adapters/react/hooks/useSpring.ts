@@ -91,10 +91,12 @@ export function useSpring<T extends Record<string, number>>(
   // Initialize state from spring's actual values
   const [currentValues, setCurrentValues] = useState<T>(getSpringValues)
 
-  // Subscribe to spring updates and sync with React state
+  // Subscribe to spring updates and sync with React state (again when the
+  // group is recreated, e.g. after a hidden <Activity> destroyed it)
+  const springGroup = springRef.current
   useEffect(() => {
     isMounted.current = true
-    const spring = springRef.current
+    const spring = springGroup
     if (!spring) return
 
     // Subscribe to spring updates
@@ -108,7 +110,7 @@ export function useSpring<T extends Record<string, number>>(
       isMounted.current = false
       unsubscribe()
     }
-  }, [])
+  }, [springGroup])
 
   // Update spring when values actually change (not just reference)
   useEffect(() => {

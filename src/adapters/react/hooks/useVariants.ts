@@ -8,12 +8,72 @@ import {
   calculateStaggerDelays,
   buildTransformString,
   isTransformProperty,
+  solveSpring,
+  delay,
   type Variants,
   type AnimationValues,
   type VariantTransition,
 } from '@oxog/springkit'
-import { useSpring } from './useSpring.js'
 import { useIsomorphicLayoutEffect } from '../utils/ssr.js'
+import { useAnimatableValues } from '../utils/useAnimatableValues.js'
+import { animatableSignature, type AnimatableValue } from '../utils/animatable.js'
+
+// ============ Animatable values ============
+
+/** Spring used when neither the hook nor the variant's transition sets one */
+const DEFAULT_PHYSICS = { stiffness: 100, damping: 15, mass: 1 }
+
+/** Resting values of the shorthands always present in `values` */
+const DEFAULT_VALUES: Record<string, number> = {
+  x: 0,
+  y: 0,
+  scale: 1,
+  scaleX: 1,
+  scaleY: 1,
+  rotate: 0,
+  opacity: 1,
+}
+
+/**
+ * Settle time (ms) of a spring from rest over a unit distance, from the exact
+ * solution (0.1% of the distance), capped at 10s
+ */
+function settleTime(spring: { stiffness?: number; damping?: number; mass?: number }): number {
+  const duration = solveSpring(
+    {
+      stiffness: spring.stiffness ?? DEFAULT_PHYSICS.stiffness,
+      damping: spring.damping ?? DEFAULT_PHYSICS.damping,
+      mass: spring.mass ?? DEFAULT_PHYSICS.mass,
+    },
+    0,
+    1
+  ).duration
+  return Math.min(duration, 10_000)
+}
+
+/** `'12px'` → `12` (x/y were always numbers in pixels) */
+const PX_REGEX = /^\s*(-?(?:\d+\.?\d*|\.\d+))px\s*$/
+
+/**
+ * The animatable entries of variant values (numbers and strings, minus
+ * `transition`), over `fallback` and the shorthand defaults
+ */
+function toAnimatable(
+  values: AnimationValues,
+  fallback?: AnimationValues
+): Record<string, AnimatableValue> {
+  const result: Record<string, AnimatableValue> = { ...DEFAULT_VALUES }
+  for (const source of [fallback, values]) {
+    if (!source) continue
+    for (const key in source) {
+      const value = source[key]
+      if (key === 'transition' || (typeof value !== 'number' && typeof value !== 'string')) continue
+      const px = (key === 'x' || key === 'y') && typeof value === 'string' ? PX_REGEX.exec(value) : null
+      result[key] = px ? parseFloat(px[1]!) : value
+    }
+  }
+  return result
+}
 
 // ============ Context ============
 
@@ -75,6 +135,13 @@ export interface UseVariantsReturn {
 
 /**
  * Use variants for declarative animation states
+ *
+ * Every number and string of a variant animates: colors, numbers with units
+ * (`'50%'`, `'20rem'`) and complex strings (box shadows, filters), recomposed
+ * in `values` (an animation that settled returns the variant's exact string).
+ * `x` / `y` in pixels (`'12px'`) are returned as numbers. Values whose shape
+ * differs between variants (`'50%'` → `'200px'`, `'auto'`) and keys without a
+ * previous value jump.
  *
  * @example
  * ```tsx
@@ -181,127 +248,100 @@ export function useVariants(options: UseVariantsOptions): UseVariantsReturn {
     return parentContext.transition || {}
   }, [targetVariant, variants, custom, parentContext.transition])
 
+  // Spring physics of this element (shared by the animation and the settle timer)
+  const stiffness = springConfig?.stiffness ?? transition.spring?.stiffness ?? DEFAULT_PHYSICS.stiffness
+  const damping = springConfig?.damping ?? transition.spring?.damping ?? DEFAULT_PHYSICS.damping
+  const mass = springConfig?.mass ?? transition.spring?.mass ?? DEFAULT_PHYSICS.mass
+
   // Calculate delay from stagger (ms). staggerChildren/delayChildren are
   // orchestration settings of the PARENT's transition; fall back to this
   // element's own transition for backward compatibility.
+  const parentTransition = parentContext.transition
   const staggerDelay = useMemo(() => {
-    const parentTransition = parentContext.transition
     const staggerChildren = parentTransition?.staggerChildren ?? transition.staggerChildren
     const delayChildren = parentTransition?.delayChildren ?? transition.delayChildren
     const staggerDirection = parentTransition?.staggerDirection ?? transition.staggerDirection
     const index = parentContext.staggerIndex
+    // `when: 'beforeChildren'`: children start once the parent's animation
+    // (its delay + the settle time of its spring) is done
+    const parentFirst = parentTransition?.when === 'beforeChildren' && parentContext.variant !== undefined
+      ? (parentTransition.delay ?? 0) + settleTime(parentTransition.spring ?? DEFAULT_PHYSICS)
+      : 0
     if (index !== undefined && staggerChildren) {
       const count = parentContext.staggerCount
       const position =
         staggerDirection === -1 && count !== undefined ? count - 1 - index : index
-      return position * staggerChildren + (delayChildren || 0)
+      return parentFirst + position * staggerChildren + (delayChildren || 0)
     }
-    return transition.delay || 0
-  }, [parentContext.staggerIndex, parentContext.staggerCount, parentContext.transition, transition])
+    return parentFirst + (transition.delay || 0)
+  }, [parentContext.staggerIndex, parentContext.staggerCount, parentContext.variant, parentTransition, transition])
 
-  // Helper to convert string/number values to numbers for spring
-  const toNumber = (val: string | number | undefined, fallback: number): number => {
-    if (val === undefined) return fallback
-    if (typeof val === 'number') return val
-    // Parse numeric strings (e.g., "100px" -> 100, "50%" -> 50)
-    const parsed = parseFloat(val)
-    return isNaN(parsed) ? fallback : parsed
-  }
-
-  // Helper to compute spring values from variant values
-  const computeSpringValues = useCallback((values: AnimationValues, fallbackValues?: AnimationValues) => ({
-    x: toNumber(values.x ?? fallbackValues?.x, 0),
-    y: toNumber(values.y ?? fallbackValues?.y, 0),
-    scale: values.scale ?? fallbackValues?.scale ?? 1,
-    scaleX: values.scaleX ?? fallbackValues?.scaleX ?? 1,
-    scaleY: values.scaleY ?? fallbackValues?.scaleY ?? 1,
-    rotate: values.rotate ?? fallbackValues?.rotate ?? 0,
-    opacity: values.opacity ?? fallbackValues?.opacity ?? 1,
-  }), [])
-
-  // Compute spring-compatible values for initial state
-  const initialSpringValues = useMemo(() =>
-    computeSpringValues(initialValues),
-    [initialValues, computeSpringValues]
+  // Values to animate: every number/string of the variant (colors, '50%',
+  // box shadows... animate too), falling back to the initial values, then
+  // to the defaults of the transform/opacity shorthands
+  const initialAnimatable = useMemo(() => toAnimatable(initialValues), [initialValues])
+  const targetAnimatable = useMemo(
+    () => toAnimatable(targetValues, initialValues),
+    [targetValues, initialValues]
   )
-
-  // Compute spring-compatible values from target values
-  // This is what we pass to useSpring for animation
-  const animatedTargetValues = useMemo(() =>
-    computeSpringValues(targetValues, initialValues),
-    [targetValues, initialValues, computeSpringValues]
-  )
-
-  // Use a ref to track if we've done the initial setup
-  const hasInitializedRef = useRef(false)
 
   // With a (stagger) delay the spring keeps its previous target until the
   // delay has elapsed. null = nothing released yet (still at the initial values)
-  const [releasedTarget, setReleasedTarget] = useState<typeof animatedTargetValues | null>(null)
-  const latestTargetRef = useRef(animatedTargetValues)
-  latestTargetRef.current = animatedTargetValues
+  const [releasedTarget, setReleasedTarget] = useState<Record<string, AnimatableValue> | null>(null)
+  const latestTargetRef = useRef(targetAnimatable)
+  latestTargetRef.current = targetAnimatable
   const hasDelay = staggerDelay > 0
-  const { x: tx, y: ty, scale: ts, scaleX: tsx, scaleY: tsy, rotate: tr, opacity: to } = animatedTargetValues
+  const targetSignature = animatableSignature(targetAnimatable)
 
   useEffect(() => {
     if (!hasDelay) return
-    const timer = setTimeout(() => {
+    // Animation time: follows the time scale and the test clock
+    return delay(staggerDelay, () => {
       setReleasedTarget(latestTargetRef.current)
-    }, staggerDelay)
-    return () => clearTimeout(timer)
+    })
     // Keyed on the target's contents (not identity) so inline `variants`
     // objects don't keep postponing the start
-  }, [hasDelay, staggerDelay, tx, ty, ts, tsx, tsy, tr, to])
+  }, [hasDelay, staggerDelay, targetSignature])
 
-  // Spring values for animation
-  // On first render, use initial values to prevent unwanted animation
-  // After that, use target values (released after the delay, if any)
-  const springTarget = hasDelay
-    ? (releasedTarget ?? initialSpringValues)
-    : hasInitializedRef.current ? animatedTargetValues : initialSpringValues
-  const springValues = useSpring(
-    springTarget,
-    {
-      stiffness: springConfig?.stiffness ?? transition.spring?.stiffness ?? 100,
-      damping: springConfig?.damping ?? transition.spring?.damping ?? 15,
-      mass: springConfig?.mass ?? transition.spring?.mass ?? 1,
-    }
-  )
-
-  // After first render, mark as initialized and trigger animation to target
-  useIsomorphicLayoutEffect(() => {
-    if (!hasInitializedRef.current) {
-      hasInitializedRef.current = true
-    }
+  // The first render shows the initial values; the target is released after
+  // mount (or after the delay, if any)
+  const [isMounted, setIsMounted] = useState(false)
+  useEffect(() => {
+    setIsMounted(true)
   }, [])
+  const springTarget = hasDelay
+    ? (releasedTarget ?? initialAnimatable)
+    : isMounted ? targetAnimatable : initialAnimatable
+  const springValues = useAnimatableValues(springTarget, { stiffness, damping, mass })
 
-  // Track variant changes and detect animation completion
+  // Track variant changes and detect animation completion. The callback is
+  // read from a ref: an inline `onAnimationComplete` changes every render, and
+  // the animation re-renders every frame, so depending on it would cancel the
+  // completion timer before it could fire.
+  const onAnimationCompleteRef = useRef(onAnimationComplete)
+  onAnimationCompleteRef.current = onAnimationComplete
+  const completedVariantRef = useRef<string | undefined>(undefined)
+
   useIsomorphicLayoutEffect(() => {
-    if (targetVariant && targetVariant !== currentVariantRef.current) {
+    if (!targetVariant) return
+    if (targetVariant !== currentVariantRef.current) {
       currentVariantRef.current = targetVariant
-      isAnimatingRef.current = true
-
-      // Use ref to capture onAnimationComplete for cleanup safety
-      const capturedVariant = targetVariant
-      const capturedCallback = onAnimationComplete
-
-      // Calculate a reasonable timeout based on spring physics
-      // Time constant for a damped spring system: 2 * mass / damping
-      // For settling to ~2% of initial amplitude, use ~4 time constants
-      const damping = springConfig?.damping ?? 15
-      const mass = springConfig?.mass ?? 1
-      // Estimated settle time: ~4 time constants = 4 * (2 * mass / damping)
-      const estimatedDuration = Math.max(200, Math.min(2000, (8 * mass / damping) * 1000))
-      const totalDelay = staggerDelay + estimatedDuration
-
-      const timer = setTimeout(() => {
-        isAnimatingRef.current = false
-        capturedCallback?.(capturedVariant)
-      }, totalDelay)
-
-      return () => clearTimeout(timer)
+      completedVariantRef.current = undefined
     }
-  }, [targetVariant, staggerDelay, onAnimationComplete, springConfig?.stiffness, springConfig?.damping, springConfig?.mass])
+    if (completedVariantRef.current === targetVariant) return
+    isAnimatingRef.current = true
+
+    // Settle time of the spring actually used, from the exact solution, at
+    // 0.1% of the travelled distance
+    const settleDuration = settleTime({ stiffness, damping, mass })
+    const variant = targetVariant
+    // Animation time: follows the time scale and the test clock
+    return delay(staggerDelay + settleDuration, () => {
+      isAnimatingRef.current = false
+      completedVariantRef.current = variant
+      onAnimationCompleteRef.current?.(variant)
+    })
+  }, [targetVariant, staggerDelay, stiffness, damping, mass])
 
   const setVariant = useCallback((name: string) => {
     setVariantOverride({ name, animate: animateRef.current })
@@ -332,6 +372,14 @@ export interface VariantProviderProps {
 
 /**
  * Provide variant context to children.
+ *
+ * `transition` holds the orchestration of the children: `staggerChildren`,
+ * `delayChildren`, `staggerDirection` and `when`. With
+ * `when: 'beforeChildren'` the children start once the parent's animation is
+ * done: after `transition.delay` plus the settle time of `transition.spring`
+ * (the default spring when omitted), so pass the parent's own transition.
+ * `when: 'afterChildren'` is not supported (treated like `false`): a parent
+ * can't see its children's animations through context.
  *
  * Each direct child receives its position (`staggerIndex`) and the number of
  * children (`staggerCount`), so `transition.staggerChildren` /

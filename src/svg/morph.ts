@@ -39,6 +39,30 @@ const PARAM_COUNTS: Record<CommandType, number> = {
  */
 const PATH_NUMBER_REGEX = /[+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?/gi
 
+/** One number / one arc flag at a position (sticky), skipping separators */
+const STICKY_NUMBER_REGEX = /[\s,]*([+-]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?)/iy
+const STICKY_FLAG_REGEX = /[\s,]*([01])/y
+
+/**
+ * Parse arc parameters. The large-arc and sweep flags are single `0`/`1`
+ * characters that may be written without separators (`a10 10 0 0120 20`
+ * is `a 10 10 0 0 1 20 20`), so they can't be read as ordinary numbers.
+ */
+function parseArcValues(valuesStr: string): number[] {
+  const values: number[] = []
+  let index = 0
+  for (;;) {
+    const position = values.length % 7
+    const regex = position === 3 || position === 4 ? STICKY_FLAG_REGEX : STICKY_NUMBER_REGEX
+    regex.lastIndex = index
+    const match = regex.exec(valuesStr)
+    if (!match) break
+    values.push(parseFloat(match[1]!))
+    index = regex.lastIndex
+  }
+  return values
+}
+
 /**
  * Normalized point with control points
  */
@@ -102,9 +126,11 @@ function parsePath(d: string): PathCommand[] {
 
     const type = typeChar.toUpperCase() as CommandType
     const relative = typeChar !== type
-    const values = (valuesStr.match(PATH_NUMBER_REGEX) ?? [])
-      .map(parseFloat)
-      .filter(v => !isNaN(v))
+    const values = type === 'A'
+      ? parseArcValues(valuesStr)
+      : (valuesStr.match(PATH_NUMBER_REGEX) ?? [])
+        .map(parseFloat)
+        .filter(v => !isNaN(v))
 
     const count = PARAM_COUNTS[type]
     if (count === 0 || values.length <= count) {
@@ -427,6 +453,9 @@ export function createMorph(
   const subscribers = new Set<(path: string) => void>()
   // onComplete fires once per morph, even if the spring overshoots around 1
   let completed = false
+  // Counts progress notifications, so setProgress can tell whether its
+  // jump() already notified (it doesn't when called from a subscriber)
+  let notifications = 0
 
   // Parse initial path
   const initialCommands = parsePath(initialPath)
@@ -438,6 +467,7 @@ export function createMorph(
   const progressSpring = createSpringValue(0, springConfig)
 
   progressSpring.subscribe(() => {
+    notifications++
     const progress = progressSpring.get()
     onProgress?.(progress)
 
@@ -489,7 +519,11 @@ export function createMorph(
 
     setProgress(progress: number) {
       const p = clamp(progress, 0, 1)
+      const before = notifications
       progressSpring.jump(p)
+      // jump() normally notifies the subscribers itself; only a re-entrant
+      // call (from inside a subscriber) is ignored by the spring
+      if (notifications !== before) return
 
       currentPoints = fromPoints.map((from, i) =>
         interpolatePoint(from, toPoints[i] ?? from, p)

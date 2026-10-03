@@ -2,9 +2,19 @@ import * as React from 'react'
 import { createContext, useContext, useMemo, useSyncExternalStore } from 'react'
 import type { SpringConfig } from '@oxog/springkit'
 import { useStableSpringConfig } from '../utils/config.js'
+import {
+  subscribeToReducedMotion,
+  getReducedMotionPreference,
+  getServerReducedMotion,
+} from '../hooks/useReducedMotion.js'
+
+function noop(): void {}
+
+function subscribeNoop(): () => void {
+  return noop
+}
 
 const EMPTY_CONFIG: SpringConfig = {}
-const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)'
 
 /**
  * Reduced motion preference
@@ -55,42 +65,6 @@ export function useMotionConfig(): MotionContextValue {
 }
 
 /**
- * Check if user prefers reduced motion (client snapshot)
- */
-function checkReducedMotion(): boolean {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return false
-  return window.matchMedia(REDUCED_MOTION_QUERY)?.matches ?? false
-}
-
-/**
- * Server snapshot: no preference is known while rendering on the server, and
- * the first (hydrating) client render must produce the same markup
- */
-function getServerReducedMotion(): boolean {
-  return false
-}
-
-function subscribeToReducedMotion(onChange: () => void): () => void {
-  if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return noop
-  const mediaQuery = window.matchMedia(REDUCED_MOTION_QUERY)
-  if (!mediaQuery) return noop
-
-  if (typeof mediaQuery.addEventListener === 'function') {
-    mediaQuery.addEventListener('change', onChange)
-    return () => mediaQuery.removeEventListener('change', onChange)
-  }
-  // Safari < 14
-  mediaQuery.addListener?.(onChange)
-  return () => mediaQuery.removeListener?.(onChange)
-}
-
-function noop(): void {}
-
-function subscribeNoop(): () => void {
-  return noop
-}
-
-/**
  * Track the user's reduced motion preference, updating when it changes.
  *
  * SSR / hydration safe: the server and the hydrating client render use
@@ -101,7 +75,7 @@ function subscribeNoop(): () => void {
 function usePrefersReducedMotion(enabled: boolean): boolean {
   return useSyncExternalStore(
     enabled ? subscribeToReducedMotion : subscribeNoop,
-    enabled ? checkReducedMotion : getServerReducedMotion,
+    enabled ? getReducedMotionPreference : getServerReducedMotion,
     getServerReducedMotion
   )
 }

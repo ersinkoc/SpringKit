@@ -1,5 +1,5 @@
 import { useRef, useCallback, useEffect } from 'react'
-import { createSpringValue } from '@oxog/springkit'
+import { createSpringValue, delay as animationDelay } from '@oxog/springkit'
 import type { SpringConfig } from '@oxog/springkit'
 
 const TRANSFORM_DEFAULTS: Record<string, number> = {
@@ -124,7 +124,8 @@ export function useAnimate(): UseAnimateReturn {
   const cleanupRef = useRef<(() => void)[]>([])
   // Track RAF IDs and timeouts for proper cleanup
   const rafIdsRef = useRef<Set<number>>(new Set())
-  const timeoutIdsRef = useRef<Set<ReturnType<typeof setTimeout>>>(new Set())
+  // Pending `delay`s (cancel functions); they run in animation time
+  const timeoutIdsRef = useRef<Set<() => void>>(new Set())
   const isDestroyedRef = useRef(false)
   // Resolvers of pending animate() promises; settled on unmount, otherwise
   // cancelling their RAF/timeouts would leave `await animate()` hanging forever
@@ -214,11 +215,11 @@ export function useAnimate(): UseAnimateReturn {
     try {
       if (delay > 0) {
         await trackedPromise((resolve) => {
-          const timeoutId = setTimeout(() => {
-            timeoutIdsRef.current.delete(timeoutId)
+          const cancel = animationDelay(delay, () => {
+            timeoutIdsRef.current.delete(cancel)
             resolve()
-          }, delay)
-          timeoutIdsRef.current.add(timeoutId)
+          })
+          timeoutIdsRef.current.add(cancel)
         })
       }
 
@@ -351,7 +352,7 @@ export function useAnimate(): UseAnimateReturn {
       rafIds.clear()
 
       // Clear all pending timeouts
-      timeoutIds.forEach((id) => clearTimeout(id))
+      timeoutIds.forEach((cancel) => cancel())
       timeoutIds.clear()
 
       // Run cleanup functions

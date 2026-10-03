@@ -47,6 +47,14 @@ export interface FlipAnimation {
 }
 
 /**
+ * The FLIP animation currently applied to each element. A new FLIP on the
+ * same element cancels it first, so the new one starts from (and finally
+ * restores) the element's own inline styles instead of the in-flight FLIP
+ * transform.
+ */
+const activeFlips = new WeakMap<HTMLElement, FlipAnimation>()
+
+/**
  * Measure the bounding box of an element
  */
 export function measureElement(element: HTMLElement): MeasuredBox {
@@ -91,6 +99,21 @@ function resolveTransformOrigin(value: string, width: number, height: number): {
 }
 
 /**
+ * The 2D affine part [a, b, c, d, e, f] of a computed CSS transform
+ * (`matrix(...)` or `matrix3d(...)`), or null for `none` / anything else
+ */
+function parseComputedMatrix(value: string): [number, number, number, number, number, number] | null {
+  const match = /^matrix(3d)?\(([^)]*)\)$/.exec(value.trim())
+  if (!match) return null
+  const v = match[2]!.split(',').map((n) => parseFloat(n))
+  const m = match[1]
+    ? [v[0], v[1], v[4], v[5], v[12], v[13]]
+    : v
+  if (m.length < 6 || m.slice(0, 6).some((n) => n === undefined || !Number.isFinite(n))) return null
+  return m.slice(0, 6) as [number, number, number, number, number, number]
+}
+
+/**
  * Create a FLIP (First, Last, Invert, Play) animation.
  *
  * FLIP is a technique for animating layout changes performantly:
@@ -98,6 +121,13 @@ function resolveTransformOrigin(value: string, width: number, height: number): {
  * 2. Last: Apply the change and measure final position
  * 3. Invert: Apply transforms to make it look like it's still in the first position
  * 4. Play: Animate the transforms to zero
+ *
+ * The element's own inline `transform` (e.g. a rotate) and `transform-origin`
+ * are kept: the FLIP is applied on top of them in screen space, and a size
+ * change scales the rendered box from its top-left corner. A transform set
+ * only in a stylesheet is overridden by the inline FLIP transform while it
+ * runs, and 3D transforms are treated by their 2D part. A new FLIP on the
+ * same element cancels the running one.
  *
  * @example Basic FLIP
  * ```ts
@@ -156,6 +186,10 @@ export function createFlip(
 
   const spring = createSpringValue(0, config)
 
+  // Take over from a FLIP still running on this element: cancelling it
+  // restores the element's own styles before they are stored below
+  activeFlips.get(element)?.cancel()
+
   // Store original styles
   const originalTransform = element.style.transform
   const originalTransformOrigin = element.style.transformOrigin
@@ -167,22 +201,46 @@ export function createFlip(
   // existing rotate/scale renders). The scale is compensated with a translation
   // instead, so the invert still maps the "last" box onto the "first" box.
   let origin = { x: 0, y: 0 }
+  // Top-left corner of the element's rendered box relative to its layout box
+  // (non-zero with an own transform such as rotate): the scale is anchored
+  // there, so the measured "last" box scales onto the "first" box
+  let anchor = { x: 0, y: 0 }
   let borderRadius = 0
   if (isScaling) {
     let computedOrigin = ''
     let computedRadius = ''
+    let computedTransform = ''
     try {
       const styles = getComputedStyle(element)
       computedOrigin = styles.transformOrigin
       computedRadius = styles.borderTopLeftRadius || styles.borderRadius
+      computedTransform = styles.transform
     } catch {
       // Not attached / no computed styles available
     }
+    const layoutWidth = element.offsetWidth || last.width
+    const layoutHeight = element.offsetHeight || last.height
     origin = resolveTransformOrigin(
       computedOrigin || originalTransformOrigin || '50% 50%',
-      element.offsetWidth || last.width,
-      element.offsetHeight || last.height
+      layoutWidth,
+      layoutHeight
     )
+    // Only the inline transform stays applied during the FLIP
+    const matrix = originalTransform && originalTransform !== 'none'
+      ? parseComputedMatrix(computedTransform || '')
+      : null
+    if (matrix) {
+      const [a, b, c, d, e, f] = matrix
+      const corners = [[0, 0], [layoutWidth, 0], [0, layoutHeight], [layoutWidth, layoutHeight]].map(([px, py]) => {
+        const x = px! - origin.x
+        const y = py! - origin.y
+        return { x: origin.x + a * x + c * y + e, y: origin.y + b * x + d * y + f }
+      })
+      anchor = {
+        x: Math.min(...corners.map((p) => p.x)),
+        y: Math.min(...corners.map((p) => p.y)),
+      }
+    }
     const radiusSource = computedRadius || originalBorderRadius
     // Only px radii can be corrected (percentages scale with the box anyway)
     if (correctBorderRadius && !radiusSource.includes('%')) {
@@ -203,6 +261,10 @@ export function createFlip(
     }
 
     if (isScaling) {
+      // Keep the rendered box's top-left corner (anchor) fixed by the scale
+      if (anchor.x !== 0 || anchor.y !== 0) {
+        transforms.push(`translate(${(1 - scaleX) * anchor.x}px, ${(1 - scaleY) * anchor.y}px)`)
+      }
       // Scale around the element's top-left corner whatever its
       // transform-origin is: translate(-origin) scale() translate(origin)
       // cancels the origin the browser applies around the whole transform
@@ -239,7 +301,13 @@ export function createFlip(
   // Apply initial inversion
   applyTransform(0)
 
+  // Original styles are restored once (on completion or cancel); a later
+  // cancel() must not undo a FLIP that took over the element since
+  let restored = false
   const cleanup = () => {
+    if (restored) return
+    restored = true
+    if (activeFlips.get(element) === animation) activeFlips.delete(element)
     // Restore original styles
     element.style.transform = originalTransform
     element.style.transformOrigin = originalTransformOrigin
@@ -248,7 +316,7 @@ export function createFlip(
     }
   }
 
-  return {
+  const animation: FlipAnimation = {
     play: async () => {
       if (cancelled) return
 
@@ -332,6 +400,8 @@ export function createFlip(
 
     isAnimating: () => isPlaying,
   }
+  activeFlips.set(element, animation)
+  return animation
 }
 
 /**
@@ -350,8 +420,10 @@ export async function flip(
   mutate: () => void | Promise<void>,
   options: FlipOptions = {}
 ): Promise<void> {
-  // First: measure initial state
+  // First: measure initial state (where a running FLIP currently shows it)
   const first = measureElement(element)
+  // Stop that FLIP so the last state is measured without its transform
+  activeFlips.get(element)?.cancel()
 
   // Last: apply mutation and measure final state
   await mutate()
@@ -387,6 +459,8 @@ export async function flipBatch(
 ): Promise<void> {
   // First: measure all elements
   const firstStates = elements.map((el) => measureElement(el))
+  // Stop running FLIPs so the last states are measured without them
+  elements.forEach((el) => activeFlips.get(el)?.cancel())
 
   // Last: apply mutation
   await mutate()

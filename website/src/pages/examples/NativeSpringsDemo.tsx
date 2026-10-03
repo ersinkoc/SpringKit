@@ -6,11 +6,12 @@ import {
   defineSpring,
   springEasing,
   animateNative,
+  globalLoop,
   type NativeAnimationControls,
 } from '@oxog/springkit'
 import { DemoPageLayout } from './DemoPageLayout'
 
-const CODE = `import { spring, defineSpring, animateNative, solveSpring } from '@oxog/springkit'
+const CODE = `import { spring, defineSpring, animateNative, solveSpring, globalLoop } from '@oxog/springkit'
 
 const config = defineSpring({ duration: 600, bounce: 0.35 })
 
@@ -30,6 +31,11 @@ animateNative(nativeBox, {
 const solver = solveSpring(config, 0, 260)
 solver.at(120)   // { value, velocity } 120ms in
 solver.duration  // ms until rest
+
+// 4. Slow motion for debugging: scales both kinds of spring
+globalLoop.setTimeScale(0.25)
+// ...and back to normal when done (it is global state)
+globalLoop.setTimeScale(1)
 `
 
 const DISTANCE = 260
@@ -50,6 +56,7 @@ function NativeSpringsDemo() {
   const [scrub, setScrub] = useState(1)
   const [copied, setCopied] = useState(false)
   const [atEnd, setAtEnd] = useState(false)
+  const [timeScale, setTimeScale] = useState(() => globalLoop.getTimeScale())
 
   const jsBoxRef = useRef<HTMLDivElement>(null)
   const nativeBoxRef = useRef<HTMLDivElement>(null)
@@ -90,10 +97,14 @@ function NativeSpringsDemo() {
 
   useEffect(() => {
     const copyTimeout = copyTimeoutRef
+    const unsubscribeTimeScale = globalLoop.onTimeScaleChange(setTimeScale)
     return () => {
       jsAnimRef.current?.destroy()
       nativeAnimRef.current?.cancel()
       if (copyTimeout.current) clearTimeout(copyTimeout.current)
+      unsubscribeTimeScale()
+      // The time scale is global: don't leave other pages in slow motion
+      globalLoop.setTimeScale(1)
     }
   }, [])
 
@@ -178,6 +189,20 @@ function NativeSpringsDemo() {
         “Block main thread” busy-waits while the springs run. The JavaScript spring freezes; the
         native one keeps moving because the browser animates it off the main thread.
       </p>
+
+      {/* Slow motion */}
+      <label className="block text-xs text-white/60">
+        Slow motion <code className="font-mono">globalLoop.setTimeScale()</code>{' '}
+        <span className="font-mono text-white/80">{timeScale.toFixed(2)}×</span>
+        <input
+          type="range" min={0} max={1} step={0.01} value={timeScale}
+          onChange={(e) => globalLoop.setTimeScale(e.target.valueAsNumber)}
+          className="w-full mt-1 accent-amber-400"
+          aria-label="Global animation time scale"
+          aria-valuetext={`${timeScale.toFixed(2)} times normal speed`}
+        />
+        <span className="text-white/40">Scales both springs, including running ones. 0 freezes them; reset to 1 when you leave.</span>
+      </label>
 
       {/* Controls */}
       <div className="grid grid-cols-2 gap-4">

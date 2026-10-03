@@ -6,11 +6,38 @@
  */
 
 import { useRef, useEffect, useCallback, useState } from 'react'
-import { createMotionValue, MotionValue } from '@oxog/springkit'
+import { createMotionValue, MotionValue, globalLoop, delay } from '@oxog/springkit'
 import { createSpringValue } from '@oxog/springkit'
 import type { SpringConfig } from '@oxog/springkit'
 import { useDestroyOnUnmount } from './useDestroyOnUnmount.js'
 import { useElementEffect } from './useElementEffect.js'
+
+/** Reference frame the per-frame options (friction, gravity, drag) are expressed in */
+const FRAME_MS = 1000 / 60
+/** Cap per tick so a suspended tab doesn't make the simulation explode */
+const MAX_FRAMES_PER_TICK = 4
+
+/**
+ * Frames (of 1/60 s) elapsed since the previous tick, scaled by the global
+ * time scale. The physics hooks integrate per-frame options with this so they
+ * run at the same speed on every display (and follow slow motion).
+ */
+function elapsedFrames(lastTimeRef: { current: number | null }, now: number | undefined): number {
+  const time = typeof now === 'number' ? now : performance.now()
+  const last = lastTimeRef.current
+  lastTimeRef.current = time
+  const frames = last === null ? 1 : Math.min(Math.max((time - last) / FRAME_MS, 0), MAX_FRAMES_PER_TICK)
+  return frames * globalLoop.getTimeScale()
+}
+
+/**
+ * Fraction of the remaining distance an exponential smoothing covers in
+ * `frames` frames when it covers `perFrame` of it per 60fps frame
+ */
+function smoothingFactor(perFrame: number, frames: number): number {
+  const f = Math.min(Math.max(perFrame, 0), 1)
+  return 1 - Math.pow(1 - f, frames)
+}
 
 // ============ useSpringState ============
 
@@ -66,7 +93,9 @@ export function useSpringState(
   // Initialize spring
   // Recreate if destroyed (happens with React StrictMode double-mount)
   if (springRef.current === null || springRef.current.isDestroyed()) {
-    springRef.current = createSpringValue(initial, {
+    // `state` is `initial` on mount, and the last value when the spring is
+    // recreated after a hidden <Activity> destroyed it
+    springRef.current = createSpringValue(state, {
       ...springConfig,
       onUpdate: (value) => {
         setState(value)
@@ -81,13 +110,14 @@ export function useSpringState(
     motionValueRef.current = createMotionValue(initial)
   }
 
-  // Sync motion value with spring
+  // Sync motion value with spring (again when the spring is recreated)
+  const springValue = springRef.current
   useEffect(() => {
-    const unsub = springRef.current?.subscribe((v) => {
+    const unsub = springValue.subscribe((v) => {
       motionValueRef.current?.jump(v)
     })
-    return () => unsub?.()
-  }, [])
+    return () => unsub()
+  }, [springValue])
 
   // Cleanup: destroy spring to prevent memory leaks
   // (deferred so StrictMode's simulated remount keeps the same live spring)
@@ -172,18 +202,21 @@ export function useMomentum(options: UseMomentumOptions = {}) {
     return result
   }, [])
 
-  const tick = useCallback(() => {
+  const lastTimeRef = useRef<number | null>(null)
+
+  const tick = useCallback((now?: number) => {
     if (!isActiveRef.current) return
     const { friction, minVelocity, bounds, onRest } = optionsRef.current
+    const frames = elapsedFrames(lastTimeRef, now)
 
     const currentVelocity = velocityRef.current?.get() ?? 0
     const currentValue = valueRef.current?.get() ?? 0
 
-    // Apply friction
-    const newVelocity = currentVelocity * friction
+    // Apply friction (per 60fps frame, scaled to the real elapsed time)
+    const newVelocity = currentVelocity * Math.pow(friction, frames)
 
     // Update value
-    const newValue = applyBounds(currentValue + newVelocity)
+    const newValue = applyBounds(currentValue + newVelocity * frames)
     valueRef.current?.jump(newValue)
     velocityRef.current?.jump(newVelocity)
 
@@ -217,6 +250,7 @@ export function useMomentum(options: UseMomentumOptions = {}) {
 
     velocityRef.current?.jump(velocity)
     isActiveRef.current = true
+    lastTimeRef.current = null // first tick counts as one frame
     // Cancel any existing frame before starting new one
     if (frameRef.current) cancelAnimationFrame(frameRef.current)
     frameRef.current = requestAnimationFrame(tick)
@@ -420,20 +454,23 @@ export function useBounce(options: UseBounceOptions = {}) {
   const optionsRef = useRef({ dampening, gravity, floor, ceiling, restitution })
   optionsRef.current = { dampening, gravity, floor, ceiling, restitution }
 
-  const tick = useCallback(() => {
+  const lastTimeRef = useRef<number | null>(null)
+
+  const tick = useCallback((now?: number) => {
     if (!isActiveRef.current) return
     const { dampening, gravity, floor, ceiling, restitution } = optionsRef.current
+    const frames = elapsedFrames(lastTimeRef, now)
 
     const currentValue = motionValue.get()
 
-    // Apply gravity
-    velocityRef.current += gravity
+    // Apply gravity (per 60fps frame, scaled to the real elapsed time)
+    velocityRef.current += gravity * frames
 
     // Apply air resistance
-    velocityRef.current *= (1 - dampening)
+    velocityRef.current *= Math.pow(1 - dampening, frames)
 
     // Update position
-    let newValue = currentValue + velocityRef.current
+    let newValue = currentValue + velocityRef.current * frames
 
     // Check floor collision
     if (newValue >= floor) {
@@ -467,6 +504,7 @@ export function useBounce(options: UseBounceOptions = {}) {
     motionValue.jump(safeFromY)
     velocityRef.current = safeVelocity
     isActiveRef.current = true
+    lastTimeRef.current = null // first tick counts as one frame
     // Cancel any existing frame before starting new one
     if (frameRef.current) cancelAnimationFrame(frameRef.current)
     frameRef.current = requestAnimationFrame(tick)
@@ -478,6 +516,7 @@ export function useBounce(options: UseBounceOptions = {}) {
 
     velocityRef.current = velocity
     isActiveRef.current = true
+    lastTimeRef.current = null // first tick counts as one frame
     // Cancel any existing frame before starting new one
     if (frameRef.current) cancelAnimationFrame(frameRef.current)
     frameRef.current = requestAnimationFrame(tick)
@@ -582,24 +621,28 @@ export function useGravity(options: UseGravityOptions = {}) {
   const optionsRef = useRef({ gravity, drag, bounds, bounciness })
   optionsRef.current = { gravity, drag, bounds, bounciness }
 
-  const tick = useCallback(() => {
+  const lastTimeRef = useRef<number | null>(null)
+
+  const tick = useCallback((now?: number) => {
     if (!isActiveRef.current) return
     const { gravity, drag, bounds, bounciness } = optionsRef.current
+    const frames = elapsedFrames(lastTimeRef, now)
 
     const currentX = xMotion.get()
     const currentY = yMotion.get()
 
-    // Apply gravity (F = m * g, but we simplify to just g since mass affects velocity change)
-    velocityRef.current.x += gravity.x
-    velocityRef.current.y += gravity.y
+    // Apply gravity (per 60fps frame, scaled to the real elapsed time)
+    velocityRef.current.x += gravity.x * frames
+    velocityRef.current.y += gravity.y * frames
 
     // Apply drag
-    velocityRef.current.x *= (1 - drag)
-    velocityRef.current.y *= (1 - drag)
+    const dragFactor = Math.pow(1 - drag, frames)
+    velocityRef.current.x *= dragFactor
+    velocityRef.current.y *= dragFactor
 
     // Update position
-    let newX = currentX + velocityRef.current.x
-    let newY = currentY + velocityRef.current.y
+    let newX = currentX + velocityRef.current.x * frames
+    let newY = currentY + velocityRef.current.y * frames
 
     // Check bounds
     if (bounds) {
@@ -650,6 +693,7 @@ export function useGravity(options: UseGravityOptions = {}) {
 
     velocityRef.current = { x: safeX, y: safeY }
     isActiveRef.current = true
+    lastTimeRef.current = null // first tick counts as one frame
     // Cancel any existing frame before starting new one
     if (frameRef.current) cancelAnimationFrame(frameRef.current)
     frameRef.current = requestAnimationFrame(tick)
@@ -674,6 +718,7 @@ export function useGravity(options: UseGravityOptions = {}) {
   const start = useCallback(() => {
     if (!isActiveRef.current) {
       isActiveRef.current = true
+      lastTimeRef.current = null // first tick counts as one frame
       // Cancel any existing frame before starting new one
       if (frameRef.current) cancelAnimationFrame(frameRef.current)
       frameRef.current = requestAnimationFrame(tick)
@@ -747,112 +792,111 @@ export function useChain(
   const springsRef = useRef<Record<string, ReturnType<typeof createSpringValue>>>({})
   const [currentStep, setCurrentStep] = useState(-1)
   const [isPlaying, setIsPlaying] = useState(false)
-  const timeoutRef = useRef<number | null>(null)
+  // Latest steps / initial values (an inline array must not restart anything)
+  const stepsRef = useRef(steps)
+  stepsRef.current = steps
+  const initialValuesRef = useRef(initialValues)
+  initialValuesRef.current = initialValues
+  // Bumped by play / stop / reset: callbacks of an older run are ignored
+  const runIdRef = useRef(0)
+  const cancelDelayRef = useRef<(() => void) | null>(null)
 
-  // Initialize values from steps
-  useEffect(() => {
-    const allKeys = new Set<string>()
-    steps.forEach((step) => {
-      Object.keys(step.to).forEach((key) => allKeys.add(key))
-    })
-
-    allKeys.forEach((key) => {
-      // Recreate if destroyed (happens with React StrictMode double-mount)
-      if (!valuesRef.current[key] || valuesRef.current[key].isDestroyed()) {
+  // One MotionValue per key of any step, created during the first render so
+  // `values` is complete (and stable) right away
+  for (const step of steps) {
+    for (const key of Object.keys(step.to)) {
+      const existing = valuesRef.current[key]
+      if (!existing || existing.isDestroyed()) {
         valuesRef.current[key] = createMotionValue(initialValues[key] ?? 0)
       }
-      // The springs are destroyed by this effect's cleanup, so they must be
-      // recreated when StrictMode re-runs the effect (the MotionValues survive)
-      if (!springsRef.current[key] || springsRef.current[key].isDestroyed()) {
-        springsRef.current[key] = createSpringValue(valuesRef.current[key].get(), {
+    }
+  }
+
+  // Springs driving the values (destroyed by the cleanup, so they are
+  // recreated when StrictMode re-runs the effect; the MotionValues survive)
+  useEffect(() => {
+    const springs = springsRef.current
+    const runId = runIdRef
+    for (const key of Object.keys(valuesRef.current)) {
+      const existing = springs[key]
+      if (!existing || existing.isDestroyed()) {
+        springs[key] = createSpringValue(valuesRef.current[key]!.get(), {
           onUpdate: (v) => valuesRef.current[key]?.jump(v),
         })
       }
-    })
-
-    // Cleanup: destroy springs to prevent memory leaks
-    const springs = springsRef.current
-    return () => {
-      Object.values(springs).forEach((s) => s.destroy())
-      if (timeoutRef.current) clearTimeout(timeoutRef.current)
     }
-    // Mount only - steps and initialValues used for initialization
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+
+    return () => {
+      // Ignore callbacks of a run that was in progress
+      runId.current++
+      cancelDelayRef.current?.()
+      cancelDelayRef.current = null
+      Object.values(springs).forEach((s) => s.destroy())
+    }
   }, [])
 
-  const runStep = useCallback((stepIndex: number) => {
-    if (stepIndex >= steps.length) {
+  const runStep = useCallback((stepIndex: number, runId: number) => {
+    if (runIdRef.current !== runId) return
+    const step = stepsRef.current[stepIndex]
+    if (!step) {
       setIsPlaying(false)
       setCurrentStep(-1)
       return
     }
 
-    const step = steps[stepIndex]
-    if (!step) return
-
     const execute = () => {
+      cancelDelayRef.current = null
+      if (runIdRef.current !== runId) return
       setCurrentStep(stepIndex)
 
-      // Animate to step values
-      Object.entries(step.to).forEach(([key, value]) => {
+      // Animate to the step's values, then run the next step once every
+      // value of this one has come to rest
+      const finished: Promise<void>[] = []
+      for (const [key, value] of Object.entries(step.to)) {
         const spring = springsRef.current[key]
-        if (spring) {
-          if (step.config) {
-            spring.setConfig(step.config)
-          }
-          spring.set(value)
-        }
-      })
-
-      // Wait for animations to complete then run next step
-      // For simplicity, we estimate based on spring settings
-      const estimatedDuration = step.config?.stiffness
-        ? Math.max(300, 1000 / (step.config.stiffness / 100))
-        : 500
-
-      timeoutRef.current = window.setTimeout(() => {
-        runStep(stepIndex + 1)
-      }, estimatedDuration)
+        if (!spring || spring.isDestroyed()) continue
+        if (step.config) spring.setConfig(step.config)
+        spring.set(value)
+        finished.push(spring.finished)
+      }
+      void Promise.all(finished).then(() => runStep(stepIndex + 1, runId))
     }
 
+    // Animation time (follows the time scale and the test clock)
     if (step.delay && step.delay > 0) {
-      timeoutRef.current = window.setTimeout(execute, step.delay)
+      cancelDelayRef.current = delay(step.delay, execute)
     } else {
       execute()
     }
-  }, [steps])
+  }, [])
 
   const play = useCallback(() => {
     if (isPlaying) return
     setIsPlaying(true)
-    runStep(0)
+    runStep(0, ++runIdRef.current)
   }, [isPlaying, runStep])
 
   const reset = useCallback(() => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current)
-    }
+    runIdRef.current++
+    cancelDelayRef.current?.()
+    cancelDelayRef.current = null
     setIsPlaying(false)
     setCurrentStep(-1)
 
     // Reset all values to initial
     Object.keys(valuesRef.current).forEach((key) => {
-      const initial = initialValues[key] ?? 0
+      const initial = initialValuesRef.current[key] ?? 0
       springsRef.current[key]?.jump(initial)
+      // jump() doesn't call the spring's onUpdate
+      valuesRef.current[key]?.jump(initial)
     })
-  }, [initialValues])
-
-  const stop = useCallback(() => {
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current)
-    }
-    setIsPlaying(false)
   }, [])
 
-  useEffect(() => {
-    return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current)
-    }
+  const stop = useCallback(() => {
+    runIdRef.current++
+    cancelDelayRef.current?.()
+    cancelDelayRef.current = null
+    setIsPlaying(false)
   }, [])
 
   return {
@@ -870,7 +914,11 @@ export function useChain(
 export interface UsePointerOptions {
   /** Target element ref (defaults to window) */
   target?: React.RefObject<HTMLElement>
-  /** Smooth the pointer movement */
+  /**
+   * Smooth the pointer movement: the fraction (0-1) of the remaining distance
+   * covered per 60fps frame, independent of the display's refresh rate
+   * (0 = no smoothing)
+   */
   smooth?: number
   /** Track while element is hovered only */
   hoverOnly?: boolean
@@ -955,13 +1003,16 @@ export function usePointer(options: UsePointerOptions = {}) {
     const handleEnter = () => setIsHovering(true)
     const handleLeave = () => setIsHovering(false)
 
-    // Smoothing loop
+    // Smoothing loop: `smooth` is the fraction of the remaining distance
+    // covered per 60fps frame, applied for the real elapsed time
     if (smooth > 0) {
-      const smoothLoop = () => {
+      const lastTime = { current: null as number | null }
+      const smoothLoop = (now?: number) => {
+        const k = smoothingFactor(smooth, elapsedFrames(lastTime, now))
         const currentX = xRef.current?.get() ?? 0
         const currentY = yRef.current?.get() ?? 0
-        const newX = currentX + (rawXRef.current - currentX) * smooth
-        const newY = currentY + (rawYRef.current - currentY) * smooth
+        const newX = currentX + (rawXRef.current - currentX) * k
+        const newY = currentY + (rawYRef.current - currentY) * k
         xRef.current?.jump(newX)
         yRef.current?.jump(newY)
         frameRef.current = requestAnimationFrame(smoothLoop)
@@ -1020,7 +1071,10 @@ export interface UseGyroscopeOptions {
   multiplier?: number
   /** Clamp tilt to this range */
   clamp?: number
-  /** Smooth the values */
+  /**
+   * Smoothing: the fraction (0-1) of the remaining distance covered per 60fps
+   * frame, independent of the display's refresh rate
+   */
   smooth?: number
 }
 
@@ -1071,12 +1125,14 @@ export function useGyroscope(options: UseGyroscopeOptions = {}) {
   useEffect(() => {
     const hasOrientation = 'DeviceOrientationEvent' in window
 
-    // Smoothing loop
-    const smoothLoop = () => {
+    // Smoothing loop (per 60fps frame, applied for the real elapsed time)
+    const lastTime = { current: null as number | null }
+    const smoothLoop = (now?: number) => {
+      const k = smoothingFactor(smooth, elapsedFrames(lastTime, now))
       const currentX = tiltXRef.current?.get() ?? 0
       const currentY = tiltYRef.current?.get() ?? 0
-      const newX = currentX + (rawXRef.current - currentX) * smooth
-      const newY = currentY + (rawYRef.current - currentY) * smooth
+      const newX = currentX + (rawXRef.current - currentX) * k
+      const newY = currentY + (rawYRef.current - currentY) * k
       tiltXRef.current?.jump(newX)
       tiltYRef.current?.jump(newY)
       frameRef.current = requestAnimationFrame(smoothLoop)

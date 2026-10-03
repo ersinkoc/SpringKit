@@ -1351,11 +1351,15 @@ describe('createDragSpring', () => {
     })
 
     it('should not snap when velocity is above threshold (lines 419-420)', () => {
+      // Deterministic time: each move below takes 16ms (100px / 16ms = 6250 px/s)
+      let now = 1000
+      vi.spyOn(performance, 'now').mockImplementation(() => (now += 16))
       const onSnapStart = vi.fn()
       const drag = createDragSpring(element, {
         snap: {
           points: [{ x: 0, y: 0, radius: 100 }],
-          velocityThreshold: 0.1,
+          // px/s since 2.0 (was 0.1 px/ms)
+          velocityThreshold: 100,
           snapOnRelease: true,
         },
         onSnapStart,
@@ -1395,6 +1399,7 @@ describe('createDragSpring', () => {
       // onSnapStart should not be called due to high velocity
       expect(onSnapStart).not.toHaveBeenCalled()
       drag.destroy()
+      vi.restoreAllMocks()
     })
 
     it('should handle constrainToParent (lines 455-466)', () => {
@@ -1552,8 +1557,8 @@ describe('createDragSpring', () => {
 
       drag.snapTo({ x: 100, y: 100 })
 
-      // Wait for snap timeout
-      await new Promise(resolve => setTimeout(resolve, 600))
+      // Wait for the snap spring to settle (overdamped: ~0.85s)
+      await new Promise(resolve => setTimeout(resolve, 1500))
 
       expect(onSnapComplete).toHaveBeenCalled()
       drag.destroy()
@@ -1582,8 +1587,8 @@ describe('createDragSpring', () => {
       // Second snap before first completes - should invalidate first
       drag.snapTo({ x: 100, y: 100 })
 
-      // Wait for timeout
-      await new Promise(resolve => setTimeout(resolve, 600))
+      // Wait for the second snap spring to settle
+      await new Promise(resolve => setTimeout(resolve, 1500))
 
       // onSnapComplete should only be called for the second snap
       expect(onSnapComplete).toHaveBeenCalledTimes(1)
@@ -2060,7 +2065,8 @@ describe('createDragSpring constraints and options', () => {
     roots.push(element)
     const drag = createDragSpring(element, { constraints: { lockToDiagonal: true } })
 
-    drag.release(10, 0)
+    // px/s since 2.0
+    drag.release(1000, 0)
     clock.runAll()
     const { x, y } = drag.getPosition()
     expect(x).not.toBeCloseTo(0)
@@ -2100,5 +2106,467 @@ describe('createDragSpring constraints and options', () => {
     // Unset: regular spring damping (slight overshoot), in between
     expect(unset).toBeLessThan(noBounce)
     expect(unset).toBeGreaterThan(bouncy)
+  })
+})
+
+describe('createDragSpring release physics (velocities in px/s)', () => {
+  let clock: TestClock
+  let element: HTMLElement
+
+  /** Rest distance of a release at `v` px/s (see DragSpringConfig.momentumDecay) */
+  const restDistance = (v: number, momentumDecay = 0.95) => v / (60 * -Math.log(momentumDecay))
+
+  const pointer = (type: string, clientX: number, clientY = 0) =>
+    new PointerEvent(type, { pointerId: 1, button: 0, clientX, clientY, bubbles: true })
+
+  /** Drag `distance` px along x over `duration` ms in 10ms steps, then release */
+  const fling = (distance: number, duration: number) => {
+    element.dispatchEvent(pointer('pointerdown', 0))
+    const steps = Math.round(duration / 10)
+    for (let i = 1; i <= steps; i++) {
+      clock.advance(10)
+      element.dispatchEvent(pointer('pointermove', (distance * i) / steps))
+    }
+    element.dispatchEvent(pointer('pointerup', distance))
+  }
+
+  beforeEach(() => {
+    clock = installTestClock()
+    element = document.createElement('div')
+    document.body.appendChild(element)
+  })
+
+  afterEach(() => {
+    clock.uninstall()
+    element.remove()
+  })
+
+  it('onDragEnd reports the release velocity in px/s', () => {
+    const onDragEnd = vi.fn()
+    const drag = createDragSpring(element, { onDragEnd })
+
+    // 100px in 100ms = 1000 px/s
+    fling(100, 100)
+
+    expect(onDragEnd).toHaveBeenCalledTimes(1)
+    const [x, y, velocity] = onDragEnd.mock.calls[0]!
+    expect(x).toBe(100)
+    expect(y).toBe(0)
+    expect(velocity.x).toBeCloseTo(1000, 6)
+    expect(velocity.y).toBe(0)
+    drag.destroy()
+  })
+
+  it('continues at the release velocity: no slow-down or jump at the hand-off', () => {
+    const samples: Array<{ t: number; x: number }> = []
+    const drag = createDragSpring(element, {
+      onUpdate: (x) => samples.push({ t: clock.now(), x }),
+    })
+
+    fling(100, 100)
+    const releaseTime = clock.now()
+    samples.length = 0
+    // Live velocity of the release motion right after release
+    expect(drag.getVelocity().x).toBeCloseTo(1000, 0)
+
+    for (let i = 0; i < 3; i++) clock.nextFrame()
+    const after = samples.filter((s) => s.t > releaseTime)
+    expect(after.length).toBeGreaterThanOrEqual(3)
+
+    // Velocity from successive positions over the first frames after release
+    let prev = { t: releaseTime, x: 100 }
+    for (const sample of after.slice(0, 3)) {
+      const velocity = ((sample.x - prev.x) / (sample.t - prev.t)) * 1000
+      expect(Math.abs(velocity - 1000) / 1000).toBeLessThan(0.15)
+      prev = sample
+    }
+    drag.destroy()
+  })
+
+  it('a 1000 px/s fling glides v / (60 * -ln(momentumDecay)) px', () => {
+    const drag = createDragSpring(element)
+    drag.release(1000, 0)
+    clock.runAll()
+    // Default momentumDecay 0.95: ~325px
+    expect(drag.getPosition().x).toBeCloseTo(restDistance(1000), 3)
+    expect(drag.getPosition().x).toBeCloseTo(324.9, 1)
+    expect(drag.getPosition().y).toBe(0)
+    expect(drag.getVelocity()).toEqual({ x: 0, y: 0 })
+    drag.destroy()
+
+    const slower = createDragSpring(element, { momentumDecay: 0.9 })
+    slower.release(-1000, 500)
+    clock.runAll()
+    expect(slower.getPosition().x).toBeCloseTo(-restDistance(1000, 0.9), 3)
+    expect(slower.getPosition().y).toBeCloseTo(restDistance(500, 0.9), 3)
+    slower.destroy()
+  })
+
+  it('a pointer fling comes to rest at the projected point', () => {
+    const drag = createDragSpring(element)
+    fling(100, 100)
+    clock.runAll()
+    expect(drag.getPosition().x).toBeCloseTo(100 + restDistance(1000), 3)
+    drag.destroy()
+  })
+
+  it('momentum stops at a bound and reports it', () => {
+    const onBoundsHit = vi.fn()
+    let maxX = -Infinity
+    const drag = createDragSpring(element, {
+      bounds: { left: 0, right: 200 },
+      onBoundsHit,
+      onUpdate: (x) => { maxX = Math.max(maxX, x) },
+    })
+
+    drag.release(1000, 0)
+    clock.runAll()
+
+    expect(drag.getPosition().x).toBe(200)
+    expect(maxX).toBeLessThanOrEqual(200)
+    expect(onBoundsHit).toHaveBeenCalledTimes(1)
+    expect(onBoundsHit).toHaveBeenCalledWith('right')
+    drag.destroy()
+  })
+
+  it('momentum bounces off an elastic bound and settles on it', () => {
+    let maxX = -Infinity
+    const drag = createDragSpring(element, {
+      bounds: { left: 0, right: 200 },
+      rubberBand: true,
+      onUpdate: (x) => { maxX = Math.max(maxX, x) },
+    })
+
+    drag.release(1000, 0)
+    clock.runAll()
+
+    expect(maxX).toBeGreaterThan(200)
+    // Not an excessive overshoot
+    expect(maxX).toBeLessThan(260)
+    expect(drag.getPosition().x).toBeCloseTo(200, 1)
+    drag.destroy()
+  })
+
+  it('modifyTarget receives the projected rest point and the momentum lands on its result', () => {
+    const modifyTarget = vi.fn((t: { x: number; y: number }) => ({
+      x: Math.round(t.x / 100) * 100,
+      y: Math.round(t.y / 100) * 100,
+    }))
+    const drag = createDragSpring(element, { modifyTarget })
+
+    drag.release(1000, 0)
+    expect(modifyTarget).toHaveBeenCalledTimes(1)
+    expect(modifyTarget.mock.calls[0]![0].x).toBeCloseTo(restDistance(1000), 6)
+    clock.runAll()
+    expect(drag.getPosition()).toEqual({ x: 300, y: 0 })
+    drag.destroy()
+  })
+
+  it('a modified target outside the bounds is clamped to the bound', () => {
+    const drag = createDragSpring(element, {
+      bounds: { right: 250 },
+      modifyTarget: () => ({ x: 1000, y: 0 }),
+    })
+    drag.release(1000, 0)
+    clock.runAll()
+    expect(drag.getPosition().x).toBe(250)
+    drag.destroy()
+  })
+
+  it('without momentum, release springs in place starting with the release velocity', () => {
+    const drag = createDragSpring(element, { momentum: false, modifyTarget: (t) => ({ x: t.x + 50, y: t.y }) })
+    drag.release(400, 0)
+    expect(drag.getVelocity().x).toBeCloseTo(400, 6)
+    clock.runAll()
+    expect(drag.getPosition().x).toBeCloseTo(50, 1)
+    drag.destroy()
+  })
+
+  it('does not move along a locked axis on release', () => {
+    const drag = createDragSpring(element, { constraints: { lockAxis: 'x' } })
+    drag.release(1000, 1000)
+    clock.runAll()
+    expect(drag.getPosition().x).toBeCloseTo(restDistance(1000), 3)
+    expect(drag.getPosition().y).toBe(0)
+    drag.destroy()
+  })
+
+  it('a new drag stops the momentum where it is', () => {
+    const drag = createDragSpring(element)
+    drag.release(1000, 0)
+    clock.advance(100)
+    const x = drag.getPosition().x
+    expect(x).toBeGreaterThan(50)
+
+    element.dispatchEvent(pointer('pointerdown', 0))
+    clock.advance(500)
+    expect(drag.getPosition().x).toBe(x)
+    element.dispatchEvent(pointer('pointerup', 0))
+    drag.destroy()
+  })
+
+  it('snap velocityThreshold is in px/s (default 500)', () => {
+    const onSnapStart = vi.fn()
+    const drag = createDragSpring(element, { snap: { points: [{ x: 100, y: 0, radius: 50 }] }, onSnapStart })
+
+    // 80px in 200ms = 400 px/s: snaps
+    fling(80, 200)
+    expect(onSnapStart).toHaveBeenCalledWith({ x: 100, y: 0, radius: 50 })
+    clock.runAll()
+    expect(drag.getPosition().x).toBeCloseTo(100, 1)
+    drag.destroy()
+
+    // 80px in 50ms = 1600 px/s: too fast to snap
+    onSnapStart.mockClear()
+    const fast = createDragSpring(element, { snap: { points: [{ x: 100, y: 0, radius: 50 }] }, onSnapStart })
+    fling(80, 50)
+    expect(onSnapStart).not.toHaveBeenCalled()
+    fast.destroy()
+  })
+})
+
+describe('createDragSpring snap interruption', () => {
+  let clock: TestClock
+  let element: HTMLElement
+
+  beforeEach(() => {
+    clock = installTestClock({ timers: true })
+    element = document.createElement('div')
+    document.body.appendChild(element)
+  })
+
+  afterEach(() => {
+    clock.uninstall()
+    element.remove()
+  })
+
+  const pointer = (type: string, clientX: number) =>
+    new PointerEvent(type, { pointerId: 1, button: 0, clientX, clientY: 0, bubbles: true })
+
+  it('a snap interrupted by a new drag does not report onSnapComplete', async () => {
+    const onSnapComplete = vi.fn()
+    const drag = createDragSpring(element, { onSnapComplete })
+
+    drag.snapTo({ x: 100, y: 0 })
+    clock.advance(100)
+    // Grab the element mid-snap and hold it
+    element.dispatchEvent(pointer('pointerdown', 0))
+    clock.advance(1000)
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+
+    expect(onSnapComplete).not.toHaveBeenCalled()
+    element.dispatchEvent(pointer('pointerup', 0))
+    drag.destroy()
+  })
+
+  it('a snap interrupted by animateTo / jumpTo / release does not report onSnapComplete', async () => {
+    const onSnapComplete = vi.fn()
+    const drag = createDragSpring(element, { onSnapComplete })
+
+    drag.snapTo({ x: 100, y: 0 })
+    clock.advance(100)
+    drag.animateTo(-50, 0)
+    clock.advance(1000)
+
+    drag.snapTo({ x: 100, y: 0 })
+    clock.advance(100)
+    drag.jumpTo(0, 0)
+    clock.advance(1000)
+
+    drag.snapTo({ x: 100, y: 0 })
+    clock.advance(100)
+    drag.release(1000, 0)
+    clock.advance(1000)
+
+    expect(onSnapComplete).not.toHaveBeenCalled()
+
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+    expect(onSnapComplete).not.toHaveBeenCalled()
+
+    // An uninterrupted snap still reports completion once it settles
+    drag.snapTo({ x: 100, y: 0 })
+    clock.runAll()
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+    expect(onSnapComplete).toHaveBeenCalledTimes(1)
+    drag.destroy()
+  })
+})
+
+describe('createDragSpring gesture lifecycle', () => {
+  let clock: TestClock
+  let element: HTMLElement
+
+  beforeEach(() => {
+    clock = installTestClock({ timers: true })
+    element = document.createElement('div')
+    document.body.appendChild(element)
+  })
+
+  afterEach(() => {
+    clock.uninstall()
+    element.remove()
+  })
+
+  const pointer = (type: string, clientX: number, pointerId = 1) =>
+    new PointerEvent(type, { pointerId, button: 0, clientX, clientY: 0, bubbles: true })
+  const flush = async () => {
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+  }
+
+  it('a lost pointer capture ends the drag like a pointerup', () => {
+    const onDragEnd = vi.fn()
+    const drag = createDragSpring(element, { onDragEnd })
+    element.dispatchEvent(pointer('pointerdown', 0))
+    element.dispatchEvent(pointer('pointermove', 50))
+    element.dispatchEvent(pointer('lostpointercapture', 50))
+
+    expect(drag.isDragging()).toBe(false)
+    expect(onDragEnd).toHaveBeenCalledTimes(1)
+    clock.runAll()
+    const x = drag.getPosition().x
+    // Later moves of that pointer no longer drag
+    element.dispatchEvent(pointer('pointermove', 300))
+    expect(drag.getPosition().x).toBe(x)
+    drag.destroy()
+  })
+
+  it('a throwing setPointerCapture does not leave the drag half-started', () => {
+    element.setPointerCapture = () => { throw new Error('InvalidPointerId') }
+    const onDragEnd = vi.fn()
+    const drag = createDragSpring(element, { onDragEnd, momentum: false })
+    element.dispatchEvent(pointer('pointerdown', 0))
+    element.dispatchEvent(pointer('pointermove', 40))
+    expect(drag.getPosition().x).toBe(40)
+    element.dispatchEvent(pointer('pointerup', 40))
+    expect(onDragEnd).toHaveBeenCalledTimes(1)
+    expect(drag.isDragging()).toBe(false)
+    drag.destroy()
+  })
+
+  it('disable() mid-drag fires onDragEnd and springs back inside the bounds without momentum', () => {
+    const onDragEnd = vi.fn()
+    const drag = createDragSpring(element, {
+      bounds: { left: 0, right: 100 },
+      rubberBand: true,
+      onDragEnd,
+    })
+    element.dispatchEvent(pointer('pointerdown', 0))
+    clock.advance(16)
+    element.dispatchEvent(pointer('pointermove', 100))
+    clock.advance(16)
+    element.dispatchEvent(pointer('pointermove', 300)) // 200px past the bound, elastic
+    expect(drag.getPosition().x).toBeGreaterThan(100)
+
+    drag.disable()
+    expect(drag.isDragging()).toBe(false)
+    expect(onDragEnd).toHaveBeenCalledTimes(1)
+    expect(onDragEnd.mock.calls[0]![2]).toEqual({ x: 0, y: 0 })
+    clock.runAll()
+    expect(drag.getPosition().x).toBeCloseTo(100, 1)
+
+    // Inside the bounds: stays where it is (no momentum)
+    drag.enable()
+    element.dispatchEvent(pointer('pointerdown', 0))
+    clock.advance(16)
+    element.dispatchEvent(pointer('pointermove', -50))
+    drag.disable()
+    clock.runAll()
+    expect(drag.getPosition().x).toBe(50)
+    drag.destroy()
+  })
+
+  it('onSnapComplete fires when the snap spring settles, not after a fixed delay', async () => {
+    const onSnapComplete = vi.fn()
+    const drag = createDragSpring(element, { onSnapComplete, stiffness: 20, damping: 9 })
+    drag.snapTo({ x: 100, y: 0 })
+
+    clock.advance(600)
+    await flush()
+    // A soft spring is still far from settled after 600ms
+    expect(Math.abs(drag.getPosition().x - 100)).toBeGreaterThan(1)
+    expect(onSnapComplete).not.toHaveBeenCalled()
+
+    clock.runAll()
+    await flush()
+    expect(onSnapComplete).toHaveBeenCalledTimes(1)
+    expect(drag.getPosition().x).toBeCloseTo(100, 1)
+
+    // A fast spring reports completion as soon as it settles
+    onSnapComplete.mockClear()
+    const fast = createDragSpring(element, { onSnapComplete, stiffness: 2000, damping: 90 })
+    fast.snapTo({ x: 10, y: 0 })
+    clock.runAll()
+    await flush()
+    expect(onSnapComplete).toHaveBeenCalledTimes(1)
+    drag.destroy()
+    fast.destroy()
+  })
+
+  it('momentum: false keeps the release velocity even when the target is the current position', () => {
+    let maxX = 0
+    const drag = createDragSpring(element, { momentum: false, onUpdate: (x) => { maxX = Math.max(maxX, x) } })
+    drag.release(500, 0)
+    expect(drag.getVelocity().x).toBeCloseTo(500, 6)
+    clock.runAll()
+    expect(maxX).toBeGreaterThan(1)
+    expect(drag.getPosition().x).toBeCloseTo(0, 1)
+    drag.destroy()
+  })
+})
+
+describe('createDragSpring dragElastic object form', () => {
+  it('an edge missing from the object is not elastic (like Framer Motion)', () => {
+    const element = document.createElement('div')
+    document.body.appendChild(element)
+    const pointer = (type: string, clientX: number) =>
+      new PointerEvent(type, { pointerId: 1, button: 0, clientX, clientY: 0, bubbles: true })
+    const drag = createDragSpring(element, {
+      bounds: { left: 0, right: 100 },
+      dragElastic: { right: 0.5 },
+    })
+    element.dispatchEvent(pointer('pointerdown', 0))
+    element.dispatchEvent(pointer('pointermove', 200))
+    expect(drag.getPosition().x).toBe(150) // right edge: 0.5
+    element.dispatchEvent(pointer('pointermove', -100))
+    expect(drag.getPosition().x).toBe(0) // left edge: not given, so hard stop
+    element.dispatchEvent(pointer('pointerup', -100))
+    drag.destroy()
+    element.remove()
+  })
+})
+
+describe('createDragSpring constrainToParent padding box', () => {
+  it("keeps the element inside the parent's padding box (borders excluded)", () => {
+    const parent = document.createElement('div')
+    const element = document.createElement('div')
+    parent.appendChild(element)
+    document.body.appendChild(parent)
+    const rect = (left: number, top: number, width: number, height: number) => ({
+      left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}),
+    }) as DOMRect
+    // 300x200 border box with a 10px left/right and 5px top/bottom border
+    parent.getBoundingClientRect = () => rect(0, 0, 300, 200)
+    Object.defineProperty(parent, 'clientLeft', { configurable: true, value: 10 })
+    Object.defineProperty(parent, 'clientTop', { configurable: true, value: 5 })
+    Object.defineProperty(parent, 'clientWidth', { configurable: true, value: 280 })
+    Object.defineProperty(parent, 'clientHeight', { configurable: true, value: 190 })
+
+    const drag = createDragSpring(element, { constraints: { constrainToParent: true } })
+    // 50x50 element at the padding box's top-left corner, moved by the drag offset
+    element.getBoundingClientRect = () => {
+      const { x, y } = drag.getPosition()
+      return rect(10 + x, 5 + y, 50, 50)
+    }
+    const pointer = (type: string, clientX: number, clientY: number) =>
+      new PointerEvent(type, { pointerId: 1, button: 0, clientX, clientY, bubbles: true })
+
+    element.dispatchEvent(pointer('pointerdown', 0, 0))
+    element.dispatchEvent(pointer('pointermove', 1000, 1000))
+    expect(drag.getPosition()).toEqual({ x: 230, y: 140 })
+    element.dispatchEvent(pointer('pointermove', -1000, -1000))
+    expect(drag.getPosition()).toEqual({ x: 0, y: 0 })
+    element.dispatchEvent(pointer('pointerup', -1000, -1000))
+    drag.destroy()
+    parent.remove()
   })
 })

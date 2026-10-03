@@ -8,7 +8,7 @@ import {
 } from './physics.js'
 import { globalLoop, type Animatable, AnimationState } from '../animation/loop.js'
 import { clamp } from '../utils/math.js'
-import { validateSpringConfig, validateAnimationValue } from '../utils/warnings.js'
+import { validateSpringConfig, validateAnimationValue, warnOnce } from '../utils/warnings.js'
 
 /**
  * Invoke a user callback with error isolation so a throwing callback can't
@@ -82,6 +82,9 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
   private clampedTo: number
   private lastUpdateTime: number = 0
   private destroyed = false
+  // Bumped by every retarget (set, setWithVelocity, reverse), so update()
+  // can tell that its onUpdate callback retargeted the spring
+  private retargets = 0
   // Per-frame constants derived once from the physics config (which never
   // changes after construction)
   private readonly coefficients: SpringCoefficients
@@ -138,6 +141,10 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
   }
 
   start(): SpringAnimation {
+    if (this.destroyed) {
+      warnOnce('spring.start() called after destroy(); ignored')
+      return this
+    }
     if (this.state === AnimationState.Running) return this
 
     // The previous run already settled `finished` (completed or stopped):
@@ -184,6 +191,7 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
     this.clampedFrom = this.from
     this.clampedTo = this.to
     this.target = this.to
+    this.retargets++
 
     // Negate velocity for proper direction reversal during animation
     if (this.state === AnimationState.Running) {
@@ -198,6 +206,7 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
     this.to = validTo
     this.clampedTo = validTo
     this.target = validTo
+    this.retargets++
   }
 
   setWithVelocity(to: number, velocity?: number): void {
@@ -209,6 +218,7 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
     this.to = validTo
     this.clampedTo = validTo
     this.target = validTo
+    this.retargets++
 
     // Use provided velocity or preserve current velocity
     if (velocity !== undefined) {
@@ -271,6 +281,7 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
 
     // Emit update (safeCall inlined: no rest-args array per frame)
     const onUpdate = this.config.onUpdate
+    const retargets = this.retargets
     if (onUpdate) {
       try {
         onUpdate(this.position)
@@ -279,8 +290,9 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
       }
     }
 
-    // Check rest state
-    if (isRest) {
+    // Check rest state. onUpdate may have retargeted the spring (it then
+    // keeps running toward its new target) or stopped / paused it.
+    if (isRest && this.state === AnimationState.Running && this.retargets === retargets) {
       this.state = AnimationState.Complete
       globalLoop.remove(this)
       this.position = this.target // Ensure we end exactly at target

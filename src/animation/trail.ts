@@ -1,11 +1,12 @@
 import type { SpringConfig } from '../core/config.js'
 import { createSpringValue, type SpringValue } from '../core/spring-value.js'
+import { globalLoop } from './loop.js'
 
 /**
  * Trail configuration interface
  */
 export interface TrailConfig extends SpringConfig {
-  /** Frames delay between items following each other */
+  /** Delay between items following each other, in 60fps frames (~16ms of animation time each) */
   followDelay?: number
 }
 
@@ -35,8 +36,9 @@ class TrailImpl implements Trail {
   private followDelay: number
   private subscribers = new Set<(values: number[]) => void>()
   private frameCount: number = 0
-  // Track timeout IDs for cleanup to prevent memory leaks
-  private pendingTimeouts: Set<ReturnType<typeof setTimeout>> = new Set()
+  // Cancel functions of pending follower delays (loop-driven, so they
+  // follow the time scale), cleared on jump/destroy
+  private pendingDelays: Set<() => void> = new Set()
   private destroyed = false
 
   constructor(count: number, config: TrailConfig = {}) {
@@ -86,12 +88,12 @@ class TrailImpl implements Trail {
       // Update immediately if delay has passed
       this.springs[index]!.set(targetValue)
     } else {
-      // Use setTimeout for delay (approximately 16ms per frame at 60fps)
+      // Approximately 16ms per frame at 60fps, in animation time
       const delayMs = Math.max(framesToWait * 16, 0)
 
-      const timeoutId = setTimeout(() => {
+      const cancel = globalLoop.delay(delayMs, () => {
         // Remove from pending set
-        this.pendingTimeouts.delete(timeoutId)
+        this.pendingDelays.delete(cancel)
 
         // Skip if destroyed
         if (this.destroyed) return
@@ -99,10 +101,10 @@ class TrailImpl implements Trail {
         // latest-scheduled one meant followers never moved while the leader
         // kept updating each frame, and only caught up after it stopped.)
         this.springs[index]!.set(targetValue)
-      }, delayMs)
+      })
 
-      // Track timeout for cleanup
-      this.pendingTimeouts.add(timeoutId)
+      // Track for cleanup
+      this.pendingDelays.add(cancel)
     }
   }
 
@@ -113,7 +115,7 @@ class TrailImpl implements Trail {
   jump(value: number): void {
     // Drop delayed follower updates scheduled before the jump, otherwise they
     // would pull followers back toward stale values afterwards
-    this.clearPendingTimeouts()
+    this.clearPendingDelays()
     this.leader.jump(value)
     for (const spring of this.springs) {
       spring.jump(value)
@@ -161,18 +163,16 @@ class TrailImpl implements Trail {
     }
   }
 
-  private clearPendingTimeouts(): void {
-    for (const timeoutId of this.pendingTimeouts) {
-      clearTimeout(timeoutId)
-    }
-    this.pendingTimeouts.clear()
+  private clearPendingDelays(): void {
+    for (const cancel of this.pendingDelays) cancel()
+    this.pendingDelays.clear()
   }
 
   destroy(): void {
     this.destroyed = true
 
     // Clear all pending timeouts to prevent memory leaks
-    this.clearPendingTimeouts()
+    this.clearPendingDelays()
 
     this.leader.destroy()
     for (const spring of this.springs) {

@@ -621,3 +621,120 @@ describe('createScrollSpring regressions', () => {
     scroll.destroy()
   })
 })
+
+describe('createScrollSpring bounce spring config', () => {
+  it('bounceStiffness / bounceDamping drive the spring back from an overscroll', async () => {
+    const { installTestClock } = await import('../../../src/testing')
+    const clock = installTestClock()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+
+    const timeToSettle = (config: { bounceStiffness?: number; bounceDamping?: number }) => {
+      const onScrollEnd = vi.fn()
+      const scroll = createScrollSpring(container, { bounce: true, stiffness: 100, damping: 20, onScrollEnd, ...config })
+      container.dispatchEvent(new WheelEvent('wheel', { deltaY: -100, cancelable: true }))
+      const start = clock.now()
+      while (onScrollEnd.mock.calls.length === 0 && clock.now() - start < 10000) clock.nextFrame()
+      const elapsed = clock.now() - start
+      expect(Math.abs(scroll.getScroll().y)).toBeLessThan(1)
+      scroll.destroy()
+      return elapsed
+    }
+
+    const regular = timeToSettle({})
+    const stiffBounce = timeToSettle({ bounceStiffness: 2000, bounceDamping: 90 })
+    expect(stiffBounce).toBeLessThan(regular - 300)
+
+    clock.uninstall()
+    container.remove()
+  })
+})
+
+describe('createScrollSpring bounce on content shorter than the container', () => {
+  it('overscroll past the bottom is measured from scroll position 0', async () => {
+    const { installTestClock } = await import('../../../src/testing')
+    const clock = installTestClock()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    Object.defineProperty(container, 'clientHeight', { configurable: true, value: 200 })
+    Object.defineProperty(container, 'scrollHeight', { configurable: true, value: 100 })
+
+    const positions: number[] = []
+    const scroll = createScrollSpring(container, { bounce: true, onScroll: (_x, y) => positions.push(y) })
+    container.dispatchEvent(new WheelEvent('wheel', { deltaY: 10, cancelable: true }))
+    clock.runAll()
+    const down = Math.max(...positions)
+    positions.length = 0
+    container.dispatchEvent(new WheelEvent('wheel', { deltaY: -10, cancelable: true }))
+    clock.runAll()
+    const up = Math.min(...positions)
+
+    // Same overscroll in both directions, and back at 0 afterwards
+    expect(down).toBeGreaterThan(5)
+    expect(down).toBeCloseTo(-up, 0)
+    expect(Math.abs(scroll.getScroll().y)).toBeLessThan(1)
+    scroll.destroy()
+    clock.uninstall()
+    container.remove()
+  })
+})
+
+describe('createScrollSpring rubber band curve', () => {
+  const overscrollFor = async (deltaY: number) => {
+    const { installTestClock } = await import('../../../src/testing')
+    const clock = installTestClock()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    Object.defineProperty(container, 'clientHeight', { configurable: true, value: 400 })
+    Object.defineProperty(container, 'scrollHeight', { configurable: true, value: 1000 })
+    let min = 0
+    // Overdamped, so the extreme position is the rubber-banded target itself
+    const scroll = createScrollSpring(container, {
+      bounce: true, stiffness: 2000, damping: 400, onScroll: (_x, y) => { min = Math.min(min, y) },
+    })
+    container.dispatchEvent(new WheelEvent('wheel', { deltaY, cancelable: true }))
+    clock.runAll()
+    const end = scroll.getScroll().y
+    scroll.destroy()
+    clock.uninstall()
+    container.remove()
+    return { min, end }
+  }
+
+  it('never amplifies an overscroll: small ones move ~0.55x, large ones approach the container size', async () => {
+    const curve = (x: number) => (1 - 1 / ((x * 0.55) / 400 + 1)) * 400
+
+    const small = await overscrollFor(-20)
+    expect(-small.min).toBeLessThan(20)
+    expect(-small.min).toBeCloseTo(curve(20), 0)
+    expect(Math.abs(small.end)).toBeLessThan(1)
+
+    const huge = await overscrollFor(-100000)
+    expect(-huge.min).toBeLessThan(400)
+    expect(-huge.min).toBeGreaterThan(390)
+  })
+
+  it('scrolling back out of an overscroll follows the same curve', async () => {
+    const { installTestClock } = await import('../../../src/testing')
+    const clock = installTestClock()
+    const container = document.createElement('div')
+    document.body.appendChild(container)
+    Object.defineProperty(container, 'clientHeight', { configurable: true, value: 400 })
+    Object.defineProperty(container, 'scrollHeight', { configurable: true, value: 1000 })
+    const positions: number[] = []
+    const scroll = createScrollSpring(container, {
+      bounce: true, stiffness: 2000, damping: 400, onScroll: (_x, y) => positions.push(y),
+    })
+    container.dispatchEvent(new WheelEvent('wheel', { deltaY: -200, cancelable: true }))
+    clock.advance(16)
+    // Back by the same amount: returns to the edge, not into the content
+    container.dispatchEvent(new WheelEvent('wheel', { deltaY: 200, cancelable: true }))
+    positions.length = 0
+    clock.runAll()
+    expect(Math.max(...positions)).toBeLessThan(1)
+    expect(scroll.getScroll().y).toBeCloseTo(0, 0)
+    scroll.destroy()
+    clock.uninstall()
+    container.remove()
+  })
+})

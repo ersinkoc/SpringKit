@@ -18,11 +18,21 @@ export interface ScrollSpringConfig {
   clamp?: boolean
   /** Scroll direction */
   direction?: 'horizontal' | 'vertical' | 'both'
-  /** Enable momentum/inertia */
+  /**
+   * @deprecated Has no effect: wheel and trackpad events already include the
+   * operating system's inertial scrolling. Will be removed in a future major.
+   */
   momentum?: boolean
-  /** Momentum decay factor (0-1) */
+  /**
+   * @deprecated Has no effect (see `momentum`). Will be removed in a future
+   * major.
+   */
   momentumDecay?: number
-  /** Enable bounce at edges */
+  /**
+   * Enable bounce at edges: scrolling past an edge is resisted with an
+   * iOS-style rubber band (~0.55x for small overscrolls, never more than the
+   * container size), and the content springs back once the input stops
+   */
   bounce?: boolean
   /** Bounce spring stiffness */
   bounceStiffness?: number
@@ -85,6 +95,18 @@ const LINE_HEIGHT_PX = 16
 /** Pixels per page for WheelEvent.DOM_DELTA_PAGE when the container has no height */
 const PAGE_HEIGHT_FALLBACK_PX = 800
 
+/** Rubber band stiffness (iOS UIScrollView uses 0.55) */
+const RUBBER_BAND_COEFFICIENT = 0.55
+
+/**
+ * iOS-style rubber band: the displayed overscroll for a raw `overscroll` (px)
+ * beyond the edge. Never amplifies: ~`overscroll * 0.55` for small values,
+ * approaching `dimension` (the container size) asymptotically.
+ */
+function rubberBand(overscroll: number, dimension: number): number {
+  return (1 - 1 / ((overscroll * RUBBER_BAND_COEFFICIENT) / dimension + 1)) * dimension
+}
+
 /**
  * Scroll spring implementation
  */
@@ -93,6 +115,11 @@ class ScrollSpringImpl implements ScrollSpring {
   private config: ScrollSpringConfig
   private scroll = { x: 0, y: 0 }
   private target = { x: 0, y: 0 }
+  /**
+   * Scroll position the wheel input asks for, without the rubber band; the
+   * spring target is this position with the overscroll rubber-banded
+   */
+  private rawTarget = { x: 0, y: 0 }
   private isScrolling = false
   private isEnabled = true
   private pendingRafId: number | null = null
@@ -162,23 +189,18 @@ class ScrollSpringImpl implements ScrollSpring {
 
     // Apply bounce at edges
     if (this.config.bounce) {
-      const maxScrollX = this.container.scrollWidth - this.container.clientWidth
-      const maxScrollY = this.container.scrollHeight - this.container.clientHeight
+      // Content shorter than the container can't scroll: its range is [0, 0]
+      // (as in clampTargetToBounds), not [0, negative]
+      const maxScrollX = Math.max(0, this.container.scrollWidth - this.container.clientWidth)
+      const maxScrollY = Math.max(0, this.container.scrollHeight - this.container.clientHeight)
 
-      this.target.x += deltaX
-      this.target.y += deltaY
-
-      // Apply rubber band at edges with safe Math.sqrt (use Math.abs to prevent NaN)
-      if (this.target.x < 0) {
-        this.target.x = -Math.sqrt(Math.abs(this.target.x)) * 10
-      } else if (this.target.x > maxScrollX) {
-        this.target.x = maxScrollX + Math.sqrt(Math.abs(this.target.x - maxScrollX)) * 10
-      }
-
-      if (this.target.y < 0) {
-        this.target.y = -Math.sqrt(Math.abs(this.target.y)) * 10
-      } else if (this.target.y > maxScrollY) {
-        this.target.y = maxScrollY + Math.sqrt(Math.abs(this.target.y - maxScrollY)) * 10
+      // Accumulate the raw position, then rubber-band the part beyond the
+      // edges (scrolling back out of an overscroll follows the same curve)
+      this.rawTarget.x += deltaX
+      this.rawTarget.y += deltaY
+      this.target = {
+        x: this.applyRubberBand(this.rawTarget.x, maxScrollX, this.container.clientWidth),
+        y: this.applyRubberBand(this.rawTarget.y, maxScrollY, this.container.clientHeight),
       }
 
       // Prevent default to handle scroll ourselves
@@ -193,6 +215,7 @@ class ScrollSpringImpl implements ScrollSpring {
 
       this.target.x = Math.max(0, Math.min(this.target.x, maxScrollX))
       this.target.y = Math.max(0, Math.min(this.target.y, maxScrollY))
+      this.rawTarget = { ...this.target }
     }
 
     this.startScrollLoop()
@@ -224,8 +247,9 @@ class ScrollSpringImpl implements ScrollSpring {
 
       // Once the overscroll has settled, bounce back to the nearest edge
       if (settled && this.isScrolling && this.config.bounce && this.clampTargetToBounds()) {
-        this.springX.set(this.target.x)
-        this.springY.set(this.target.y)
+        const bounceConfig = this.getBounceConfig()
+        this.springX.set(this.target.x, bounceConfig)
+        this.springY.set(this.target.y, bounceConfig)
         this.pendingRafId = requestAnimationFrame(checkEnd)
         return
       }
@@ -241,6 +265,23 @@ class ScrollSpringImpl implements ScrollSpring {
     checkEnd()
   }
 
+  /** Spring config of the bounce back from an overscroll (bounceStiffness / bounceDamping) */
+  private getBounceConfig(): { stiffness?: number; damping?: number } {
+    const config: { stiffness?: number; damping?: number } = {}
+    const { bounceStiffness, bounceDamping } = this.config
+    if (bounceStiffness !== undefined && Number.isFinite(bounceStiffness)) config.stiffness = bounceStiffness
+    if (bounceDamping !== undefined && Number.isFinite(bounceDamping)) config.damping = bounceDamping
+    return config
+  }
+
+  /** Rubber-band the part of `raw` outside [0, max] (`dimension` = container size) */
+  private applyRubberBand(raw: number, max: number, dimension: number): number {
+    const size = dimension > 0 ? dimension : PAGE_HEIGHT_FALLBACK_PX
+    if (raw < 0) return -rubberBand(-raw, size)
+    if (raw > max) return max + rubberBand(raw - max, size)
+    return raw
+  }
+
   /**
    * Clamp the scroll target into the scrollable range.
    * @returns true if the target was outside the range
@@ -252,6 +293,7 @@ class ScrollSpringImpl implements ScrollSpring {
     const y = Math.max(0, Math.min(this.target.y, maxScrollY))
     const changed = x !== this.target.x || y !== this.target.y
     this.target = { x, y }
+    this.rawTarget = { x, y }
     return changed
   }
 
@@ -261,6 +303,7 @@ class ScrollSpringImpl implements ScrollSpring {
 
   scrollTo(x: number, y: number): void {
     this.target = { x, y }
+    this.rawTarget = { x, y }
     this.springX.set(x)
     this.springY.set(y)
   }

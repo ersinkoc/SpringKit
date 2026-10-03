@@ -89,7 +89,9 @@ class DecayAnimationImpl implements Animatable, DecayAnimation {
   constructor(config: DecayConfig) {
     validateDecayConfig(config)
 
-    this.config = config
+    // Own copy: destroy() clears its callbacks, which must not reach the
+    // caller's object (it may be reused for another decay)
+    this.config = { ...config }
     this.from = config.from !== undefined && Number.isFinite(config.from) ? config.from : 0
     this.value = this.from
     this.clampRange = config.clamp
@@ -204,7 +206,8 @@ class DecayAnimationImpl implements Animatable, DecayAnimation {
       console.error('[SpringKit] Error in decay onUpdate callback:', error)
     }
 
-    if (done) {
+    // Complete (unless onUpdate stopped it)
+    if (done && this.state === AnimationState.Running) {
       this.state = AnimationState.Complete
       globalLoop.remove(this)
       try {

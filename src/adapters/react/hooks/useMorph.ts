@@ -107,7 +107,9 @@ export function useMorph(
       isMountedRef.current = false
       unsubscribe()
     }
-  }, [initialPath])
+    // `controller` also changes when it is recreated after a hidden <Activity>
+    // destroyed it
+  }, [initialPath, controller])
 
   // Destroy on real unmount only (deferred so StrictMode's simulated remount
   // keeps the controller that was already handed out during render)

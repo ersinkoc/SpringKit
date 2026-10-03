@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
-import { createSpringGroup } from '@oxog/springkit'
+import { createSpringGroup, delay } from '@oxog/springkit'
 import type { SpringConfig } from '@oxog/springkit'
 
 function shallowEqual(a: Record<string, number>, b: Record<string, number>): boolean {
@@ -93,44 +93,74 @@ export function useSprings<T extends Record<string, number>>(
 
   // Last target applied to each spring (used to detect changed item values)
   const lastTargetsRef = useRef<Array<T | undefined>>([])
-  // Pending delayed `set` per spring index
-  const timeoutsRef = useRef(new Map<number, ReturnType<typeof setTimeout>>())
+  // Pending delayed `set` per spring index (cancel functions)
+  const timeoutsRef = useRef(new Map<number, () => void>())
 
-  const scheduleSet = useCallback((index: number, values: T, delay: number, config?: Partial<SpringConfig>) => {
+  // Delays run in animation time (they follow the time scale and the test clock)
+  const scheduleSet = useCallback((index: number, values: T, ms: number, config?: Partial<SpringConfig>) => {
     const timeouts = timeoutsRef.current
-    const pending = timeouts.get(index)
-    if (pending !== undefined) clearTimeout(pending)
-    const timeoutId = setTimeout(() => {
+    timeouts.get(index)?.()
+    timeouts.delete(index)
+    if (!(ms > 0)) {
+      springsRef.current[index]?.set(values as Partial<T>, config)
+      return
+    }
+    const cancel = delay(ms, () => {
       timeouts.delete(index)
       springsRef.current[index]?.set(values as Partial<T>, config)
-    }, delay)
-    timeouts.set(index, timeoutId)
+    })
+    timeouts.set(index, cancel)
   }, [])
 
-  // Initialize springs
+  // Default config the springs were created with (a change rebuilds them all)
+  const springsConfigKeyRef = useRef<string | null>(null)
+
+  // Create / subscribe the springs. When only `count` changes, the springs of
+  // the remaining items are kept (they don't restart from `from`): only added
+  // items get new springs and removed items' springs are destroyed.
   useEffect(() => {
     isMountedRef.current = true
+    const springs = springsRef.current
+    const timeouts = timeoutsRef.current
 
-    // Clean up old springs
-    springsRef.current.forEach((s) => s?.destroy())
-    springsRef.current = []
-    lastTargetsRef.current = []
+    const dropSpring = (index: number) => {
+      springs[index]?.destroy()
+      const pending = timeouts.get(index)
+      if (pending !== undefined) {
+        pending()
+        timeouts.delete(index)
+      }
+    }
+
+    if (springsConfigKeyRef.current !== defaultConfigKey) {
+      for (let i = 0; i < springs.length; i++) dropSpring(i)
+      springs.length = 0
+      springsConfigKeyRef.current = defaultConfigKey
+    }
+    // Springs of removed items (count decreased)
+    for (let i = count; i < springs.length; i++) dropSpring(i)
+    springs.length = Math.min(springs.length, count)
+    lastTargetsRef.current.length = Math.min(lastTargetsRef.current.length, count)
 
     const unsubscribers: (() => void)[] = []
 
     // Drop values of springs that no longer exist (count decreased)
     setCurrentValues(prev => (prev.length > count ? prev.slice(0, count) : prev))
 
-    // Create new springs
     for (let i = 0; i < count; i++) {
-      const item = itemsRef.current(i)
-      const initialValues = (item.from ?? item.values) as T
-      const spring = createSpringGroup(initialValues, {
-        ...defaultConfigRef.current,
-        ...item.config,
-      })
-
-      springsRef.current.push(spring)
+      let spring = springs[i]
+      if (!spring || spring.isDestroyed()) {
+        const item = itemsRef.current(i)
+        const initialValues = (item.from ?? item.values) as T
+        spring = createSpringGroup(initialValues, {
+          ...defaultConfigRef.current,
+          ...item.config,
+        })
+        springs[i] = spring
+        // Start animation with delay (tracked timeout for cleanup)
+        lastTargetsRef.current[i] = item.values
+        scheduleSet(i, item.values, item.delay ?? 0)
+      }
 
       // Subscribe with mount check
       const index = i
@@ -163,23 +193,28 @@ export function useSprings<T extends Record<string, number>>(
         }
       })
       unsubscribers.push(unsubscribe)
-
-      // Start animation with delay (tracked timeout for cleanup)
-      lastTargetsRef.current[i] = item.values
-      scheduleSet(i, item.values, item.delay ?? 0)
     }
 
-    const timeouts = timeoutsRef.current
     return () => {
       isMountedRef.current = false
-      // Unsubscribe all
+      // Unsubscribe all (the springs themselves are destroyed on unmount, or
+      // when they are no longer needed by the next run)
       unsubscribers.forEach(unsub => unsub())
-      // Clear all pending timeouts to prevent memory leaks
-      timeouts.forEach(clearTimeout)
-      timeouts.clear()
-      springsRef.current.forEach((s) => s?.destroy())
     }
   }, [count, defaultConfigKey, scheduleSet])
+
+  // Destroy everything on unmount (StrictMode's simulated unmount included:
+  // the setup effect above then recreates the destroyed springs)
+  useEffect(() => {
+    const springs = springsRef.current
+    const timeouts = timeoutsRef.current
+    return () => {
+      // Clear all pending timeouts to prevent memory leaks
+      timeouts.forEach((cancel) => cancel())
+      timeouts.clear()
+      springs.forEach((s) => s?.destroy())
+    }
+  }, [])
 
   // Retarget springs when the values returned by `items` change after mount
   useEffect(() => {
@@ -196,5 +231,13 @@ export function useSprings<T extends Record<string, number>>(
     }
   })
 
-  return currentValues
+  // Right after `count` changed, the state still has the previous number of
+  // items: return exactly `count` (new items start at their `from` values)
+  if (currentValues.length === count) return currentValues
+  const result = currentValues.slice(0, count)
+  for (let i = result.length; i < count; i++) {
+    const item = itemsRef.current(i)
+    result.push((item.from ?? item.values) as { [K in keyof T]: number })
+  }
+  return result
 }

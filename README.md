@@ -87,7 +87,7 @@
 
 ### Global Loop
 - **Animation Manager** - `globalLoop` for FPS monitoring and animation tracking
-- **Slow motion** - `globalLoop.setTimeScale(0.1)` slows every spring, decay, timeline and native animation down for inspection; `0` freezes them
+- **Slow motion** - `globalLoop.setTimeScale(0.1)` slows every spring, decay, timeline, native animation and animation delay down for inspection; `0` freezes them. `delay(ms, cb)` is a `setTimeout` on that clock
 - **Animation States** - `AnimationState` enum (Idle, Running, Paused, Complete)
 
 ### Math & Color Utilities
@@ -98,7 +98,8 @@
 - **Hooks** - `useSpring`, `useSpringValue`, `useSprings`, `useTrail`, `useDrag`, `useGesture`
 - **Motion Hooks** - `useMotionValue`, `useTransform`, `useInView`, `useScroll`, `useAnimate`
 - **Variants System** - Declarative animation states with `useVariants`, `VariantProvider`
-- **Accessibility** - `useReducedMotion` for motion-sensitive users
+- **Accessibility** - `Animated`, drag, `Magnetic` and `Parallax` honor `prefers-reduced-motion` by default; `useReducedMotion`, `<MotionConfig reducedMotion>`
+- **Any CSS value** - `<Animated>` springs numbers, colors (`'#f00'`, `'rebeccapurple'`, `transparent`), units (`'50%'`, `'2rem'`) and complex strings (`boxShadow`, `filter`)
 - **Components** - `<Spring>`, `<Animated>`, `<Trail>`, `<AnimatePresence>` (`sync`, `wait`, `popLayout`), `<MotionConfig>`
 - **Drag** - `<Animated drag>` with constraints, elasticity, momentum, snap-to-origin, `dragControls` and `onDragStart`/`onDrag`/`onDragEnd`
 - **Motion components** - `createMotionComponent('li', { variants })` with automatic stagger under `<VariantProvider>`
@@ -437,6 +438,9 @@ function DraggableCard() {
 ## Documentation
 
 Visit [springkit.oxog.dev](https://springkit.oxog.dev) for full documentation.
+
+- **Upgrading from 1.x?** See the [migration guide](docs/MIGRATION-2.0.md) and the [changelog](CHANGELOG.md).
+- **Using an AI coding assistant?** [`llms.txt`](llms.txt) is a compact, accurate API reference with units and conventions (also shipped in the npm package and served at [springkit.oxog.dev/llms.txt](https://springkit.oxog.dev/llms.txt)).
 
 ## License
 

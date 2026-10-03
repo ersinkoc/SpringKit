@@ -155,7 +155,7 @@ describe('Advanced Gestures', () => {
       const onSwipeEnd = vi.fn()
 
       const controller = createSwipeGesture(element, {
-        velocityThreshold: 0.3,
+        velocityThreshold: 300,
         distanceThreshold: 30,
         maxDuration: 500,
         axis: 'x',
@@ -706,7 +706,7 @@ describe('Advanced Gestures', () => {
       const onSwipe = vi.fn()
       const controller = createSwipeGesture(element, {
         onSwipe,
-        velocityThreshold: 0.1,
+        velocityThreshold: 100,
         distanceThreshold: 50,
         maxDuration: 1000,
       })
@@ -745,7 +745,7 @@ describe('Advanced Gestures', () => {
       const onSwipe = vi.fn()
       const controller = createSwipeGesture(element, {
         onSwipe,
-        velocityThreshold: 0.1,
+        velocityThreshold: 100,
         distanceThreshold: 50,
       })
 
@@ -773,7 +773,7 @@ describe('Advanced Gestures', () => {
       const onSwipe = vi.fn()
       const controller = createSwipeGesture(element, {
         onSwipe,
-        velocityThreshold: 0.1,
+        velocityThreshold: 100,
         distanceThreshold: 50,
       })
 
@@ -801,7 +801,7 @@ describe('Advanced Gestures', () => {
       const onSwipe = vi.fn()
       const controller = createSwipeGesture(element, {
         onSwipe,
-        velocityThreshold: 0.1,
+        velocityThreshold: 100,
         distanceThreshold: 50,
       })
 
@@ -1308,7 +1308,7 @@ describe('Advanced Gestures regressions', () => {
     let now = 1000
     vi.spyOn(performance, 'now').mockImplementation(() => now)
     const onSwipe = vi.fn()
-    const controller = createSwipeGesture(element, { onSwipe, velocityThreshold: 0.5, distanceThreshold: 100 })
+    const controller = createSwipeGesture(element, { onSwipe, velocityThreshold: 500, distanceThreshold: 100 })
 
     element.dispatchEvent(pointer('pointerdown', 1, 100, 100))
     now += 16
@@ -1321,7 +1321,7 @@ describe('Advanced Gestures regressions', () => {
 
     expect(onSwipe).toHaveBeenCalledTimes(1)
     expect(onSwipe.mock.calls[0]![0].direction).toBe('right')
-    expect(onSwipe.mock.calls[0]![0].velocity.x).toBeGreaterThan(0.5)
+    expect(onSwipe.mock.calls[0]![0].velocity.x).toBeGreaterThan(500)
     controller.destroy()
   })
 
@@ -1329,7 +1329,7 @@ describe('Advanced Gestures regressions', () => {
     let now = 1000
     vi.spyOn(performance, 'now').mockImplementation(() => now)
     const onSwipe = vi.fn()
-    const controller = createSwipeGesture(element, { onSwipe, velocityThreshold: 0.5, distanceThreshold: 100, maxDuration: 1000 })
+    const controller = createSwipeGesture(element, { onSwipe, velocityThreshold: 500, distanceThreshold: 100, maxDuration: 1000 })
 
     element.dispatchEvent(pointer('pointerdown', 1, 100, 100))
     now += 16
@@ -1481,5 +1481,202 @@ describe('Advanced Gestures lost pointerup recovery', () => {
     clock.advance(600)
     expect(onLongPress).not.toHaveBeenCalled()
     controller.destroy()
+  })
+})
+
+describe('createRotateGesture movement', () => {
+  it('movement is the rotation of the current gesture, whatever the finger angle', () => {
+    const element = document.createElement('div')
+    document.body.appendChild(element)
+    const onRotate = vi.fn()
+    const onRotateEnd = vi.fn()
+    const controller = createRotateGesture(element, { onRotate, onRotateEnd })
+
+    const touches = (type: string, list: Array<{ identifier: number; clientX: number; clientY: number }>) =>
+      element.dispatchEvent(new TouchEvent(type, {
+        changedTouches: list as unknown as Touch[],
+        touches: list as unknown as Touch[],
+        bubbles: true,
+      }))
+
+    // First gesture: fingers vertical (90°), rotated to 135° (+45°)
+    const a = { identifier: 0, clientX: 100, clientY: 100 }
+    touches('touchstart', [a, { identifier: 1, clientX: 100, clientY: 200 }])
+    touches('touchmove', [a, { identifier: 1, clientX: 0, clientY: 200 }])
+    let state = onRotate.mock.calls.at(-1)![0]
+    expect(state.angle).toBeCloseTo(45, 6)
+    expect(state.movement).toBeCloseTo(45, 6)
+    touches('touchend', [a, { identifier: 1, clientX: 0, clientY: 200 }])
+    expect(onRotateEnd.mock.calls.at(-1)![0].movement).toBeCloseTo(45, 6)
+
+    // Second gesture: fingers horizontal (0°), rotated to 30° (+30°)
+    touches('touchstart', [a, { identifier: 1, clientX: 200, clientY: 100 }])
+    touches('touchmove', [a, { identifier: 1, clientX: 100 + 100 * Math.cos(Math.PI / 6), clientY: 100 + 100 * Math.sin(Math.PI / 6) }])
+    state = onRotate.mock.calls.at(-1)![0]
+    expect(state.angle).toBeCloseTo(75, 6)
+    expect(state.movement).toBeCloseTo(30, 6)
+
+    controller.destroy()
+    element.remove()
+  })
+})
+
+describe('pinch/rotate with a third finger', () => {
+  type T = { identifier: number; clientX: number; clientY: number }
+  let element: HTMLElement
+  const send = (type: string, changed: T[], all: T[]) =>
+    element.dispatchEvent(new TouchEvent(type, {
+      changedTouches: changed as unknown as Touch[],
+      touches: all as unknown as Touch[],
+      bubbles: true,
+    }))
+
+  beforeEach(() => {
+    element = document.createElement('div')
+    document.body.appendChild(element)
+  })
+
+  afterEach(() => {
+    element.remove()
+  })
+
+  const A = { identifier: 0, clientX: 100, clientY: 100 }
+  const B = { identifier: 1, clientX: 200, clientY: 100 }
+  const C = { identifier: 2, clientX: 100, clientY: 300 }
+
+  it('lifting one finger of the pinching pair does not make the scale jump', () => {
+    const onPinch = vi.fn()
+    const controller = createPinchGesture(element, { onPinch })
+    send('touchstart', [A, B], [A, B])
+    send('touchstart', [C], [A, B, C])
+    send('touchend', [B], [A, C])
+    // Nothing moved: the scale must stay 1
+    send('touchmove', [C], [A, C])
+    expect(onPinch.mock.calls.at(-1)![0].scale).toBeCloseTo(1, 6)
+    // Spreading the new pair scales relative to its own distance
+    send('touchmove', [{ ...C, clientY: 500 }], [A, { ...C, clientY: 500 }])
+    expect(onPinch.mock.calls.at(-1)![0].scale).toBeCloseTo(2, 6)
+    controller.destroy()
+  })
+
+  it('lifting one finger of the rotating pair does not make the angle jump', () => {
+    const onRotate = vi.fn()
+    const controller = createRotateGesture(element, { onRotate })
+    send('touchstart', [A, B], [A, B])
+    send('touchstart', [C], [A, B, C])
+    send('touchend', [B], [A, C])
+    send('touchmove', [C], [A, C])
+    expect(onRotate.mock.calls.at(-1)![0].angle).toBeCloseTo(0, 6)
+    controller.destroy()
+  })
+})
+
+describe('swipe / long-press robustness', () => {
+  let clock: TestClock
+  let element: HTMLElement
+
+  beforeEach(() => {
+    clock = installTestClock({ timers: true })
+    element = document.createElement('div')
+    document.body.appendChild(element)
+  })
+
+  afterEach(() => {
+    clock.uninstall()
+    element.remove()
+  })
+
+  const pointer = (type: string, clientX: number) =>
+    new PointerEvent(type, { pointerId: 1, button: 0, clientX, clientY: 0, bubbles: true })
+
+  const swipeRight = () => {
+    element.dispatchEvent(pointer('pointerdown', 0))
+    clock.advance(16)
+    element.dispatchEvent(pointer('pointermove', 60))
+    clock.advance(16)
+    element.dispatchEvent(pointer('pointermove', 120))
+    element.dispatchEvent(pointer('pointerup', 120))
+  }
+
+  it('a throwing setPointerCapture does not leave swipe / long-press half-started', () => {
+    element.setPointerCapture = () => { throw new Error('InvalidPointerId') }
+    const onSwipe = vi.fn()
+    const onLongPress = vi.fn()
+    const swipe = createSwipeGesture(element, { onSwipe })
+    swipeRight()
+    expect(onSwipe).toHaveBeenCalledTimes(1)
+    swipe.destroy()
+
+    const longPress = createLongPressGesture(element, { onLongPress })
+    element.dispatchEvent(pointer('pointerdown', 0))
+    clock.advance(600)
+    expect(onLongPress).toHaveBeenCalledTimes(1)
+    element.dispatchEvent(pointer('pointerup', 0))
+    longPress.destroy()
+  })
+
+  it('disable() during a swipe prevents it from firing', () => {
+    const onSwipe = vi.fn()
+    const onSwipeEnd = vi.fn()
+    const swipe = createSwipeGesture(element, { onSwipe, onSwipeEnd })
+    element.dispatchEvent(pointer('pointerdown', 0))
+    clock.advance(16)
+    element.dispatchEvent(pointer('pointermove', 60))
+    swipe.disable()
+    clock.advance(16)
+    element.dispatchEvent(pointer('pointerup', 120))
+    expect(onSwipe).not.toHaveBeenCalled()
+    expect(onSwipeEnd).toHaveBeenCalledTimes(1)
+    expect(onSwipeEnd.mock.calls[0]![0].cancelled).toBe(true)
+
+    // Re-enabled, the next swipe works
+    swipe.enable()
+    swipeRight()
+    expect(onSwipe).toHaveBeenCalledTimes(1)
+    swipe.destroy()
+  })
+})
+
+describe('swipe minDistance', () => {
+  let clock: TestClock
+  let element: HTMLElement
+
+  beforeEach(() => {
+    clock = installTestClock()
+    element = document.createElement('div')
+    document.body.appendChild(element)
+  })
+
+  afterEach(() => {
+    clock.uninstall()
+    element.remove()
+  })
+
+  const flick = (distance: number) => {
+    const pointer = (type: string, clientX: number) =>
+      new PointerEvent(type, { pointerId: 1, button: 0, clientX, clientY: 0, bubbles: true })
+    element.dispatchEvent(pointer('pointerdown', 0))
+    clock.advance(5)
+    element.dispatchEvent(pointer('pointermove', distance))
+    element.dispatchEvent(pointer('pointerup', distance))
+  }
+
+  it('a fast jitter shorter than minDistance (default 10px) is not a swipe', () => {
+    const onSwipe = vi.fn()
+    const swipe = createSwipeGesture(element, { onSwipe })
+    flick(5) // ~1000 px/s, but only 5px
+    expect(onSwipe).not.toHaveBeenCalled()
+    flick(15) // fast and past minDistance: a swipe below distanceThreshold
+    expect(onSwipe).toHaveBeenCalledTimes(1)
+    expect(onSwipe.mock.calls[0]![0].direction).toBe('right')
+    swipe.destroy()
+  })
+
+  it('minDistance is configurable', () => {
+    const onSwipe = vi.fn()
+    const swipe = createSwipeGesture(element, { onSwipe, minDistance: 0 })
+    flick(5)
+    expect(onSwipe).toHaveBeenCalledTimes(1)
+    swipe.destroy()
   })
 })

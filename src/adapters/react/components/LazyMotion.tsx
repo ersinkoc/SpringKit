@@ -4,7 +4,8 @@ import { createContext, useContext, useState, useEffect, useMemo } from 'react'
 // ============ Feature Definitions ============
 
 /**
- * Available feature sets for LazyMotion
+ * Feature flags provided by LazyMotion. They are only read through
+ * `useMotionFeature()` / `MotionFeatureGuard`: `Animated` ignores them.
  */
 export interface MotionFeatures {
   /** Basic animation features (animate, initial, exit) */
@@ -84,10 +85,8 @@ export interface LazyMotionProps {
   features: FeatureBundle | (() => Promise<FeatureBundle>)
 
   /**
-   * Whether to enforce that child motion components use the `m` component
-   * instead of `motion` for smaller bundle size.
-   *
-   * When true, using `motion.div` inside LazyMotion will throw an error.
+   * Exposed to descendants as `useLazyMotion().isStrict`; it enforces nothing
+   * by itself (no-op, kept for API compatibility)
    */
   strict?: boolean
 
@@ -98,20 +97,28 @@ export interface LazyMotionProps {
 }
 
 /**
- * LazyMotion - Optimize bundle size by lazy-loading motion features
+ * LazyMotion - provide a set of motion feature flags to a subtree
  *
- * Wrap your app or a section of your app with LazyMotion to control
- * which animation features are loaded. This can significantly reduce
- * bundle size for simple use cases.
+ * `features` is a set of flags (or an async loader returning one).
+ * Descendants read them with `useMotionFeature()` / `useLazyMotion()`, and
+ * `MotionFeatureGuard` renders its children only when a feature is available.
+ * Children always render; while an async loader is pending, `isLoaded` is
+ * false and every feature reports as unavailable.
  *
- * @example Basic usage with domAnimation
+ * LazyMotion does not change what `Animated` components do and doesn't split
+ * any code by itself: what a flag gates (and lazy-loads) is up to your
+ * components.
+ *
+ * @example Gate an optional effect
  * ```tsx
- * import { LazyMotion, domAnimation, m } from '@oxog/springkit/react'
+ * import { LazyMotion, MotionFeatureGuard, domAnimation } from '@oxog/springkit/react'
  *
  * function App() {
  *   return (
  *     <LazyMotion features={domAnimation}>
- *       <m.div animate={{ opacity: 1 }} />
+ *       <MotionFeatureGuard feature="gestures" fallback={<StaticCard />}>
+ *         <TiltCard>...</TiltCard>
+ *       </MotionFeatureGuard>
  *     </LazyMotion>
  *   )
  * }
@@ -119,37 +126,17 @@ export interface LazyMotionProps {
  *
  * @example Async feature loading
  * ```tsx
- * import { LazyMotion, m } from '@oxog/springkit/react'
- *
- * const loadFeatures = () =>
- *   import('./features').then((mod) => mod.domMax)
+ * // Define the loader outside the component (a new function each render
+ * // would load again)
+ * const loadFeatures = () => import('./features').then((mod) => mod.domMax)
  *
  * function App() {
  *   return (
  *     <LazyMotion features={loadFeatures}>
- *       <m.div animate={{ opacity: 1 }} />
+ *       <Page />
  *     </LazyMotion>
  *   )
  * }
- * ```
- *
- * @example Strict mode (enforces m component usage)
- * ```tsx
- * <LazyMotion features={domAnimation} strict>
- *   <m.div /> {/* OK *\/}
- *   <motion.div /> {/* Error in dev! *\/}
- * </LazyMotion>
- * ```
- *
- * @example Custom feature set
- * ```tsx
- * <LazyMotion features={{
- *   animations: true,
- *   gestures: true,
- *   layout: false, // Skip layout animations to save bundle size
- * }}>
- *   <m.div whileHover={{ scale: 1.1 }} />
- * </LazyMotion>
  * ```
  */
 export function LazyMotion({

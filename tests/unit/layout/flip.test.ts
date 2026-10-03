@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { measureElement, createFlip, flip, flipBatch } from '@oxog/springkit'
+import { installTestClock, type TestClock } from '../../../src/testing'
 
 describe('FLIP Layout Animations', () => {
   let container: HTMLDivElement
@@ -517,5 +518,134 @@ describe('FLIP transform-origin and border radius', () => {
     expect(el.style.borderRadius).toBe('5px / 10px')
     animation.cancel()
     expect(el.style.borderRadius).toBe('10px')
+  })
+})
+
+describe('FLIP interruption', () => {
+  let clock: TestClock
+  let el: HTMLDivElement
+  let layoutX = 0
+
+  /** Visual left edge: layout position plus the inline translate (jsdom has no layout) */
+  const visualX = () => {
+    const match = /translate\(([-\d.e]+)px/.exec(el.style.transform)
+    return layoutX + (match ? parseFloat(match[1]!) : 0)
+  }
+  const flush = async () => {
+    for (let i = 0; i < 10; i++) await Promise.resolve()
+  }
+
+  beforeEach(() => {
+    clock = installTestClock({ timers: true })
+    layoutX = 0
+    el = document.createElement('div')
+    document.body.appendChild(el)
+    el.getBoundingClientRect = () => ({
+      left: visualX(), top: 0, right: visualX() + 100, bottom: 100,
+      width: 100, height: 100, x: visualX(), y: 0, toJSON: () => ({}),
+    }) as DOMRect
+  })
+
+  afterEach(() => {
+    clock.uninstall()
+    el.remove()
+  })
+
+  it('a second flip() mid-animation continues from the current position and ends clean', async () => {
+    el.style.transform = 'rotate(10deg)'
+    const first = flip(el, () => { layoutX = 100 })
+    await flush()
+    clock.advance(100)
+    const midway = visualX()
+    expect(midway).toBeGreaterThan(0)
+    expect(midway).toBeLessThan(100)
+
+    const second = flip(el, () => { layoutX = 0 })
+    await flush()
+    // Starts where the first animation left the element
+    expect(visualX()).toBeCloseTo(midway, 6)
+
+    clock.runAll()
+    await Promise.all([first, second])
+    // The element's own transform is restored, without any FLIP offset
+    expect(el.style.transform).toBe('rotate(10deg)')
+    expect(visualX()).toBe(0)
+  })
+
+  it('a second createFlip() on the same element takes over the first one', () => {
+    const a = createFlip(el, { x: 0, y: 0, width: 100, height: 100 }, { x: 100, y: 0, width: 100, height: 100 })
+    void a.play()
+    clock.advance(100)
+    const b = createFlip(el, { x: 50, y: 0, width: 100, height: 100 }, { x: 0, y: 0, width: 100, height: 100 })
+    void b.play()
+    clock.runAll()
+    expect(el.style.transform).toBe('')
+    // Cancelling the replaced animation later doesn't disturb anything
+    a.cancel()
+    expect(el.style.transform).toBe('')
+  })
+})
+
+describe('FLIP size change with an existing transform', () => {
+  /** Map a layout-relative point through a transform list of translate/scale/rotate around `origin` */
+  const render = (transform: string, origin: { x: number; y: number }, px: number, py: number) => {
+    const fns = [...transform.matchAll(/(translate|scale|rotate)\(([^)]*)\)/g)]
+    let x = px - origin.x
+    let y = py - origin.y
+    for (const fn of fns.reverse()) {
+      const args = fn[2]!.split(',').map((v) => parseFloat(v))
+      if (fn[1] === 'translate') {
+        x += args[0]!
+        y += args[1] ?? 0
+      } else if (fn[1] === 'scale') {
+        x *= args[0]!
+        y *= args[1] ?? args[0]!
+      } else {
+        const a = (args[0]! * Math.PI) / 180
+        ;[x, y] = [x * Math.cos(a) - y * Math.sin(a), x * Math.sin(a) + y * Math.cos(a)]
+      }
+    }
+    return { x: x + origin.x, y: y + origin.y }
+  }
+
+  it('maps the rendered (rotated) box onto the first box', () => {
+    const el = document.createElement('div')
+    document.body.appendChild(el)
+    el.style.transform = 'rotate(90deg)'
+    Object.defineProperty(el, 'offsetWidth', { configurable: true, value: 100 })
+    Object.defineProperty(el, 'offsetHeight', { configurable: true, value: 50 })
+    const realGetComputedStyle = window.getComputedStyle
+    const spy = vi.spyOn(window, 'getComputedStyle').mockImplementation((target, pseudo) => {
+      const styles = realGetComputedStyle(target, pseudo)
+      if (target !== el) return styles
+      return new Proxy(styles, {
+        get: (obj, key) => key === 'transform' ? 'matrix(0, 1, -1, 0, 0, 0)'
+          : key === 'transformOrigin' ? '50px 25px'
+          : Reflect.get(obj, key),
+      })
+    })
+
+    // Layout box at (100, 100), 100x50; rotated 90deg about its center its
+    // rendered box is (125, 75) 50x100
+    const layout = { x: 100, y: 100 }
+    const last = { x: 125, y: 75, width: 50, height: 100 }
+    const first = { x: 0, y: 0, width: 100, height: 200 }
+    const animation = createFlip(el, first, last)
+
+    const corners = [[0, 0], [100, 0], [0, 50], [100, 50]].map(([px, py]) => {
+      const p = render(el.style.transform, { x: 50, y: 25 }, px!, py!)
+      return { x: layout.x + p.x, y: layout.y + p.y }
+    })
+    const xs = corners.map((c) => c.x)
+    const ys = corners.map((c) => c.y)
+    expect(Math.min(...xs)).toBeCloseTo(first.x)
+    expect(Math.min(...ys)).toBeCloseTo(first.y)
+    expect(Math.max(...xs)).toBeCloseTo(first.x + first.width)
+    expect(Math.max(...ys)).toBeCloseTo(first.y + first.height)
+
+    animation.cancel()
+    expect(el.style.transform).toBe('rotate(90deg)')
+    spy.mockRestore()
+    el.remove()
   })
 })

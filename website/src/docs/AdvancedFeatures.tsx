@@ -1,7 +1,8 @@
 import { Routes, Route, Link } from 'react-router-dom'
 import { Card, CardContent } from '@/components/ui/card'
 import { DocLayout, DocSection, CodeBlock } from '@/components/docs'
-import { Clock, Shapes, MoveVertical, Layers, Grid3X3, Wand2, Sparkles, Cpu, FlaskConical } from 'lucide-react'
+import { Clock, Shapes, MoveVertical, Layers, Grid3X3, Wand2, Sparkles, Cpu, FlaskConical, Gauge } from 'lucide-react'
+import { TimeScaleDoc } from './TimeScale'
 
 export function AdvancedFeatures() {
   return (
@@ -9,6 +10,7 @@ export function AdvancedFeatures() {
       <Route path="/" element={<AdvancedIndex />} />
       <Route path="/native-springs" element={<NativeSpringsDoc />} />
       <Route path="/testing" element={<TestingDoc />} />
+      <Route path="/time-scale" element={<TimeScaleDoc />} />
       <Route path="/variants" element={<VariantsDoc />} />
       <Route path="/timeline" element={<TimelineDoc />} />
       <Route path="/morph" element={<MorphDoc />} />
@@ -32,6 +34,12 @@ function AdvancedIndex() {
       href: '/docs/advanced/testing',
       desc: 'A virtual clock that makes animation tests deterministic and instant.',
       icon: FlaskConical,
+    },
+    {
+      title: 'Slow Motion',
+      href: '/docs/advanced/time-scale',
+      desc: 'globalLoop.setTimeScale(): slow down or freeze every animation while debugging.',
+      icon: Gauge,
     },
     {
       title: 'Variants System',
@@ -218,6 +226,12 @@ function TestingDoc() {
           <code>performance.now</code> (and optionally the timer functions) with a virtual timeline
           that only moves when you advance it. Every SpringKit API, your own code and React hooks then
           run frame-perfect and instantly, at whatever refresh rate you choose.
+        </p>
+        <p className="text-muted-foreground mb-4">
+          Animation delays (<code>animate()</code> / <code>stagger()</code> / trail / timeline repeat
+          delays, React variant staggers, <code>useSprings</code> and <code>useAnimate</code> delays) run
+          on the animation clock through <code>delay()</code>, not <code>setTimeout</code>. Tests that
+          fake only timers (<code>vi.useFakeTimers()</code>) won't fire them; use the test clock.
         </p>
       </DocSection>
 
@@ -444,7 +458,7 @@ const { values } = useVariants({
             { option: 'delay', desc: 'Delay before animation starts (ms)' },
             { option: 'staggerChildren', desc: 'Delay between child animations (ms); applies to children whose context provides staggerIndex' },
             { option: 'delayChildren', desc: 'Initial delay before first child (ms)' },
-            { option: 'when', desc: '"beforeChildren" | "afterChildren" | false (used by createOrchestration(); useVariants ignores it)' },
+            { option: 'when', desc: '"beforeChildren" | "afterChildren" | false. createOrchestration() supports both; in React, a VariantProvider transition supports "beforeChildren" (children wait for delay + the settle time of spring) and treats "afterChildren" like false' },
             { option: 'staggerDirection', desc: '1 for normal, -1 for reverse order' },
           ].map((item) => (
             <div key={item.option} className="flex items-center gap-4 p-3 rounded-lg bg-white/5 border border-white/10">

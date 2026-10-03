@@ -1412,3 +1412,144 @@ describe('createParallax cleanup', () => {
     element.remove()
   })
 })
+
+describe('Scroll-linked review regressions', () => {
+  let clock: TestClock
+
+  beforeEach(() => {
+    clock = installTestClock()
+  })
+
+  afterEach(() => {
+    clock.uninstall()
+  })
+
+  it('createScrollLinkedValue maps descending multi-stop input ranges', () => {
+    const subs = new Set<(i: { progress: number; scrollY: number; velocity: number; direction: 0; isInView: boolean; visibleRatio: number }) => void>()
+    let current = 0.75
+    const info = () => ({ progress: current, scrollY: 0, velocity: 0, direction: 0 as const, isInView: true, visibleRatio: 1 })
+    const source: ScrollProgress = {
+      get: () => current,
+      getInfo: info,
+      subscribe: (cb) => { subs.add(cb); cb(info()); return () => subs.delete(cb) },
+      destroy: () => subs.clear(),
+    }
+    const value = createScrollLinkedValue(source, {
+      inputRange: [1, 0.5, 0],
+      outputRange: [0, 10, 100],
+    })
+    // 0.75 is halfway between the stops 1 -> 0 and 0.5 -> 10
+    expect(value.get()).toBeCloseTo(5, 6)
+    current = 0.25
+    subs.forEach((cb) => cb(info()))
+    expect(value.get()).toBeCloseTo(55, 6)
+    value.destroy()
+  })
+
+  it('createScrollTrigger with numeric scrub fires onEnter/onLeave from the scroll position', () => {
+    const element = document.createElement('div')
+    document.body.appendChild(element)
+    const wh = window.innerHeight
+    let top = wh + 100
+    element.getBoundingClientRect = () => ({
+      top, bottom: top + 200, left: 0, right: 100, width: 100, height: 200, x: 0, y: top,
+      toJSON: () => ({}),
+    }) as DOMRect
+    const onEnter = vi.fn()
+    const onLeave = vi.fn()
+    const trigger = createScrollTrigger(element, { scrub: 0.9, onEnter, onLeave })
+    clock.nextFrame()
+
+    // Scroll the element into the middle of the viewport
+    top = wh / 2
+    window.dispatchEvent(new Event('scroll'))
+    clock.nextFrame()
+    expect(onEnter).toHaveBeenCalledTimes(1)
+    expect(trigger.isActive()).toBe(true)
+
+    // Scroll past it, then stop scrolling
+    top = -500
+    window.dispatchEvent(new Event('scroll'))
+    clock.nextFrame()
+    clock.runAll()
+    expect(trigger.getProgress()).toBeCloseTo(1, 3)
+    expect(onLeave).toHaveBeenCalledTimes(1)
+    expect(trigger.isActive()).toBe(false)
+
+    trigger.destroy()
+    element.remove()
+  })
+})
+
+describe('Scroll-linked smoothing config', () => {
+  it('the largest smoothing factor does not trigger spring config warnings', async () => {
+    const { clearWarnings } = await import('../../../src/utils/warnings')
+    clearWarnings()
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const subs = new Set<(i: ReturnType<ScrollProgress['getInfo']>) => void>()
+    const info = { progress: 0, scrollY: 0, velocity: 0, direction: 0 as const, isInView: true, visibleRatio: 1 }
+    const source: ScrollProgress = {
+      get: () => 0,
+      getInfo: () => info,
+      subscribe: (cb) => { subs.add(cb); cb(info); return () => subs.delete(cb) },
+      destroy: () => subs.clear(),
+    }
+    const value = createScrollLinkedValue(source, { inputRange: [0, 1], outputRange: [0, 100], smooth: 0.95 })
+    subs.forEach((cb) => cb({ ...info, progress: 1 }))
+    expect(warn).not.toHaveBeenCalled()
+    value.destroy()
+    warn.mockRestore()
+  })
+})
+
+describe('createScrollProgress getInfo()', () => {
+  let clock: TestClock
+
+  beforeEach(() => {
+    clock = installTestClock()
+    Object.defineProperty(document.documentElement, 'scrollHeight', {
+      configurable: true, value: window.innerHeight + 1000,
+    })
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 0 })
+  })
+
+  afterEach(() => {
+    clock.uninstall()
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 0 })
+    Object.defineProperty(document.documentElement, 'scrollHeight', { configurable: true, value: 0 })
+  })
+
+  it('has no side effects: repeated calls agree and scroll updates keep their velocity', () => {
+    const progress = createScrollProgress()
+    const infos: number[] = []
+    progress.subscribe((info) => infos.push(info.velocity))
+    clock.advance(100)
+
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 100 })
+    const first = progress.getInfo()
+    const second = progress.getInfo()
+    expect(first.velocity).toBeGreaterThan(0)
+    expect(second.velocity).toBe(first.velocity)
+    expect(second.direction).toBe(1)
+    expect(first.progress).toBeCloseTo(0.1, 6)
+
+    // The scroll update still measures the movement since the last update
+    window.dispatchEvent(new Event('scroll'))
+    clock.nextFrame()
+    expect(infos.at(-1)!).toBeGreaterThan(0)
+    progress.destroy()
+  })
+
+  it('does not retarget the smoothing spring', () => {
+    const progress = createScrollProgress(undefined, { smooth: 0.8 })
+    Object.defineProperty(window, 'scrollY', { configurable: true, value: 500 })
+    expect(progress.getInfo().progress).toBe(0)
+    clock.runAll()
+    expect(progress.get()).toBe(0)
+
+    window.dispatchEvent(new Event('scroll'))
+    clock.runAll()
+    expect(progress.get()).toBeCloseTo(0.5, 6)
+    progress.destroy()
+  })
+})

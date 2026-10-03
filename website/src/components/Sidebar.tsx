@@ -51,6 +51,7 @@ const navItems: NavItem[] = [
     children: [
       { title: 'Native Springs', href: '/docs/advanced/native-springs' },
       { title: 'Testing Animations', href: '/docs/advanced/testing' },
+      { title: 'Slow Motion', href: '/docs/advanced/time-scale' },
       { title: 'Variants System', href: '/docs/advanced/variants' },
       { title: 'Timeline API', href: '/docs/advanced/timeline' },
       { title: 'SVG Morphing', href: '/docs/advanced/morph' },
@@ -74,6 +75,9 @@ const navItems: NavItem[] = [
     children: [
       { title: 'Hooks', href: '/docs/react/hooks' },
       { title: 'Components', href: '/docs/react/components' },
+      { title: 'Animating Any Value', href: '/docs/react/values' },
+      { title: 'Animated Drag', href: '/docs/react/drag' },
+      { title: 'Presence & Variants', href: '/docs/react/presence-variants' },
       { title: 'Examples', href: '/docs/react/examples' },
     ],
   },

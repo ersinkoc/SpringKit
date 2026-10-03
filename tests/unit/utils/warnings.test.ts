@@ -201,3 +201,24 @@ describe('warnings', () => {
     })
   })
 })
+
+describe('validateAnimationValue deduplication', () => {
+  it('logs each distinct invalid-value error once (like warnOnce), until clearWarnings()', () => {
+    clearWarnings()
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    for (let i = 0; i < 5; i++) {
+      expect(validateAnimationValue(NaN, 'dedupe.context')).toBe(0)
+    }
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(1)
+
+    // A different context or kind of value is a different message
+    validateAnimationValue(Infinity, 'dedupe.context')
+    validateAnimationValue(NaN, 'dedupe.other')
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(3)
+
+    clearWarnings()
+    validateAnimationValue(NaN, 'dedupe.context')
+    expect(consoleErrorSpy).toHaveBeenCalledTimes(4)
+    consoleErrorSpy.mockRestore()
+  })
+})

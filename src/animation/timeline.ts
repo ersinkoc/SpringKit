@@ -150,7 +150,7 @@ export interface TimelineConfig {
   repeat?: number
   /** Yoyo (reverse on repeat) */
   yoyo?: boolean
-  /** Delay between repeats */
+  /** Delay between repeats (seconds; follows the time scale) */
   repeatDelay?: number
   /** Callback when timeline starts */
   onStart?: () => void
@@ -257,7 +257,8 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
   let isPaused = false
   let repeatCount = 0
   let rafId: number | null = null
-  let repeatDelayTimeoutId: ReturnType<typeof setTimeout> | null = null
+  // Cancels the pending repeat delay (loop-driven: follows the time scale)
+  let cancelRepeatDelay: (() => void) | null = null
   // Timestamp of the previous frame (null: next frame starts the clock)
   let lastFrameTime: number | null = null
   let hasStarted = false
@@ -503,8 +504,11 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
    * the playhead moving from prevTime to nextTime (seconds).
    */
   const isCrossed = (positionMs: number, prevTime: number, nextTime: number, includeStart: boolean): boolean => {
-    const prevMs = prevTime * 1000
-    const nextMs = nextTime * 1000
+    // Rounded to 1ns: a playhead parked on a position (e.g. at a pause, set
+    // to positionMs / 1000) must map back to exactly positionMs, which
+    // `t * 1000` doesn't always do (1003 / 1000 * 1000 < 1003)
+    const prevMs = Math.round(prevTime * 1e6) / 1e3
+    const nextMs = Math.round(nextTime * 1e6) / 1e3
     if (nextMs >= prevMs) {
       return (includeStart ? positionMs >= Math.floor(prevMs) : positionMs > prevMs) && positionMs <= nextMs
     }
@@ -604,11 +608,20 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
     const includeStart = includeStartPosition
     includeStartPosition = false
 
+    // Check for pauses (the first one crossed in the playing direction)
+    const crossedPauses = Array.from(pauses.keys())
+      .filter((ms) => isCrossed(ms, prevTime, currentTime, includeStart))
+      .sort((a, b) => (isReversed ? b - a : a - b))
+    const pauseMs = crossedPauses[0]
+    // The playhead stops at the pause: callbacks beyond it fire after resume
+    const reachedTime =
+      pauseMs !== undefined ? clamp(pauseMs / 1000, 0, totalDuration) : currentTime
+
     // Fire callbacks whose position was crossed this frame. (Matching the
     // exact millisecond would skip almost every callback, since frames
     // rarely land on it.)
     const crossedCallbacks = Array.from(callbacks.keys())
-      .filter((ms) => isCrossed(ms, prevTime, currentTime, includeStart))
+      .filter((ms) => isCrossed(ms, prevTime, reachedTime, includeStart))
       .sort((a, b) => (isReversed ? b - a : a - b))
     for (const ms of crossedCallbacks) {
       callbacks.get(ms)?.forEach(cb => {
@@ -620,15 +633,10 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
       })
     }
 
-    // Check for pauses (the first one crossed in the playing direction)
-    const crossedPauses = Array.from(pauses.keys())
-      .filter((ms) => isCrossed(ms, prevTime, currentTime, includeStart))
-      .sort((a, b) => (isReversed ? b - a : a - b))
-    const pauseMs = crossedPauses[0]
     if (pauseMs !== undefined) {
       isPaused = true
       // Stop exactly at the pause position
-      currentTime = clamp(pauseMs / 1000, 0, totalDuration)
+      currentTime = reachedTime
       renderAt(currentTime, true)
       const pauseCallback = pauses.get(pauseMs)
       try {
@@ -665,12 +673,12 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
         }
 
         if (repeatDelay > 0) {
-          repeatDelayTimeoutId = setTimeout(() => {
-            repeatDelayTimeoutId = null
+          cancelRepeatDelay = globalLoop.delay(repeatDelay * 1000, () => {
+            cancelRepeatDelay = null
             // The delay itself is not playback time
             lastFrameTime = null
             scheduleTick()
-          }, repeatDelay * 1000)
+          })
           return
         }
       } else {
@@ -758,7 +766,7 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
     },
 
     call(callback, position) {
-      const time = Math.floor(parsePosition(position) * 1000)
+      const time = Math.round(parsePosition(position) * 1000)
       if (!callbacks.has(time)) {
         callbacks.set(time, [])
       }
@@ -778,7 +786,7 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
     },
 
     addPause(position, callback) {
-      const time = Math.floor(parsePosition(position) * 1000)
+      const time = Math.round(parsePosition(position) * 1000)
       pauses.set(time, callback)
       return timeline
     },
@@ -863,11 +871,9 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
         cancelAnimationFrame(rafId)
         rafId = null
       }
-      // Clear repeat delay timeout to prevent memory leak
-      if (repeatDelayTimeoutId) {
-        clearTimeout(repeatDelayTimeoutId)
-        repeatDelayTimeoutId = null
-      }
+      // Cancel the repeat delay to prevent memory leak
+      cancelRepeatDelay?.()
+      cancelRepeatDelay = null
       segments.length = 0
       labels.clear()
       callbacks.clear()

@@ -359,7 +359,14 @@ function ReorderItemComponent<T>(
   // Animate offset changes from other items being dragged
   const targetOffset = context.getItemOffset(value)
   const springConfig = context.config
+  // Index in the list: when it changes (the drop reordered the list), the
+  // displacement offset is replaced by the new DOM position, so the offset
+  // must jump instead of sliding back from the displaced position
+  const index = context.values.indexOf(value)
+  const indexRef = useRef(index)
   useEffect(() => {
+    const moved = indexRef.current !== index
+    indexRef.current = index
     if (isDragging) return // Don't animate if we're the one dragging
 
     if (!springRef.current) {
@@ -369,8 +376,13 @@ function ReorderItemComponent<T>(
       })
     }
 
-    springRef.current.set(targetOffset)
-  }, [targetOffset, isDragging, springConfig])
+    if (moved) {
+      springRef.current.jump(targetOffset)
+      setOffset(targetOffset)
+    } else {
+      springRef.current.set(targetOffset)
+    }
+  }, [targetOffset, isDragging, springConfig, index])
 
   // Handle pointer down
   const handlePointerDown = useCallback((e: React.PointerEvent) => {

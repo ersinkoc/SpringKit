@@ -14,6 +14,8 @@ export {
 export type { SpringConfig, SpringPresets } from './config.js'
 export {
   simulateSpring,
+  stepSpring,
+  springMotion,
   calculatePeriod,
   calculateDampingRatio,
   isUnderdamped,

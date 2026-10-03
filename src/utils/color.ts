@@ -1,3 +1,5 @@
+import { namedColorToRgb } from './named-colors.js'
+import { warnOnce } from './warnings.js'
 
 /**
  * RGB color representation
@@ -31,10 +33,26 @@ const FUNCTIONAL_COLOR_REGEX = new RegExp(
 )
 
 /**
+ * Whether a string is a color SpringKit can parse: hex (3/4/6/8 digits),
+ * rgb()/rgba(), hsl()/hsla(), `transparent` or a CSS color name.
+ */
+export function isColorString(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  const input = value.trim()
+  return (
+    /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i.test(input) ||
+    /^(?:rgba?|hsla?)\(/i.test(input) ||
+    input.toLowerCase() === 'transparent' ||
+    namedColorToRgb(input) !== null
+  )
+}
+
+/**
  * Parse a color string to RGBA.
  * Supports hex (#rgb, #rgba, #rrggbb, #rrggbbaa), rgb()/rgba() and hsl()/hsla()
- * (comma or space separated, decimals, percentages, optional alpha) and `transparent`.
- * Unknown formats resolve to opaque black.
+ * (comma or space separated, decimals, percentages, optional alpha), `transparent`
+ * and the CSS named colors (`red`, `rebeccapurple`, ...). Unknown formats
+ * resolve to opaque black (with a development warning).
  * @param color - The color string to parse
  * @returns The RGBA representation (alpha in 0-1)
  */
@@ -76,7 +94,11 @@ export function parseColorRGBA(color: string): RGBA {
     }
   }
 
+  const named = namedColorToRgb(input)
+  if (named) return { ...named, a: 1 }
+
   // Default to opaque black for unknown formats
+  warnOnce(`Unrecognized color "${color}"; using black.`)
   return { r: 0, g: 0, b: 0, a: 1 }
 }
 

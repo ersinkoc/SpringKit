@@ -2,6 +2,30 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { createDragSpring } from '@oxog/springkit'
 import type { DragSpring, DragSpringConfig } from '@oxog/springkit'
 
+/** Stable ids for elements inside a config (e.g. `constraints.constrainToElement`) */
+const elementIds = new WeakMap<object, number>()
+let nextElementId = 0
+
+/**
+ * The config's contents as a string (callbacks excluded: they are always read
+ * from the latest config), so an inline config object doesn't re-create the
+ * drag on every render but a changed option does
+ */
+function configKeyOf(config: DragSpringConfig): string {
+  return JSON.stringify(config, (_key, value: unknown) => {
+    if (typeof value === 'function') return undefined
+    if (typeof Element !== 'undefined' && value instanceof Element) {
+      let id = elementIds.get(value)
+      if (id === undefined) {
+        id = nextElementId++
+        elementIds.set(value, id)
+      }
+      return `#element${id}`
+    }
+    return value
+  })
+}
+
 /**
  * Drag API interface
  */
@@ -85,7 +109,10 @@ export function useDrag(config: DragSpringConfig = {}): [
     }
   }
 
-  // Setup/cleanup drag spring when element changes
+  const configKey = configKeyOf(config)
+
+  // Setup/cleanup the drag spring when the element or the options change. The
+  // position carries over to the new instance.
   useEffect(() => {
     let isActive = true
 
@@ -102,6 +129,8 @@ export function useDrag(config: DragSpringConfig = {}): [
     }
 
     if (element) {
+      // Read before creating: the new instance reports its (0, 0) start
+      const carried = positionRef.current
       // Create drag spring with the element
       dragSpringRef.current = createDragSpring(element, {
         ...configRef.current,
@@ -123,10 +152,13 @@ export function useDrag(config: DragSpringConfig = {}): [
           configRef.current.onUpdate?.(x, y)
         },
       })
+      if (carried.x !== 0 || carried.y !== 0) dragSpringRef.current.setPosition(carried.x, carried.y)
     }
 
     return () => {
       isActive = false
+      // A drag in progress ends with this instance
+      if (dragSpringRef.current?.isDragging()) setIsDragging(false)
       dragSpringRef.current?.destroy()
       dragSpringRef.current = null
       if (rafIdRef.current !== null) {
@@ -134,7 +166,8 @@ export function useDrag(config: DragSpringConfig = {}): [
         rafIdRef.current = null
       }
     }
-  }, [element])
+    // configKey: the options changed (callbacks are read from configRef)
+  }, [element, configKey])
 
   // API methods with validation
   const set = (values: { x?: number; y?: number }) => {

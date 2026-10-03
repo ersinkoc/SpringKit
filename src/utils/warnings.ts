@@ -9,10 +9,22 @@ const warnedMessages = new Set<string>()
 /**
  * Log a warning message once (won't repeat the same message)
  */
-function warnOnce(message: string): void {
+/** @internal Log a development warning once per unique message */
+export function warnOnce(message: string): void {
   if (!isDev || warnedMessages.has(message)) return
   warnedMessages.add(message)
   console.warn(`[SpringKit] ${message}`)
+}
+
+/**
+ * Log a development error once per unique message (same deduplication as
+ * warnOnce: a value that is invalid every frame doesn't flood the console)
+ */
+function errorOnce(message: string): void {
+  const key = `error:${message}`
+  if (!isDev || warnedMessages.has(key)) return
+  warnedMessages.add(key)
+  console.error(`[SpringKit] ${message}`)
 }
 
 /**
@@ -163,23 +175,18 @@ export function validateNumber(
 }
 
 /**
- * Validate animation target value
- * Throws in development, returns safe value in production
+ * Validate an animation value (NaN, Infinity or a non-number).
+ * Never throws: an invalid value is replaced by 0, and in development a
+ * console error is logged once per unique message (until clearWarnings()).
  */
 export function validateAnimationValue(value: number, context: string): number {
   if (typeof value !== 'number' || Number.isNaN(value)) {
-    const message = `Invalid animation value in ${context}: expected number, got ${value}`
-    if (isDev) {
-      console.error(`[SpringKit] ${message}`)
-    }
+    errorOnce(`Invalid animation value in ${context}: expected number, got ${value}`)
     return 0
   }
 
   if (!Number.isFinite(value)) {
-    const message = `Invalid animation value in ${context}: Infinity is not supported`
-    if (isDev) {
-      console.error(`[SpringKit] ${message}`)
-    }
+    errorOnce(`Invalid animation value in ${context}: Infinity is not supported`)
     return 0
   }
 

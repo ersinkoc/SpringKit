@@ -15,6 +15,7 @@ import {
   type ScrollSmoothing,
 } from '@oxog/springkit'
 import { useIsomorphicLayoutEffect } from '../utils/ssr.js'
+import { useElementEffect } from './useElementEffect.js'
 
 // ============ useScrollProgress ============
 
@@ -71,7 +72,9 @@ export function useScrollProgress(
   })
   const scrollProgressRef = useRef<ScrollProgress | null>(null)
 
-  useIsomorphicLayoutEffect(() => {
+  // Re-created when the target element changes - including a target that
+  // mounts after the hook first ran (its ref is read after each commit)
+  useElementEffect(() => {
     const element = target?.current ?? null
     const scrollProgress = createScrollProgress(element, { offset, smooth })
     scrollProgressRef.current = scrollProgress
@@ -85,7 +88,7 @@ export function useScrollProgress(
       unsubscribe()
       scrollProgress.destroy()
     }
-  }, [target?.current, offset?.[0], offset?.[1], smoothKey])
+  }, () => [target?.current ?? null, offset?.[0], offset?.[1], smoothKey])
 
   return {
     progress,
@@ -125,10 +128,14 @@ export function useParallax(
   const ref = useRef<HTMLElement>(null)
   const [offset, setOffset] = useState(0)
 
-  useIsomorphicLayoutEffect(() => {
+  const optionsRef = useRef(options)
+  optionsRef.current = options
+
+  // Attaches once the element mounts (it may be rendered conditionally)
+  useElementEffect(() => {
     if (!ref.current) return
 
-    const parallax = createParallax(ref.current, options)
+    const parallax = createParallax(ref.current, optionsRef.current)
     let rafId: number | null = null
     let isActive = true
 
@@ -148,7 +155,7 @@ export function useParallax(
       }
       parallax.destroy()
     }
-  }, [options.speed, options.direction, options.rootMargin])
+  }, () => [ref.current, options.speed, options.direction, options.rootMargin])
 
   return { ref: ref as React.RefObject<HTMLElement>, offset }
 }
@@ -197,11 +204,15 @@ export function useScrollTrigger(
   const [progress, setProgress] = useState(0)
   const [hasEntered, setHasEntered] = useState(false)
 
-  useIsomorphicLayoutEffect(() => {
+  const optionsRef = useRef(options)
+  optionsRef.current = options
+
+  // Attaches once the element mounts (it may be rendered conditionally)
+  useElementEffect(() => {
     if (!ref.current) return
 
     const trigger = createScrollTrigger(ref.current, {
-      ...options,
+      ...optionsRef.current,
       onEnter: () => setHasEntered(true),
       onProgress: (info) => {
         setIsActive(info.progress > 0 && info.progress < 1)
@@ -210,7 +221,8 @@ export function useScrollTrigger(
     })
 
     return () => trigger.destroy()
-  }, [
+  }, () => [
+    ref.current,
     options.start,
     options.end,
     options.startOffset,

@@ -16,3 +16,4 @@ node_modules/
 .playwright-mcp/
 nul
 .dfmt/
+.claude/

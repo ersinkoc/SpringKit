@@ -162,6 +162,8 @@ export const Parallax = memo(forwardRef<HTMLDivElement, ParallaxProps>(
       if (reduceMotion) {
         springXRef.current?.jump(offsetX)
         springYRef.current?.jump(offsetY)
+        // jump() doesn't call onUpdate
+        setTransform({ x: offsetX, y: offsetY })
         return
       }
       if (!isActive || !isInView) return
@@ -326,6 +328,8 @@ export const MouseParallax = memo(forwardRef<HTMLDivElement, MouseParallaxProps>
       if (reduceMotion) {
         springXRef.current?.jump(0)
         springYRef.current?.jump(0)
+        // jump() doesn't call onUpdate
+        setTransform({ x: 0, y: 0 })
         return
       }
       if (!enabled) return
@@ -567,6 +571,8 @@ export const TiltCard = memo(forwardRef<HTMLDivElement, TiltCardProps>(
       springTiltYRef.current?.jump(0)
       springScaleRef.current?.jump(1)
       springGlareRef.current?.jump(0)
+      // jump() doesn't call onUpdate
+      setTilt((t) => ({ ...t, x: 0, y: 0, scale: 1, glareOpacity: 0 }))
     }, [reduceMotion])
 
     return (
@@ -612,6 +618,8 @@ export const TiltCard = memo(forwardRef<HTMLDivElement, TiltCardProps>(
 interface ParallaxContextValue {
   scrollProgress: number
   containerRef: React.RefObject<HTMLElement>
+  /** Height of the scrolled content in pages (viewport heights) */
+  pages: number
 }
 
 const ParallaxContext = createContext<ParallaxContextValue | null>(null)
@@ -669,8 +677,8 @@ export const ParallaxContainer = memo(function ParallaxContainer({
   }, [])
 
   const contextValue = useMemo(
-    () => ({ scrollProgress, containerRef: containerRef as React.RefObject<HTMLElement> }),
-    [scrollProgress]
+    () => ({ scrollProgress, containerRef: containerRef as React.RefObject<HTMLElement>, pages }),
+    [scrollProgress, pages]
   )
 
   return (
@@ -728,36 +736,27 @@ export const ParallaxLayer = memo(function ParallaxLayer({
   useEffect(() => {
     if (!context) return
 
-    const progress = context.scrollProgress
     const pageHeight = 100 // vh
+    // Scrolled distance in pages: the content is `pages` viewport heights
+    // tall, so it scrolls by `pages - 1` of them
+    const scrolledPages = context.scrollProgress * Math.max(0, context.pages - 1)
 
     if (sticky) {
-      // Sticky positioning
-      const stickyRange = sticky.end - sticky.start
-      if (progress >= sticky.start && progress <= sticky.end && stickyRange > 0) {
-        // stickyProgress is calculated but not used yet (reserved for sticky animations)
-        // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const _stickyProgress = (progress - sticky.start) / stickyRange
-        setTransform({
-          x: 0,
-          y: sticky.start * pageHeight,
-        })
-      } else if (progress < sticky.start) {
-        setTransform({ x: 0, y: offset * pageHeight })
-      } else {
-        setTransform({ x: 0, y: sticky.end * pageHeight })
-      }
+      // Sticky positioning: follow the scroll (fixed in the viewport) while the
+      // scroll position is between the start and end pages
+      const stickyPage = Math.min(Math.max(scrolledPages, sticky.start), Math.max(sticky.start, sticky.end))
+      setTransform({ x: 0, y: stickyPage * pageHeight })
     } else {
-      // Normal parallax
+      // Normal parallax: the layer scrolls at `speed` times the content
       const base = offset * pageHeight
-      const parallaxOffset = progress * pageHeight * (1 - speed)
+      const parallaxOffset = scrolledPages * pageHeight * (1 - speed)
       if (horizontal) {
         setTransform({ x: parallaxOffset, y: base })
       } else {
         setTransform({ x: 0, y: base + parallaxOffset })
       }
     }
-  }, [context?.scrollProgress, offset, speed, horizontal, sticky]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [context?.scrollProgress, context?.pages, offset, speed, horizontal, sticky?.start, sticky?.end]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div

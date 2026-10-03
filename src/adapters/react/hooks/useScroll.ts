@@ -6,14 +6,15 @@ import { useElementEffect } from './useElementEffect.js'
 
 export interface UseScrollOptions {
   /**
-   * Target element to track scroll of
-   * If not provided, tracks window/document scroll
+   * Element whose progress through the viewport (or through `container`) is
+   * tracked: `scrollYProgress` / `scrollXProgress` follow `offset`. Without a
+   * target, progress is the scroll progress of the page or the container.
    */
   target?: RefObject<HTMLElement | null>
 
   /**
-   * Container element for scroll tracking
-   * Used for calculating progress of target within container
+   * Scrollable element to track instead of the page: `scrollX` / `scrollY`
+   * are its scroll position, and it is the viewport of `target`
    */
   container?: RefObject<HTMLElement | null>
 
@@ -38,9 +39,9 @@ export interface UseScrollOptions {
 }
 
 export interface UseScrollReturn {
-  /** Absolute scroll position X */
+  /** Scroll position X of the page (or `container`), in px */
   scrollX: MotionValue<number>
-  /** Absolute scroll position Y */
+  /** Scroll position Y of the page (or `container`), in px */
   scrollY: MotionValue<number>
   /** Scroll progress X (0-1) */
   scrollXProgress: MotionValue<number>
@@ -71,7 +72,7 @@ export interface UseScrollReturn {
  * ```tsx
  * function ScrollableContainer() {
  *   const containerRef = useRef(null)
- *   const { scrollY } = useScroll({ target: containerRef })
+ *   const { scrollY } = useScroll({ container: containerRef })
  *
  *   return (
  *     <div ref={containerRef} style={{ overflow: 'auto' }}>
@@ -132,8 +133,9 @@ export function useScroll(options: UseScrollOptions = {}): UseScrollReturn {
     const containerEl = container?.current ?? null
     const targetEl = target?.current ?? null
 
-    // Determine scroll container
-    const scrollContainer: HTMLElement | Window = containerEl ?? targetEl ?? window
+    // The scrolled element: the container, or the page (a target is the
+    // element whose progress is tracked, not a scroll container)
+    const scrollContainer: HTMLElement | Window = containerEl ?? window
     const isWindow = scrollContainer === window
 
     const getScrollPosition = () => {
@@ -241,29 +243,26 @@ export function useScroll(options: UseScrollOptions = {}): UseScrollReturn {
     const scrollTarget = isWindow ? window : scrollContainer
     scrollTarget.addEventListener('scroll', handleScroll, { passive: true })
 
-    // Target progress (no explicit container) depends on the target's position
-    // in the viewport, which changes when the page scrolls - scroll events of
-    // the page don't reach a listener on the target element itself
-    const listenToWindowScroll = !isWindow && !containerEl && !!targetEl
-    if (listenToWindowScroll) {
-      window.addEventListener('scroll', handleScroll, { passive: true })
-    }
-
     // Also listen to resize for progress recalculation
     window.addEventListener('resize', handleScroll, { passive: true })
 
     return () => {
       isActive = false
       scrollTarget.removeEventListener('scroll', handleScroll)
-      if (listenToWindowScroll) {
-        window.removeEventListener('scroll', handleScroll)
-      }
       window.removeEventListener('resize', handleScroll)
       if (rafId !== null) {
         cancelAnimationFrame(rafId)
       }
     }
-  }, () => [container?.current ?? null, target?.current ?? null, offsetStart, offsetEnd, axis])
+  }, () => [
+    container?.current ?? null,
+    target?.current ?? null,
+    offsetStart,
+    offsetEnd,
+    axis,
+    // Re-attach to recreated values (after a hidden <Activity> destroyed them)
+    scrollXRef.current,
+  ])
 
   // Cleanup on unmount (deferred so StrictMode's simulated remount keeps them alive)
   useDestroyOnUnmount(() => {
@@ -364,10 +363,11 @@ export function useScrollVelocity(axis: 'x' | 'y' = 'y'): MotionValue<number> {
     velocityRef.current = createMotionValue(0)
   }
 
+  const velocityValue = velocityRef.current
   useEffect(() => {
     if (!isBrowser) return
 
-    const velocity = velocityRef.current!
+    const velocity = velocityValue
 
     const readScroll = () =>
       axis === 'y'
@@ -408,7 +408,7 @@ export function useScrollVelocity(axis: 'x' | 'y' = 'y'): MotionValue<number> {
       window.removeEventListener('scroll', handleScroll)
       if (idleTimer !== null) clearTimeout(idleTimer)
     }
-  }, [axis])
+  }, [axis, velocityValue])
 
   useDestroyOnUnmount(() => {
     velocityRef.current?.destroy()

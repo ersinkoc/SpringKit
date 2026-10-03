@@ -1,3 +1,4 @@
+import { warnOnce } from '../utils/warnings.js'
 /**
  * Animation state enum
  */
@@ -46,6 +47,16 @@ export type CleanupCallback = (id: number) => void
  */
 const MAX_DELTA_TIME = 64 // ~15.6fps minimum, prevents huge jumps
 
+/** Tolerance (ms) when comparing a delay's due time with the loop clock */
+const DELAY_EPSILON = 1e-6
+
+interface PendingDelay {
+  /** Loop time when the delay was requested */
+  start: number
+  due: number
+  callback: (() => void) | null
+}
+
 /**
  * Global animation loop manager
  * Uses requestAnimationFrame to drive all animations
@@ -72,6 +83,14 @@ class AnimationLoop {
     request: typeof requestAnimationFrame
     cancel: typeof cancelAnimationFrame
   } | null = null
+  /**
+   * Callback passed to requestAnimationFrame. It is replaced whenever a
+   * pending frame is abandoned (loop stopped, or moved to another clock), so
+   * a request that could not be cancelled - e.g. one a test clock handed
+   * over to the real clock on uninstall - is recognized as stale and ignored
+   * instead of starting a second RAF chain.
+   */
+  private frameCallback: FrameRequestCallback = this.createFrameCallback()
   private isRunning = false
   private isTicking = false
   private lastTime: number = 0
@@ -117,7 +136,12 @@ class AnimationLoop {
   add(animation: Animatable): number {
     // Check if already added
     const existingId = this.idMap.get(animation)
-    if (existingId !== undefined && this.animations.has(animation)) return existingId
+    if (existingId !== undefined && this.animations.has(animation)) {
+      // Still move a frame pending on a replaced clock (e.g. a test clock
+      // installed while this animation was already running)
+      this.rescheduleIfClockChanged()
+      return existingId
+    }
 
     const id = existingId ?? this.nextId++
     this.animations.add(animation)
@@ -167,6 +191,59 @@ class AnimationLoop {
   }
 
   /**
+   * Call `callback` once `ms` milliseconds of animation time have passed:
+   * like `setTimeout`, but driven by the loop, so the delay follows
+   * {@link setTimeScale} (slow motion stretches it, 0 freezes it) and the
+   * test clock. The callback runs during the first frame at or after the
+   * due time (never synchronously, even for `ms <= 0`).
+   *
+   * @returns A function that cancels the delay (no-op once it has fired)
+   */
+  delay(ms: number, callback: () => void): () => void {
+    const start = this.animationTime
+    const entry: PendingDelay = {
+      start,
+      due: start + (Number.isFinite(ms) && ms > 0 ? ms : 0),
+      callback,
+    }
+    this.delays.push(entry)
+    this.add(this.delayRunner)
+    return () => {
+      entry.callback = null
+    }
+  }
+
+  /** Pending delays (cancelled ones have a null callback until swept) */
+  private delays: PendingDelay[] = []
+  /** Fires due delays; part of the loop while any delay is pending */
+  private delayRunner: Animatable = {
+    update: (now) => {
+      const list = this.delays
+      // Delays added by a callback below are only considered next frame
+      const count = list.length
+      let kept = 0
+      for (let i = 0; i < count; i++) {
+        const entry = list[i]!
+        const callback = entry.callback
+        if (callback === null) continue
+        if (entry.due <= now + DELAY_EPSILON && now > entry.start) {
+          entry.callback = null
+          try {
+            callback()
+          } catch (e) {
+            console.error('[SpringKit] Delay callback error:', e)
+          }
+        } else {
+          list[kept++] = entry
+        }
+      }
+      for (let i = count; i < list.length; i++) list[kept++] = list[i]!
+      list.length = kept
+    },
+    isComplete: () => this.delays.length === 0,
+  }
+
+  /**
    * Start the animation loop
    */
   private start(): void {
@@ -181,15 +258,19 @@ class AnimationLoop {
     this.tick()
   }
 
-  /**
-   * Stop the animation loop
-   */
+  private createFrameCallback(): FrameRequestCallback {
+    const callback: FrameRequestCallback = () => {
+      if (callback === this.frameCallback) this.tick()
+    }
+    return callback
+  }
+
   private scheduleFrame(): void {
     this.scheduledWith = {
       request: requestAnimationFrame,
       cancel: cancelAnimationFrame,
     }
-    this.rafId = requestAnimationFrame(this.tick)
+    this.rafId = requestAnimationFrame(this.frameCallback)
   }
 
   private rescheduleIfClockChanged(): void {
@@ -207,16 +288,24 @@ class AnimationLoop {
       // the previous clock may be gone; the stale callback is harmless
     }
     this.rafId = null
+    // The old clock may still run the abandoned request (cancel() can't reach
+    // a request that was handed over to yet another clock): invalidate it
+    this.frameCallback = this.createFrameCallback()
     // Timestamps from the old clock are meaningless on the new one
     this.lastTime = performance.now()
     this.scheduleFrame()
   }
 
+  /**
+   * Stop the animation loop
+   */
   private stop(): void {
     this.isRunning = false
     if (this.rafId !== null) {
       ;(this.scheduledWith?.cancel ?? cancelAnimationFrame)(this.rafId)
       this.rafId = null
+      // In case the cancel didn't reach the request (see frameCallback)
+      this.frameCallback = this.createFrameCallback()
     }
   }
 
@@ -318,10 +407,20 @@ class AnimationLoop {
    * `animateNative()`. 1 = normal speed, 0.1 = 10x slow motion, 0 = frozen.
    * Handy for inspecting motion while developing.
    *
-   * Animations that run their own clock (e.g. timelines) are not affected.
+   * Timelines and keyframes follow it too, and so do delays scheduled with
+   * {@link delay} (`animate`, `stagger`, trail and timeline repeat delays).
+   * Code that runs its own requestAnimationFrame loop can read
+   * `getTimeScale()` to do the same; use `delay()` instead of `setTimeout`.
+   *
+   * Non-finite values are ignored (with a development warning); negative
+   * values freeze like 0.
    */
   setTimeScale(scale: number): void {
-    const next = Number.isFinite(scale) && scale > 0 ? scale : 0
+    if (!Number.isFinite(scale)) {
+      warnOnce(`globalLoop.setTimeScale(${scale}) ignored: expected a finite number`)
+      return
+    }
+    const next = scale > 0 ? scale : 0
     if (next === this.timeScale) return
     this.timeScale = next
     for (const listener of this.timeScaleListeners) {
@@ -372,3 +471,17 @@ class AnimationLoop {
  * Global animation loop instance
  */
 export const globalLoop = new AnimationLoop()
+
+/**
+ * Loop-driven `setTimeout`: calls `callback` after `ms` milliseconds of
+ * animation time, so the delay follows `globalLoop.setTimeScale()` and the
+ * test clock. Shorthand for `globalLoop.delay(ms, callback)`.
+ *
+ * @returns A function that cancels the delay
+ *
+ * @example
+ * const cancel = delay(300, () => spring(0, 1, { onUpdate }).start())
+ */
+export function delay(ms: number, callback: () => void): () => void {
+  return globalLoop.delay(ms, callback)
+}

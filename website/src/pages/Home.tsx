@@ -1879,7 +1879,7 @@ const drag = createDragSpring(element, {
     element.style.transform = \`translate(\${x}px, \${y}px)\`
   },
   onDragEnd: (x, y, velocity) => {
-    // Released: momentum and rubber band take over
+    // velocity is in px/s; momentum and rubber band take over
   }
 })`
 

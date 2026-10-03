@@ -7,6 +7,7 @@ export {
   hslToRgb,
   rgbToHsl,
   parseColorRGBA,
+  isColorString,
   srgbToLinear,
   linearToSrgb,
   linearRgbToOklab,

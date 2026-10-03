@@ -1,11 +1,47 @@
-import { useState, useEffect } from 'react'
+import { useSyncExternalStore } from 'react'
 import { isBrowser } from '../utils/ssr.js'
+
+const REDUCED_MOTION_QUERY = '(prefers-reduced-motion: reduce)'
+
+function noop(): void {}
+
+/**
+ * Subscribe to changes of the OS reduced motion preference
+ * @internal
+ */
+export function subscribeToReducedMotion(onChange: () => void): () => void {
+  if (!isBrowser || typeof window.matchMedia !== 'function') return noop
+  const mediaQuery = window.matchMedia(REDUCED_MOTION_QUERY)
+  if (!mediaQuery) return noop
+
+  if (typeof mediaQuery.addEventListener === 'function') {
+    mediaQuery.addEventListener('change', onChange)
+    return () => mediaQuery.removeEventListener('change', onChange)
+  }
+  // Legacy API (Safari < 14)
+  mediaQuery.addListener?.(onChange)
+  return () => mediaQuery.removeListener?.(onChange)
+}
+
+/**
+ * Server snapshot: no preference is known while rendering on the server, and
+ * the first (hydrating) client render must produce the same markup
+ * @internal
+ */
+export function getServerReducedMotion(): boolean {
+  return false
+}
 
 /**
  * Detect user's reduced motion preference
  *
  * Respects the `prefers-reduced-motion` media query.
- * Returns true when the user has requested reduced motion.
+ * Returns true when the user has requested reduced motion, and updates when
+ * the preference changes.
+ *
+ * SSR / hydration safe: the server and the hydrating client render return
+ * `false` (React re-renders right after hydration when the real preference
+ * differs). Client-only renders read the real preference immediately.
  *
  * @example
  * ```tsx
@@ -37,36 +73,11 @@ import { isBrowser } from '../utils/ssr.js'
  * ```
  */
 export function useReducedMotion(): boolean {
-  // Always start with false to prevent SSR hydration mismatch
-  // The actual value will be set in useEffect after hydration
-  const [prefersReducedMotion, setPrefersReducedMotion] = useState(false)
-
-  useEffect(() => {
-    // matchMedia is missing in some environments (jsdom, old WebViews)
-    if (!isBrowser || typeof window.matchMedia !== 'function') return
-
-    const mediaQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
-
-    // Set initial value after mount (prevents hydration mismatch)
-    setPrefersReducedMotion(mediaQuery.matches)
-
-    // Update state when preference changes
-    const handleChange = (event: MediaQueryListEvent) => {
-      setPrefersReducedMotion(event.matches)
-    }
-
-    // Modern API
-    if (mediaQuery.addEventListener) {
-      mediaQuery.addEventListener('change', handleChange)
-      return () => mediaQuery.removeEventListener('change', handleChange)
-    }
-
-    // Legacy API (Safari < 14)
-    mediaQuery.addListener(handleChange)
-    return () => mediaQuery.removeListener(handleChange)
-  }, [])
-
-  return prefersReducedMotion
+  return useSyncExternalStore(
+    subscribeToReducedMotion,
+    getReducedMotionPreference,
+    getServerReducedMotion
+  )
 }
 
 /**
@@ -76,7 +87,7 @@ export function useReducedMotion(): boolean {
  */
 export function getReducedMotionPreference(): boolean {
   if (!isBrowser || typeof window.matchMedia !== 'function') return false
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  return window.matchMedia(REDUCED_MOTION_QUERY)?.matches ?? false
 }
 
 /**

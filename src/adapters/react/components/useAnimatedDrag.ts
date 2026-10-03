@@ -47,7 +47,8 @@ export type DragConstraints = DragConstraintsBox | React.RefObject<Element | nul
 
 /**
  * How far the element can be pulled beyond its constraints, from 0 (not at
- * all) to 1 (freely). `true` = 0.5, `false` = 0. Can be set per side.
+ * all) to 1 (freely). `true` = 0.5, `false` = 0. Can be set per side; a side
+ * missing from the object is 0.
  */
 export type DragElastic = number | boolean | DragConstraintsBox
 
@@ -123,7 +124,8 @@ export interface AnimatedDragProps {
   onDrag?: (event: PointerEvent, info: PanInfo) => void
   /**
    * Called when a drag ends (release, pointercancel, `dragControls.stop()` /
-   * `cancel()`). Not called for a press that never crossed `dragThreshold`.
+   * `cancel()`, or `drag` turned off mid-gesture; not on unmount). Not called
+   * for a press that never crossed `dragThreshold`.
    */
   onDragEnd?: (event: PointerEvent, info: PanInfo) => void
   /**
@@ -634,6 +636,24 @@ export function useAnimatedDrag(
     checkTransition(token)
   }, [detach, settle, checkTransition])
 
+  /** ResizeObserver of ref constraints, and the container it observes */
+  const observationRef = useRef<{ observer: ResizeObserver | null; container: Element | null } | null>(null)
+  /** Observe the current constraints container (it may have mounted later) */
+  const syncObservedContainer = useCallback(() => {
+    const observation = observationRef.current
+    if (!observation) return
+    const constraints = propsRef.current.dragConstraints
+    const container = constraints && isRefConstraints(constraints) ? constraints.current : null
+    if (container === observation.container) return
+    try {
+      if (observation.container) observation.observer?.unobserve(observation.container)
+      if (container) observation.observer?.observe(container)
+    } catch {
+      // Detached element: nothing to observe
+    }
+    observation.container = container
+  }, [])
+
   const startDrag = useCallback((
     event: PointerEvent,
     options?: DragStartOptions,
@@ -644,11 +664,15 @@ export function useAnimatedDrag(
     // Already started by this pointerdown (e.g. a dragControls handle inside
     // the element, whose event then bubbles to the element's own listener)
     if (activeRef.current?.startEvent === event) return
+    // A second finger (not the primary pointer) doesn't take over an active
+    // gesture: replacing it would end the drag without onDragEnd
+    if (activeRef.current && event.isPrimary === false) return
     // A new gesture replaces any active one (without callbacks) and
     // interrupts the release animation
     detach()
     transitionRef.current = null
     stopAnimations()
+    syncObservedContainer()
 
     const axes = getAxes()
     const element = elementRef.current
@@ -810,7 +834,7 @@ export function useAnimatedDrag(
     activeRef.current = active
     ;(propsRef.current.dragControls as DragControlsInternal | undefined)?._notifyDragStart?.()
     if (threshold <= 0) begin(active, event, startInfo)
-  }, [detach, stopAnimations, getAxes, elementRef, setOffset, finishDrag])
+  }, [detach, stopAnimations, syncObservedContainer, getAxes, elementRef, setOffset, finishDrag])
 
   /**
    * dragControls.stop(): end the drag (or interrupt a running release
@@ -893,13 +917,17 @@ export function useAnimatedDrag(
     }
   }, [detach, stopAnimations])
 
-  // Disabling drag ends an active drag and stops release animations
+  // Disabling drag ends an active drag (onDragEnd, without momentum: the
+  // element stays where it is) and stops release animations
   const isDragEnabled = Boolean(drag)
   useEffect(() => {
     if (isDragEnabled) return
-    detach()
+    const active = detach()
     transitionRef.current = null
     stopAnimations()
+    if (active?.started) {
+      safeCall(propsRef.current.onDragEnd, active.lastEvent, { ...active.lastInfo, delta: ZERO, velocity: ZERO })
+    }
   }, [isDragEnabled, detach, stopAnimations])
 
   // Let dragControls.start() / stop() / cancel() drive this element
@@ -924,25 +952,39 @@ export function useAnimatedDrag(
   const constraintsRef = dragConstraints && isRefConstraints(dragConstraints) ? dragConstraints : null
   useEffect(() => {
     if (!isDragEnabled || !constraintsRef || !isBrowser) return
-    const handleResize = () => remeasure()
+    const handleResize = () => {
+      syncObservedContainer()
+      remeasure()
+    }
     window.addEventListener('resize', handleResize)
     let observer: ResizeObserver | null = null
     if (typeof ResizeObserver === 'function') {
       try {
         observer = new ResizeObserver(handleResize)
-        const container = constraintsRef.current
-        const element = elementRef.current
-        if (container) observer.observe(container)
-        if (element) observer.observe(element)
       } catch {
         observer = null
       }
     }
+    observationRef.current = { observer, container: null }
+    syncObservedContainer()
+    try {
+      const element = elementRef.current
+      if (element) observer?.observe(element)
+    } catch {
+      // Detached element: nothing to observe
+    }
     return () => {
       window.removeEventListener('resize', handleResize)
       observer?.disconnect()
+      observationRef.current = null
     }
-  }, [isDragEnabled, constraintsRef, elementRef, remeasure])
+  }, [isDragEnabled, constraintsRef, elementRef, remeasure, syncObservedContainer])
+
+  // The container may mount after the element (e.g. a later sibling): pick it
+  // up after each commit of this element and at the start of every drag
+  useEffect(() => {
+    syncObservedContainer()
+  })
 
   const getDragCount = useCallback(() => dragCountRef.current, [])
 
