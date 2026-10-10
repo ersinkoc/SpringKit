@@ -136,14 +136,19 @@ class SpringGroupImpl<T extends Record<string, number>> implements SpringGroup<T
   }
 
   subscribe(callback: (values: T) => void): () => void {
-    this.subscribers.add(callback)
+    // One entry per registration: an unsubscribe handle may only remove the
+    // registration it was returned for, never another one of the same callback
+    const entry = (values: T): void => callback(values)
+    this.subscribers.add(entry)
     // Immediately call with current values (with error isolation)
     try {
       callback(this.get())
     } catch (e) {
       console.error('[SpringKit] SpringGroup subscriber error:', e)
     }
-    return () => this.subscribers.delete(callback)
+    return () => {
+      this.subscribers.delete(entry)
+    }
   }
 
   isAnimating(): boolean {

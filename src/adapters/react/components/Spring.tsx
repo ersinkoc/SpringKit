@@ -72,7 +72,12 @@ export const Spring = <T extends Record<string, number>>({
     spring.set(toRef.current, springConfig)
     spring.finished.then(() => {
       if (runIdRef.current !== runId || spring.isDestroyed() || spring.isAnimating()) return
-      onRestRef.current?.()
+      // A throwing user callback must not become an unhandled rejection
+      try {
+        onRestRef.current?.()
+      } catch (error) {
+        console.error('[SpringKit] Spring: error in onRest:', error)
+      }
     })
   }).current
 

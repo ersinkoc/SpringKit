@@ -24,6 +24,22 @@ import { useDestroyOnUnmount } from './useDestroyOnUnmount.js'
 const LayoutGroupContext = createContext<LayoutGroup | null>(null)
 const SharedLayoutContextReact = createContext<SharedLayoutContext | null>(null)
 
+/**
+ * Animation callbacks that call the latest `config` stored in `ref`.
+ *
+ * The layout groups are created once (first render) and read their config only
+ * then, so a callback passed inline would stay bound to the first render's
+ * closure. Spread this over the config instead.
+ */
+function latestCallbacks(
+  ref: { readonly current: LayoutAnimationConfig | undefined }
+): Pick<LayoutAnimationConfig, 'onAnimationStart' | 'onAnimationComplete'> {
+  return {
+    onAnimationStart: (id) => ref.current?.onAnimationStart?.(id),
+    onAnimationComplete: (id) => ref.current?.onAnimationComplete?.(id),
+  }
+}
+
 // ============ useLayoutGroup ============
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -78,7 +94,11 @@ export function useLayoutGroup(
   // Created during the first render (it only allocates bookkeeping maps) so it
   // already exists when children's ref callbacks call register() in the
   // initial commit - those run before this component's layout effects
-  const [layoutGroup] = useState(() => createLayoutGroup(options))
+  const optionsRef = useRef(options)
+  optionsRef.current = options
+  const [layoutGroup] = useState(() =>
+    createLayoutGroup({ ...options, ...latestCallbacks(optionsRef) })
+  )
 
   useDestroyOnUnmount(() => {
     layoutGroup.destroy()
@@ -144,7 +164,11 @@ export function useLayoutId(
 
   // Local group used when none is provided. Created during render so it exists
   // when the ref callback runs in the initial commit (before layout effects).
-  const [localGroup] = useState(() => createLayoutGroup(config))
+  const optionsRef = useRef(options)
+  optionsRef.current = options
+  const [localGroup] = useState(() =>
+    createLayoutGroup({ ...config, ...latestCallbacks(optionsRef) })
+  )
 
   useDestroyOnUnmount(() => {
     localGroup.destroy()
@@ -227,21 +251,52 @@ export function useFlip(options: UseFlipOptions = {}): UseFlipReturn {
     elementRef.current = element
   }, [])
 
+  // The FLIP started by the latest flip() without `mutate`, and the number of
+  // the latest flip() call (a superseded call must not refresh the measurement)
+  const activeFlipRef = useRef<ReturnType<typeof createFlip> | null>(null)
+  const callIdRef = useRef(0)
+
   const flipFn = useCallback(async (mutate?: () => void) => {
     const element = elementRef.current
     if (!element) return
+    const callId = ++callIdRef.current
 
     if (mutate) {
       await flip(element, mutate, optionsRef.current)
     } else {
       // The layout already changed (e.g. flip() called from an effect after a
       // re-render): animate from the last known box to the current one
-      const first = lastMeasurementRef.current ?? measureElement(element)
-      const last = measureElement(element)
-      await createFlip(element, first, last, optionsRef.current).play()
+      let first = lastMeasurementRef.current ?? measureElement(element)
+      let last: LayoutMeasurement
+      const running = activeFlipRef.current
+      if (running?.isAnimating()) {
+        // A previous FLIP is still running. The box measured now has its
+        // transform applied on top of the new layout, so stop it to measure
+        // `last` without it, and start from where the element was shown: the
+        // previous layout box moved by the running FLIP's offset/scale
+        const shown = measureElement(element)
+        running.cancel()
+        last = measureElement(element)
+        first = {
+          x: first.x + (shown.x - last.x),
+          y: first.y + (shown.y - last.y),
+          width: last.width === 0 ? first.width : (first.width * shown.width) / last.width,
+          height: last.height === 0 ? first.height : (first.height * shown.height) / last.height,
+        }
+      } else {
+        last = measureElement(element)
+      }
+      // `last` is the layout box (no transform) to compare the next flip() with
+      lastMeasurementRef.current = last
+      const animation = createFlip(element, first, last, optionsRef.current)
+      activeFlipRef.current = animation
+      await animation.play()
+      if (activeFlipRef.current === animation) activeFlipRef.current = null
     }
 
-    if (elementRef.current) {
+    // Superseded by a newer flip(): its transform is applied now, so measuring
+    // would store a skewed box (the newer call refreshes it when it completes)
+    if (callId === callIdRef.current && elementRef.current) {
       lastMeasurementRef.current = measureElement(elementRef.current)
     }
   }, [])
@@ -306,6 +361,7 @@ export function useAutoLayout(
       const currentOptions = optionsRef.current
       autoLayoutRef.current = createAutoLayout({
         ...currentOptions,
+        ...latestCallbacks(optionsRef),
         root: currentOptions.root ?? element,
       })
     }
@@ -338,7 +394,11 @@ export function LayoutGroupProvider({
 }: LayoutGroupProviderProps): React.ReactElement {
   // Created during render so the context value is available to children on
   // the first render (a ref filled in an effect never reached the Provider)
-  const [layoutGroup] = useState(() => createLayoutGroup(config))
+  const configRef = useRef(config)
+  configRef.current = config
+  const [layoutGroup] = useState(() =>
+    createLayoutGroup({ ...config, ...latestCallbacks(configRef) })
+  )
 
   useDestroyOnUnmount(() => {
     layoutGroup.destroy()

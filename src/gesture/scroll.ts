@@ -302,6 +302,10 @@ class ScrollSpringImpl implements ScrollSpring {
   }
 
   scrollTo(x: number, y: number): void {
+    // A NaN/Infinity target would poison every later wheel delta (and never
+    // settle); the springs treat non-finite values as 0, so keep the target in sync
+    if (!Number.isFinite(x)) x = 0
+    if (!Number.isFinite(y)) y = 0
     this.target = { x, y }
     this.rawTarget = { x, y }
     this.springX.set(x)

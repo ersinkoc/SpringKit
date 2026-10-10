@@ -140,6 +140,12 @@ export function getVariant(
     return { values: {}, transition: {} }
   }
 
+  // A name that is only an Object.prototype member ("constructor", "toString",
+  // ...) is a missing variant, not a resolver to call
+  if (!Object.prototype.hasOwnProperty.call(variants, name) && name in Object.prototype) {
+    return { values: {}, transition: {} }
+  }
+
   return resolveVariant(variants[name], custom)
 }
 
@@ -158,6 +164,9 @@ export function mergeVariants(...variants: (Variant | undefined)[]): Variant {
       // Merge transitions
       if (variant.transition) {
         merged.transition = { ...previousTransition, ...variant.transition }
+      } else if (previousTransition !== undefined) {
+        // An explicit `transition: undefined` must not erase earlier transitions
+        merged.transition = previousTransition
       }
     }
   }
@@ -300,7 +309,10 @@ export function calculateStaggerDelays(
   count: number,
   options: OrchestrationOptions
 ): number[] {
-  const { staggerChildren = 0, staggerDirection = 1, delayChildren = 0 } = options
+  const { staggerDirection = 1 } = options
+  // Non-finite values would put NaN / Infinity in the delays: ignore them
+  const staggerChildren = Number.isFinite(options.staggerChildren) ? options.staggerChildren! : 0
+  const delayChildren = Number.isFinite(options.delayChildren) ? options.delayChildren! : 0
 
   const delays: number[] = []
   for (let i = 0; i < count; i++) {

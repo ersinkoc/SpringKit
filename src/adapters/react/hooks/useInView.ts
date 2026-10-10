@@ -6,6 +6,24 @@ function hasIntersectionObserver(): boolean {
   return typeof IntersectionObserver !== 'undefined'
 }
 
+/**
+ * Entries are batched oldest-first, so the LAST one is the current state.
+ * `preferIntersecting` (used with `once` / enter callbacks) picks the latest
+ * entry that intersected instead: the element did enter in this batch.
+ */
+function pickEntry(
+  entries: IntersectionObserverEntry[],
+  preferIntersecting: boolean
+): IntersectionObserverEntry | undefined {
+  if (preferIntersecting) {
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const candidate = entries[i]
+      if (candidate?.isIntersecting) return candidate
+    }
+  }
+  return entries[entries.length - 1]
+}
+
 export interface UseInViewOptions {
   /**
    * Only trigger once when element enters viewport
@@ -131,7 +149,7 @@ export function useInView(options: UseInViewOptions = {}): UseInViewReturn {
 
     const observer = new IntersectionObserver(
       (entries) => {
-        const [observerEntry] = entries
+        const observerEntry = pickEntry(entries, once)
 
         if (observerEntry) {
           const isIntersecting = observerEntry.isIntersecting
@@ -214,7 +232,7 @@ export function useInViewCallback(
 
     const observer = new IntersectionObserver(
       (entries) => {
-        const [entry] = entries
+        const entry = pickEntry(entries, true)
 
         if (entry?.isIntersecting) {
           callbackRef.current(entry)
@@ -297,6 +315,8 @@ export function useInViewMultiple(options: UseInViewOptions = {}) {
         entries.forEach((entry) => {
           const id = (entry.target as HTMLElement).dataset.inviewId
           if (!id) return
+          // With `once`, a later "left" entry of the same batch must not undo the enter
+          if (once && !entry.isIntersecting && triggeredRef.current.has(id)) return
           updates.push([id, entry.isIntersecting])
 
           if (entry.isIntersecting && once) {

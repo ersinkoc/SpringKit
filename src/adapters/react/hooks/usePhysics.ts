@@ -359,6 +359,9 @@ export function useElastic(options: UseElasticOptions = {}) {
 
     rawValueRef.current = amount
     const elasticValue = applyElasticity(amount)
+    // Keep the spring where the value is (this also cancels a running release),
+    // otherwise release() would spring 0 -> 0 and the value would snap to 0
+    springRef.current?.jump(elasticValue)
     motionValueRef.current?.jump(elasticValue)
   }, [applyElasticity])
 
@@ -853,10 +856,16 @@ export function useChain(
       // value of this one has come to rest
       const finished: Promise<void>[] = []
       for (const [key, value] of Object.entries(step.to)) {
-        const spring = springsRef.current[key]
-        if (!spring || spring.isDestroyed()) continue
-        if (step.config) spring.setConfig(step.config)
-        spring.set(value)
+        const motionValue = valuesRef.current[key]
+        if (!motionValue) continue
+        let spring = springsRef.current[key]
+        if (!spring || spring.isDestroyed()) {
+          // A key that first appeared in a later `steps` has no spring yet
+          spring = createSpringValue(motionValue.get(), { onUpdate: (v) => motionValue.jump(v) })
+          springsRef.current[key] = spring
+        }
+        // Per-call config: setConfig() would stick to later steps / replays
+        spring.set(value, step.config)
         finished.push(spring.finished)
       }
       void Promise.all(finished).then(() => runStep(stepIndex + 1, runId))

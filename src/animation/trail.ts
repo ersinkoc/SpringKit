@@ -40,6 +40,9 @@ class TrailImpl implements Trail {
   // follow the time scale), cleared on jump/destroy
   private pendingDelays: Set<() => void> = new Set()
   private destroyed = false
+  // True while the leader notifies for something that must not reach followers
+  // as a delayed update (constructor replay, jump)
+  private ignoreLeader = false
 
   constructor(count: number, config: TrailConfig = {}) {
     const { followDelay = 2, ...springConfig } = config
@@ -56,11 +59,15 @@ class TrailImpl implements Trail {
       this.springs.push(spring)
     }
 
-    // Connect leader to followers with delay
+    // Connect leader to followers with delay. SpringValue.subscribe replays the
+    // current value synchronously: ignore that replay (nothing has moved yet).
+    this.ignoreLeader = true
     this.leader.subscribe(() => {
+      if (this.ignoreLeader) return
       this.frameCount++
       this.scheduleFollowerUpdates()
     })
+    this.ignoreLeader = false
   }
 
   private scheduleFollowerUpdates(): void {
@@ -116,7 +123,14 @@ class TrailImpl implements Trail {
     // Drop delayed follower updates scheduled before the jump, otherwise they
     // would pull followers back toward stale values afterwards
     this.clearPendingDelays()
-    this.leader.jump(value)
+    // The followers jump below: the leader's jump notification must not queue
+    // delayed updates to the same value (they would re-notify subscribers)
+    this.ignoreLeader = true
+    try {
+      this.leader.jump(value)
+    } finally {
+      this.ignoreLeader = false
+    }
     for (const spring of this.springs) {
       spring.jump(value)
     }

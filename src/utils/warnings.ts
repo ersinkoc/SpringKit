@@ -174,6 +174,19 @@ export function validateNumber(
   return value
 }
 
+/** String(value) that cannot throw (Symbols, null-prototype objects, throwing toString) */
+function describeValue(value: unknown): string {
+  try {
+    return String(value)
+  } catch {
+    try {
+      return Object.prototype.toString.call(value)
+    } catch {
+      return '[unprintable value]'
+    }
+  }
+}
+
 /**
  * Validate an animation value (NaN, Infinity or a non-number).
  * Never throws: an invalid value is replaced by 0, and in development a
@@ -181,7 +194,7 @@ export function validateNumber(
  */
 export function validateAnimationValue(value: number, context: string): number {
   if (typeof value !== 'number' || Number.isNaN(value)) {
-    errorOnce(`Invalid animation value in ${context}: expected number, got ${value}`)
+    errorOnce(`Invalid animation value in ${context}: expected number, got ${describeValue(value)}`)
     return 0
   }
 

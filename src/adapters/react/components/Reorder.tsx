@@ -111,6 +111,9 @@ function ReorderGroupComponent<T>(
     setOffsetsState(next)
   }, [])
   const dragStartIndexRef = useRef<number>(-1)
+  // The value currently being dragged (dragActiveRef guards falsy/null values)
+  const dragActiveRef = useRef(false)
+  const draggingValueRef = useRef<T | null>(null)
   const currentOrderRef = useRef<T[]>(values)
   const onReorderRef = useRef(onReorder)
   onReorderRef.current = onReorder
@@ -118,7 +121,15 @@ function ReorderGroupComponent<T>(
   // Keep order in sync with values
   useEffect(() => {
     currentOrderRef.current = values
-  }, [values])
+    // The dragged item was removed from `values` mid-drag: its pointerup can
+    // never arrive, so drop the drag state or the neighbours stay displaced
+    if (dragActiveRef.current && !values.includes(draggingValueRef.current as T)) {
+      dragActiveRef.current = false
+      draggingValueRef.current = null
+      setDraggingValue(null)
+      setOffsets(new Map())
+    }
+  }, [values, setOffsets])
 
   // Register an item's element
   const registerItem = useCallback((value: T, element: HTMLElement) => {
@@ -135,6 +146,8 @@ function ReorderGroupComponent<T>(
 
   // Handle drag start
   const handleDragStart = useCallback((value: T) => {
+    dragActiveRef.current = true
+    draggingValueRef.current = value
     setDraggingValue(value)
     dragStartIndexRef.current = currentOrderRef.current.indexOf(value)
 
@@ -194,6 +207,8 @@ function ReorderGroupComponent<T>(
 
   // Handle drag end
   const handleDragEnd = useCallback((value: T) => {
+    dragActiveRef.current = false
+    draggingValueRef.current = null
     const currentIndex = currentOrderRef.current.indexOf(value)
     if (currentIndex === -1) {
       setDraggingValue(null)
@@ -323,6 +338,8 @@ function ReorderItemComponent<T>(
   const [isDragging, setIsDragging] = useState(false)
   // Ref mirror so pointer handlers see the drag state before React re-renders
   const isDraggingRef = useRef(false)
+  // Pointer that owns the active drag (other pointers, e.g. a second finger, are ignored)
+  const activePointerIdRef = useRef<number | null>(null)
   // Pointer position (client coordinates) when the drag started
   const dragStartPos = useRef({ x: 0, y: 0 })
   const dragOffset = useRef(0)
@@ -387,13 +404,15 @@ function ReorderItemComponent<T>(
   // Handle pointer down
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
     if (!dragEnabled) return
+    // A second (non-primary) pointer must not restart the drag from its own origin
+    if (isDraggingRef.current && !e.isPrimary) return
 
     e.preventDefault()
     e.stopPropagation()
     isDraggingRef.current = true
+    activePointerIdRef.current = e.pointerId
     setIsDragging(true)
     springRef.current?.stop()
-    onDragStart?.()
     context.onDragStart(value)
 
     dragStartPos.current = { x: e.clientX, y: e.clientY }
@@ -408,11 +427,15 @@ function ReorderItemComponent<T>(
         // Pointer may no longer be active
       }
     }
+
+    // User callback last: if it throws, the drag is already fully set up
+    onDragStart?.()
   }, [dragEnabled, context, value, onDragStart])
 
   // Handle pointer move
   const handlePointerMove = useCallback((e: React.PointerEvent) => {
     if (!isDraggingRef.current) return
+    if (e.pointerId !== activePointerIdRef.current) return
 
     // Offset is the pointer movement since the drag started
     dragOffset.current = context.axis === 'y'
@@ -427,7 +450,9 @@ function ReorderItemComponent<T>(
   // Handle pointer up
   const handlePointerUp = useCallback((e: React.PointerEvent) => {
     if (!isDraggingRef.current) return
+    if (e.pointerId !== activePointerIdRef.current) return
     isDraggingRef.current = false
+    activePointerIdRef.current = null
 
     // Release pointer capture on the element ref
     const element = elementRef.current
@@ -440,13 +465,17 @@ function ReorderItemComponent<T>(
     }
 
     setIsDragging(false)
-    onDragEnd?.()
-    context.onDragEnd(value)
+    try {
+      onDragEnd?.()
+    } finally {
+      // Finish the drop even if the user callback throws (the error still propagates)
+      context.onDragEnd(value)
 
-    // Animate back to final position
-    springRef.current?.jump(0)
-    setOffset(0)
-    dragOffset.current = 0
+      // Animate back to final position
+      springRef.current?.jump(0)
+      setOffset(0)
+      dragOffset.current = 0
+    }
   }, [context, value, onDragEnd])
 
   const transformProp = context.axis === 'y'

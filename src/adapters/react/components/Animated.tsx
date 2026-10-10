@@ -3,7 +3,8 @@ import { useEffect, useRef, useState, useContext, useCallback, memo } from 'reac
 import { createSpringGroup } from '@oxog/springkit'
 import type { SpringConfig } from '@oxog/springkit'
 import { PresenceContext } from '../context/PresenceContext.js'
-import { isBrowser, safeRequestAnimationFrame, safeCancelAnimationFrame } from '../utils/ssr.js'
+import { PresenceExitScopeContext } from './PresenceChild.js'
+import { isBrowser, safeRequestAnimationFrame, safeCancelAnimationFrame, useIsomorphicLayoutEffect } from '../utils/ssr.js'
 import {
   animatableSignature,
   channelValuesOf,
@@ -345,6 +346,10 @@ function createAnimatedComponent<T extends React.ElementType>(
       const presenceContext = useContext(PresenceContext)
       const isPresent = presenceContext?.isPresent ?? true
       const safeToRemove = presenceContext?.safeToRemove
+      // Exits running in the same presence child (this element's own exit is one
+      // of them); the child is removed when the last one finishes
+      const exitScope = useContext(PresenceExitScopeContext)
+      const exitTokenRef = useRef({})
 
       // Inherit MotionConfig (default spring config, reduced motion, initial)
       const motionConfig = useContext(MotionContext)
@@ -707,6 +712,15 @@ function createAnimatedComponent<T extends React.ElementType>(
         applyTarget(targetValues, reducedMotion)
       })
 
+      // Register as a running exit before any element's exit effect runs, so a
+      // sibling or ancestor that finishes first doesn't remove the child early
+      useIsomorphicLayoutEffect(() => {
+        if (isPresent || !exitScope) return
+        const token = exitTokenRef.current
+        exitScope.add(token)
+        return () => exitScope.cancel(token)
+      }, [isPresent, exitScope])
+
       // Handle exit animation completion. `exit` and `onAnimationComplete` are
       // usually inline: read them from refs so re-renders (every animation
       // frame) don't restart the wait.
@@ -719,7 +733,8 @@ function createAnimatedComponent<T extends React.ElementType>(
         const complete = () => {
           if (hasCalledSafeToRemove.current) return
           hasCalledSafeToRemove.current = true
-          safeToRemove()
+          if (exitScope) exitScope.done(exitTokenRef.current)
+          else safeToRemove()
           onAnimationCompleteRef.current?.()
         }
 
@@ -749,7 +764,7 @@ function createAnimatedComponent<T extends React.ElementType>(
           unsubscribe?.()
         }
         // The spring is re-created when its config or channels change
-      }, [isPresent, hasExit, safeToRemove, springConfig.stiffness, springConfig.damping, springConfig.mass, channelKeysSignature])
+      }, [isPresent, hasExit, safeToRemove, exitScope, springConfig.stiffness, springConfig.damping, springConfig.mass, channelKeysSignature])
 
       // Reset flag when becoming present again
       useEffect(() => {

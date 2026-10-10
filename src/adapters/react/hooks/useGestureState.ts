@@ -44,10 +44,21 @@ export interface GestureHandlers {
   onMouseUp?: MouseEventHandler<HTMLElement>
   onTouchStart?: TouchEventHandler<HTMLElement>
   onTouchEnd?: TouchEventHandler<HTMLElement>
+  onTouchCancel?: TouchEventHandler<HTMLElement>
   onFocus?: FocusEventHandler<HTMLElement>
   onBlur?: FocusEventHandler<HTMLElement>
   onDragStart?: DragEventHandler<HTMLElement>
   onDragEnd?: DragEventHandler<HTMLElement>
+}
+
+/**
+ * Whether a touch event leaves a finger on the element (`targetTouches`) or,
+ * for window-level events, anywhere on the screen (`touches`). A press must
+ * only end when the last finger that caused it is gone.
+ */
+function touchStillDown(e: { targetTouches?: ArrayLike<unknown>; touches?: ArrayLike<unknown> }, onElement: boolean): boolean {
+  const list = onElement ? e.targetTouches : e.touches
+  return !!list && list.length > 0
 }
 
 export interface UseGestureStateReturn extends GestureState {
@@ -110,7 +121,15 @@ export function useGestureState(
       onMouseDown: () => setState((s) => ({ ...s, isPressed: true })),
       onMouseUp: () => setState((s) => ({ ...s, isPressed: false })),
       onTouchStart: () => setState((s) => ({ ...s, isPressed: true })),
-      onTouchEnd: () => setState((s) => ({ ...s, isPressed: false })),
+      onTouchEnd: (e) => {
+        if (touchStillDown(e, true)) return
+        setState((s) => ({ ...s, isPressed: false }))
+      },
+      // The system can cancel a touch (scroll takeover, interruption): no touchend follows
+      onTouchCancel: (e) => {
+        if (touchStillDown(e, true)) return
+        setState((s) => ({ ...s, isPressed: false }))
+      },
     }),
     ...(focus && {
       onFocus: () => setState((s) => ({ ...s, isFocused: true })),
@@ -126,16 +145,20 @@ export function useGestureState(
   useEffect(() => {
     if (!press || !isBrowser) return
 
-    const handleGlobalMouseUp = () => {
+    const handleGlobalMouseUp = (e: Event) => {
+      // Another finger lifting elsewhere must not release a press that is still held
+      if (touchStillDown(e as TouchEvent, false)) return
       setState((s) => (s.isPressed ? { ...s, isPressed: false } : s))
     }
 
     window.addEventListener('mouseup', handleGlobalMouseUp)
     window.addEventListener('touchend', handleGlobalMouseUp)
+    window.addEventListener('touchcancel', handleGlobalMouseUp)
 
     return () => {
       window.removeEventListener('mouseup', handleGlobalMouseUp)
       window.removeEventListener('touchend', handleGlobalMouseUp)
+      window.removeEventListener('touchcancel', handleGlobalMouseUp)
     }
   }, [press])
 
@@ -207,20 +230,32 @@ export function useTap() {
     onMouseUp: () => setIsPressed(false),
     onMouseLeave: () => setIsPressed(false),
     onTouchStart: () => setIsPressed(true),
-    onTouchEnd: () => setIsPressed(false),
+    onTouchEnd: (e) => {
+      if (touchStillDown(e, true)) return
+      setIsPressed(false)
+    },
+    onTouchCancel: (e) => {
+      if (touchStillDown(e, true)) return
+      setIsPressed(false)
+    },
   }
 
   // Global release
   useEffect(() => {
     if (!isBrowser) return
 
-    const handleUp = () => setIsPressed(false)
+    const handleUp = (e: Event) => {
+      if (touchStillDown(e as TouchEvent, false)) return
+      setIsPressed(false)
+    }
     window.addEventListener('mouseup', handleUp)
     window.addEventListener('touchend', handleUp)
+    window.addEventListener('touchcancel', handleUp)
 
     return () => {
       window.removeEventListener('mouseup', handleUp)
       window.removeEventListener('touchend', handleUp)
+      window.removeEventListener('touchcancel', handleUp)
     }
   }, [])
 

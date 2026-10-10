@@ -81,6 +81,17 @@ const elementTransforms = new WeakMap<Element, Map<string, number>>()
  */
 const propertyOwners = new WeakMap<Element, Map<string, () => void>>()
 
+/**
+ * `style.setProperty()` / `getPropertyValue()` only understand kebab-case
+ * names ('font-size'); camelCase ('fontSize') is silently ignored. Custom
+ * properties ('--x') are case-sensitive and kept as they are.
+ */
+function toCssName(property: string): string {
+  return property.startsWith('--')
+    ? property
+    : property.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)
+}
+
 function buildTransform(values: Map<string, number>): string {
   const parts: string[] = []
 
@@ -151,7 +162,7 @@ function applyStylesToElement(element: Element, values: Map<string, number>): vo
   }
 
   Object.entries(styleValues).forEach(([prop, val]) => {
-    el.style.setProperty(prop, val)
+    el.style.setProperty(toCssName(prop), val)
   })
 }
 
@@ -175,7 +186,7 @@ function parseCurrentValue(element: Element, property: string): number {
     return property.startsWith('scale') ? 1 : 0
   }
 
-  const value = computed.getPropertyValue(property)
+  const value = computed.getPropertyValue(toCssName(property))
   return parseFloat(value) || 0
 }
 
@@ -278,6 +289,7 @@ export function animate(
   const startAnimation = () => {
     const entries = Object.entries(target)
     let completedCount = 0
+    let completedNaturally = 0
     const totalAnimations = entries.length
 
     // Nothing to animate: complete immediately instead of never resolving
@@ -333,7 +345,10 @@ export function animate(
       spring.subscribe((v) => {
         if (!isRunning || isPaused || released.has(property)) return
         currentValues.set(property, v)
-        applyStylesToElement(element, currentValues)
+        // Write only this spring's own property: a settled property is no
+        // longer owned by this call and must not be re-applied (it may now
+        // belong to a later animate() call)
+        applyStylesToElement(element, new Map([[property, v]]))
 
         if (onUpdate) {
           const valuesObj: Record<string, number> = {}
@@ -385,12 +400,19 @@ export function animate(
           })
         }
 
+        // Taken over by a later call: interrupted, not completed
+        const superseded = released.has(property)
         disown(property)
+        // A settled property must not be restarted by resume()
+        currentTargets.delete(property)
+        if (!superseded) completedNaturally++
         completedCount++
         if (completedCount === totalAnimations && isRunning) {
           isRunning = false
           try {
-            onComplete?.()
+            // Like stop(), a call whose properties were all taken over does
+            // not report completion (`finished` still settles)
+            if (completedNaturally > 0) onComplete?.()
           } catch {
             // Ignore callback errors
           }

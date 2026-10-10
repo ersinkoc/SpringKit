@@ -136,11 +136,32 @@ export const SpringText = memo(function SpringText({
   const config = useStableSpringConfig(configProp, DEFAULT_TEXT_CONFIG)
 
   // Split text during render so the text is present on first paint / SSR
-  const elements = useMemo(() => splitText(children, mode), [children, mode])
-
-  const [animatedValues, setAnimatedValues] = useState<number[]>(() =>
-    new Array<number>(elements.length).fill(animateOnMount ? 0 : 1)
+  // (empty tokens, e.g. around leading/trailing whitespace in "words" mode,
+  // have no content: they must not be animated nor delay the completion)
+  const elements = useMemo(
+    () => splitText(children, mode).filter((part) => part !== ''),
+    [children, mode]
   )
+
+  // Progress per element, tagged with the elements / trigger it belongs to: after
+  // a text or trigger change the first render must not show the previous
+  // progress (or a missing entry) before the effect below resets it
+  const [progressState, setProgress] = useState<{
+    source: string[]
+    trigger: unknown
+    values: number[]
+  }>(() => ({
+    source: elements,
+    trigger,
+    values: new Array<number>(elements.length).fill(animateOnMount ? 0 : 1),
+  }))
+  const triggerChangedSinceProgress = !Object.is(progressState.trigger, trigger)
+  const animatedValues =
+    progressState.source === elements && !triggerChangedSinceProgress
+      ? progressState.values
+      : new Array<number>(elements.length).fill(
+          animateOnMount || triggerChangedSinceProgress ? 0 : 1
+        )
 
   // Latest onComplete (an inline callback must not restart the animation)
   const onCompleteRef = useRef(onComplete)
@@ -151,7 +172,7 @@ export const SpringText = memo(function SpringText({
 
   // Create and run animations
   useEffect(() => {
-    const triggerChanged = prevTriggerRef.current !== trigger
+    const triggerChanged = !Object.is(prevTriggerRef.current, trigger)
     prevTriggerRef.current = trigger
     const shouldAnimate = animateOnMount || triggerChanged
 
@@ -159,7 +180,7 @@ export const SpringText = memo(function SpringText({
 
     // Without animation, show the text in its final state
     if (!shouldAnimate) {
-      setAnimatedValues(new Array<number>(elements.length).fill(1))
+      setProgress({ source: elements, trigger, values: new Array<number>(elements.length).fill(1) })
       return
     }
 
@@ -167,7 +188,7 @@ export const SpringText = memo(function SpringText({
     const cancelDelays = new Set<() => void>()
     let completed = 0
 
-    setAnimatedValues(new Array<number>(elements.length).fill(0))
+    setProgress({ source: elements, trigger, values: new Array<number>(elements.length).fill(0) })
 
     // Create new springs (each completes once: it is set to 1 a single time)
     const springs = elements.map((_, index) =>
@@ -175,10 +196,11 @@ export const SpringText = memo(function SpringText({
         ...config,
         onUpdate: (value) => {
           if (cancelled) return
-          setAnimatedValues((prev) => {
-            const next = [...prev]
-            next[index] = value
-            return next
+          setProgress((prev) => {
+            if (prev.source !== elements) return prev
+            const values = [...prev.values]
+            values[index] = value
+            return { ...prev, values }
           })
         },
         onComplete: () => {

@@ -45,6 +45,13 @@ export function useVelocity(source: MotionValue<number>): MotionValue<number> {
   }
 
   useEffect(() => {
+    // A swapped source (or a re-created value) may rest at another velocity
+    // than the one published; the loop below only runs for an animating source
+    const velocityNow = source.getVelocity()
+    const current = velocityRef.current
+    if (current && !Object.is(current.get(), velocityNow)) current.jump(velocityNow)
+    lastVelocityRef.current = velocityNow
+
     // Start RAF loop when source starts animating
     const startLoop = () => {
       if (isRunningRef.current) return
@@ -164,7 +171,7 @@ interface ParsedString {
 
 /** Colors (hex, rgb[a](), hsl[a](), transparent) or numbers inside a string */
 const STRING_TOKEN_REGEX =
-  /#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3,4})\b|(?:rgba?|hsla?)\([^)]*\)|\btransparent\b|-?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?/gi
+  /#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3,4})\b|(?:rgba?|hsla?)\((?:[^()]|\([^()]*\))*\)|\btransparent\b|-?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?/gi
 
 function parseAnimatableString(value: string): ParsedString {
   // A bare CSS color name ('red', 'rebeccapurple') is a single color token
@@ -178,6 +185,8 @@ function parseAnimatableString(value: string): ParsedString {
   for (const match of value.matchAll(STRING_TOKEN_REGEX)) {
     const text = match[0]
     const index = match.index ?? 0
+    // hsl(var(--x)), rgb(var(--c) / .5): not a literal color, keep it as text
+    if (text.endsWith(')') && text.indexOf('(') !== text.lastIndexOf('(')) continue
     parts.push(value.slice(last, index))
     tokens.push(/^[-.\d]/.test(text) ? parseFloat(text) : parseColorRGBA(text))
     last = index + text.length
@@ -345,7 +354,12 @@ export function useTransform<O = number>(
   // Subscribe to source changes
   useEffect(() => {
     unsubscribeRef.current = source.subscribe((value) => {
-      derivedRef.current?.jump(transformFn(value))
+      // Inline ranges/functions are new on every render, so this effect
+      // re-subscribes (and `subscribe` calls back right away) each render:
+      // only publish a changed value, or every render emits a 'change'
+      const derived = derivedRef.current
+      const next = transformFn(value)
+      if (derived && !Object.is(derived.get(), next)) derived.jump(next)
     })
 
     return () => {
@@ -396,7 +410,11 @@ export function useCombinedTransform<T extends number[], O = number>(
     // Subscribe to all sources
     unsubscribesRef.current = sources.map((source) =>
       source.subscribe(() => {
-        derivedRef.current?.jump(transform(getCurrentValues()))
+        // Same as useTransform: sources/transform are usually inline, so the
+        // effect re-subscribes every render; don't re-emit an unchanged value
+        const derived = derivedRef.current
+        const next = transform(getCurrentValues())
+        if (derived && !Object.is(derived.get(), next)) derived.jump(next)
       })
     )
 
@@ -436,6 +454,13 @@ export function useVelocityTransform(
   }
 
   useEffect(() => {
+    // A swapped source or transform must show right away, also while the
+    // source rests (the loop below only runs for an animating source). Inline
+    // transforms re-run this every render: only publish a changed value
+    const derived = derivedRef.current
+    const next = transform(source.getVelocity())
+    if (derived && !Object.is(derived.get(), next)) derived.jump(next)
+
     // Start RAF loop when source starts animating
     const startLoop = () => {
       if (isRunningRef.current) return
@@ -528,16 +553,26 @@ export function useSpringTransform(
     }
   }, [inputRange, outputRange])
 
+  const targetRef = useRef<number | null>(null)
+
   if (derivedRef.current === null || derivedRef.current.isDestroyed()) {
-    derivedRef.current = createMotionValue(transform(source.get()), {
+    targetRef.current = transform(source.get())
+    derivedRef.current = createMotionValue(targetRef.current, {
       spring: springConfig,
     })
   }
 
   useEffect(() => {
     unsubscribeRef.current = source.subscribe((value) => {
+      // Inline ranges re-run this effect every render (and on mount), and
+      // `subscribe` calls back right away: don't start the same animation
+      // again (the value would never rest and emit animationStart/change)
+      const derived = derivedRef.current
+      const target = transform(value)
+      if (derived && Object.is(targetRef.current, target) && (derived.isAnimating() || Object.is(derived.get(), target))) return
+      targetRef.current = target
       // Use set (animated) instead of jump
-      derivedRef.current?.set(transform(value))
+      derived?.set(target)
     })
 
     return () => {
@@ -630,7 +665,11 @@ export function useMotionTemplate(
     // Subscribe to all values
     unsubscribesRef.current = valuesRef.current.map((value) =>
       value.subscribe(() => {
-        templateRef.current?.jump(buildString())
+        // `subscribe` calls back right away (mount, swapped value): only
+        // publish a changed string
+        const template = templateRef.current
+        const next = buildString()
+        if (template && !Object.is(template.get(), next)) template.jump(next)
       })
     )
 
@@ -968,7 +1007,10 @@ export function useSmooth(
   useEffect(() => {
     const unsub = source.subscribe((target) => {
       currentRef.current = currentRef.current + (target - currentRef.current) * factor
-      smoothedRef.current?.jump(currentRef.current)
+      // `subscribe` calls back right away (mount, new source/factor): no
+      // `change` when the smoothed value stays where it is
+      const smoothed = smoothedRef.current
+      if (smoothed && !Object.is(smoothed.get(), currentRef.current)) smoothed.jump(currentRef.current)
     })
 
     return unsub
@@ -999,21 +1041,25 @@ export function useDelay(
 
   if (delayedRef.current === null || delayedRef.current.isDestroyed()) {
     delayedRef.current = createMotionValue(source.get())
-    bufferRef.current = Array(frames).fill(source.get())
+    // Same sanitizing as the effect below: Array(2.5) / Array(NaN) / Array(-1) throw
+    bufferRef.current = Array(Number.isFinite(frames) ? Math.max(0, Math.floor(frames)) : 0).fill(source.get())
   }
 
   useEffect(() => {
     // Resize the buffer when the frame count changes
     const buffer = bufferRef.current
-    const safeFrames = Math.max(0, Math.floor(frames) || 0)
+    const safeFrames = Number.isFinite(frames) ? Math.max(0, Math.floor(frames)) : 0
     while (buffer.length > safeFrames) buffer.shift()
     while (buffer.length < safeFrames) buffer.unshift(buffer[0] ?? source.get())
 
     const unsub = source.subscribe((value) => {
       bufferRef.current.push(value)
       const delayed = bufferRef.current.shift()
-      if (delayed !== undefined) {
-        delayedRef.current?.jump(delayed)
+      // `subscribe` calls back right away (mount, new source/frame count):
+      // no `change` when the delayed value stays where it is
+      const follower = delayedRef.current
+      if (delayed !== undefined && follower && !Object.is(follower.get(), delayed)) {
+        follower.jump(delayed)
       }
     })
 

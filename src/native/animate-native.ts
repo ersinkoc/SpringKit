@@ -85,7 +85,11 @@ export function animateNative(
     // No WAAPI (SSR, very old browsers, some test environments): apply the
     // end state immediately so the UI is still correct.
     applyFinalKeyframe(element, keyframes)
-    onComplete?.()
+    try {
+      onComplete?.()
+    } catch (error) {
+      console.error('[SpringKit]', error)
+    }
     return {
       animation: null,
       duration,
@@ -99,9 +103,13 @@ export function animateNative(
     }
   }
 
+  // Non-finite delays make element.animate() throw a TypeError: treat as 0
+  const startDelay = Math.max(0, delay)
+  const safeDelay = Number.isFinite(startDelay) ? startDelay : 0
+
   const animation = element.animate(keyframes, {
     duration,
-    delay: reduced ? 0 : Math.max(0, delay),
+    delay: reduced ? 0 : safeDelay,
     easing: supportsLinearEasing() ? compiled.easing : FALLBACK_EASING,
     fill: 'both',
   })
@@ -204,7 +212,9 @@ export function animateNative(
       resumed()
     },
     seek: (ms: number) => {
-      animation.currentTime = Math.max(0, delay) + Math.min(Math.max(0, ms), duration)
+      // NaN would make the currentTime setter throw: treat it as the start
+      const target = Number.isNaN(ms) ? 0 : ms
+      animation.currentTime = safeDelay + Math.min(Math.max(0, target), duration)
     },
   }
 }

@@ -172,24 +172,26 @@ export async function stagger<T>(
   // Loop-driven delays: they follow globalLoop's time scale
   const cancelDelays: Array<() => void> = []
 
-  for (let i = 0; i < indices.length; i++) {
-    const index = indices[i]!
-    const anim = animate(items[index]!, index)
-    animations.push(anim)
-
-    const delayMs = getDelay(i)
-
-    if (delayMs > 0) {
-      cancelDelays.push(globalLoop.delay(delayMs, () => anim.start()))
-    } else {
-      anim.start()
-    }
-  }
-
   try {
+    for (let i = 0; i < indices.length; i++) {
+      const index = indices[i]!
+      const anim = animate(items[index]!, index)
+      animations.push(anim)
+
+      const delayMs = getDelay(i)
+
+      if (delayMs > 0) {
+        cancelDelays.push(globalLoop.delay(delayMs, () => anim.start()))
+      } else {
+        anim.start()
+      }
+    }
+
     await Promise.all(animations.map((a) => a.finished))
   } finally {
-    // Cancel any remaining delays on completion or error
+    // Cancel any remaining delays on completion or error (including an
+    // animate() / delay function / start() that throws while the remaining
+    // items are still being scheduled)
     cancelDelays.forEach((cancel) => cancel())
   }
 }

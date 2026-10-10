@@ -168,6 +168,8 @@ interface ActiveDrag {
   /** Whether the pointer moved past `dragThreshold` (drag callbacks fired) */
   started: boolean
   removeListeners: () => void
+  /** Controls told that this gesture started (they must be told it ended) */
+  controls: DragControlsInternal | undefined
   lastEvent: PointerEvent
   lastInfo: PanInfo
 }
@@ -308,11 +310,13 @@ function removeElastic(value: number, [min, max]: Range, [eMin, eMax]: Range): n
 
 /** Velocity (px/s) from the samples of the last VELOCITY_WINDOW_MS */
 function computeVelocity(samples: Sample[], time: number): DragPoint {
-  const last = samples[samples.length - 1]
+  const recorded = samples[samples.length - 1]
   // The pointer stood still before release
-  if (!last || time - last.t > VELOCITY_WINDOW_MS) return ZERO
+  if (!recorded || time - recorded.t > VELOCITY_WINDOW_MS) return ZERO
+  // The pointer rested at its last position until `time`, so the window ends there
+  const last = time > recorded.t ? { x: recorded.x, y: recorded.y, t: time } : recorded
   let base = last
-  for (let i = samples.length - 2; i >= 0; i--) {
+  for (let i = samples.length - (last === recorded ? 2 : 1); i >= 0; i--) {
     const sample = samples[i]!
     if (last.t - sample.t > VELOCITY_WINDOW_MS) break
     base = sample
@@ -330,6 +334,24 @@ function safeCall<A extends unknown[]>(fn: ((...args: A) => void) | undefined, .
     fn(...args)
   } catch (error) {
     console.error('[SpringKit] Error in drag callback:', error)
+  }
+}
+
+/**
+ * `dragTransition.modifyTarget` is user code: when it throws, the momentum
+ * keeps the unmodified target instead of aborting the release
+ */
+function safeModifyTarget(
+  modify: ((target: number) => number) | undefined
+): ((target: number) => number) | undefined {
+  if (!modify) return undefined
+  return (target) => {
+    try {
+      return modify(target)
+    } catch (error) {
+      console.error('[SpringKit] Error in dragTransition.modifyTarget:', error)
+      return target
+    }
   }
 }
 
@@ -451,7 +473,7 @@ export function useAnimatedDrag(
     activeRef.current = null
     active.removeListeners()
     if (mountedRef.current) setIsDragging(false)
-    ;(propsRef.current.dragControls as DragControlsInternal | undefined)?._notifyDragEnd?.()
+    active.controls?._notifyDragEnd?.()
     return active
   }, [])
 
@@ -539,7 +561,7 @@ export function useAnimatedDrag(
       from,
       velocity,
       deceleration: transition?.deceleration,
-      modifyTarget: transition?.modifyTarget,
+      modifyTarget: safeModifyTarget(transition?.modifyTarget),
       onUpdate: (value) => {
         if (starting || animationsRef.current[axis] !== entry) return
         apply(value)
@@ -596,7 +618,7 @@ export function useAnimatedDrag(
           from,
           velocity: axisVelocity,
           deceleration: dragTransition?.deceleration,
-          modifyTarget: dragTransition?.modifyTarget,
+          modifyTarget: safeModifyTarget(dragTransition?.modifyTarget),
         })
         target = clampValue(probe.target, range)
         probe.destroy()
@@ -828,11 +850,12 @@ export function useAnimatedDrag(
         releaseCapture?.()
         releaseCapture = null
       },
+      controls: propsRef.current.dragControls as DragControlsInternal | undefined,
       lastEvent: event,
       lastInfo: startInfo,
     }
     activeRef.current = active
-    ;(propsRef.current.dragControls as DragControlsInternal | undefined)?._notifyDragStart?.()
+    active.controls?._notifyDragStart?.()
     if (threshold <= 0) begin(active, event, startInfo)
   }, [detach, stopAnimations, syncObservedContainer, getAxes, elementRef, setOffset, finishDrag])
 

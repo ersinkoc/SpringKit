@@ -107,7 +107,9 @@ class InterpolationImpl implements Interpolation {
     // Linear interpolation within segment
     const denominator = input[i]! - input[i - 1]!
     // Guard against division by zero (same input values)
-    const ratio = denominator === 0 ? 0 : (value - input[i - 1]!) / denominator
+    // (an infinite segment gives Infinity/Infinity = NaN, treated as degenerate too)
+    const rawRatio = denominator === 0 ? 0 : (value - input[i - 1]!) / denominator
+    const ratio = Number.isFinite(rawRatio) ? rawRatio : 0
     const result = output[i - 1]! + ratio * (output[i]! - output[i - 1]!)
 
     if (clamp) {

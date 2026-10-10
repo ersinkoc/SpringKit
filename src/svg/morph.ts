@@ -456,6 +456,14 @@ export function createMorph(
   // Counts progress notifications, so setProgress can tell whether its
   // jump() already notified (it doesn't when called from a subscriber)
   let notifications = 0
+  // True while the progress spring is notifying us. Its jump() is ignored
+  // then, so a morphTo() made from a callback can't reset the progress and
+  // has to wait until the notification is over (F1501)
+  let dispatching = false
+  // Target of a morphTo() made from inside a notification
+  let deferredPath: string | undefined
+  // A destroyed controller is inert (F3101)
+  let destroyed = false
 
   // Parse initial path
   const initialCommands = parsePath(initialPath)
@@ -469,10 +477,17 @@ export function createMorph(
   // that is not a progress update, so onProgress skips it
   let initialized = false
 
-  progressSpring.subscribe(() => {
+  const update = () => {
     notifications++
     const progress = progressSpring.get()
-    if (initialized) onProgress?.(progress)
+    if (initialized) {
+      // A throwing user callback must not stop the path from updating (F1502)
+      try {
+        onProgress?.(progress)
+      } catch (e) {
+        console.error('[SpringKit] Morph onProgress error:', e)
+      }
+    }
 
     // Interpolate points
     currentPoints = fromPoints.map((from, i) =>
@@ -488,18 +503,44 @@ export function createMorph(
       }
     })
 
-    if (progress >= 0.999 && !completed) {
+    // destroy() may have been called from a callback above (F3101)
+    if (progress >= 0.999 && !completed && !destroyed) {
       completed = true
       onComplete?.()
+    }
+  }
+  progressSpring.subscribe(() => {
+    dispatching = true
+    try {
+      update()
+    } finally {
+      dispatching = false
     }
   })
   initialized = true
 
-  return {
+  // Starts the morphTo() that was made from inside a notification
+  const startDeferred = () => {
+    const path = deferredPath
+    deferredPath = undefined
+    if (path === undefined || progressSpring.isDestroyed()) return
+    controller.morphTo(path)
+  }
+
+  const controller: MorphController = {
     getPath: () => currentPath,
     getProgress: () => progressSpring.get(),
 
     morphTo(path: string) {
+      if (destroyed) return
+      if (dispatching) {
+        // Latest call wins; it starts right after the current notification
+        if (deferredPath === undefined) void Promise.resolve().then(startDeferred)
+        deferredPath = path
+        return
+      }
+      deferredPath = undefined
+
       // Normalize paths
       const targetCommands = parsePath(path)
       const targetPoints = samplePath(toAbsolute(targetCommands), samples)
@@ -522,6 +563,7 @@ export function createMorph(
     },
 
     setProgress(progress: number) {
+      if (destroyed) return
       const p = clamp(progress, 0, 1)
       const before = notifications
       progressSpring.jump(p)
@@ -544,20 +586,29 @@ export function createMorph(
     },
 
     subscribe(callback) {
-      subscribers.add(callback)
+      // One entry per registration (F3102): subscribing the same function
+      // twice gives two registrations, and an unsubscribe handle only removes
+      // its own, like SpringValue.subscribe. A destroyed controller doesn't
+      // retain subscribers (F3101); it still reports the current path once.
+      const entry = (path: string): void => callback(path)
+      if (!destroyed) subscribers.add(entry)
       try {
         callback(currentPath)
       } catch (e) {
         console.error('[SpringKit] Morph subscriber error:', e)
       }
-      return () => subscribers.delete(callback)
+      return () => { subscribers.delete(entry) }
     },
 
     destroy() {
+      destroyed = true
+      deferredPath = undefined
       progressSpring.destroy()
       subscribers.clear()
     },
   }
+
+  return controller
 }
 
 /**

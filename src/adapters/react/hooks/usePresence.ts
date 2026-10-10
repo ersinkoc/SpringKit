@@ -1,6 +1,10 @@
 import { useContext } from 'react'
 import { PresenceContext } from '../context/PresenceContext.js'
 
+// One shared identity, so effects depending on `safeToRemove` don't re-run on
+// every render when used outside AnimatePresence
+function noop(): void {}
+
 /**
  * Hook for custom exit animation control in AnimatePresence
  *
@@ -34,7 +38,7 @@ export function usePresence(): [boolean, () => void] {
 
   // If not inside AnimatePresence, always present
   if (context === null) {
-    return [true, () => {}]
+    return [true, noop]
   }
 
   return [context.isPresent, context.safeToRemove]

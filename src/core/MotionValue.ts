@@ -129,6 +129,11 @@ export class MotionValue<T = number> {
       this._isAnimating = true
       this._emit('animationStart')
 
+      // An animationStart listener may have destroyed, stopped or jumped this
+      // value, or called set() itself (which scheduled its own end check):
+      // that call wins, don't start a second animation over it
+      if (this._destroyed || !this._isAnimating || this._checkEndRafId !== null) return
+
       this._springValue.set(newValue as number)
 
       // Check for animation end with proper cleanup
@@ -217,6 +222,8 @@ export class MotionValue<T = number> {
     }
     const wasAnimating = this._isAnimating
     this._isAnimating = false
+    // The value is halted: it no longer moves at its last in-flight speed
+    this._velocity = 0
     // Only signal the end of an animation that was actually running
     if (wasAnimating) {
       this._emitEnd('animationCancel')

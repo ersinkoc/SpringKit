@@ -177,26 +177,38 @@ export function useVariants(options: UseVariantsOptions): UseVariantsReturn {
     variants,
     animate,
     initial,
-    custom,
+    custom: customOption,
     inherit = true,
     spring: springConfig,
     onAnimationComplete,
   } = options
 
   const parentContext = useVariantContext()
+  // `custom` set on a VariantProvider reaches the variant functions of its
+  // children unless they pass their own
+  const custom = customOption !== undefined ? customOption : inherit ? parentContext.custom : undefined
   const currentVariantRef = useRef<string | undefined>(undefined)
   const isAnimatingRef = useRef<boolean>(false)
 
-  // Variant requested imperatively via setVariant(). It applies until the
-  // `animate` option changes (the prop then takes over again).
+  // Variant requested imperatively via setVariant(). It applies until what
+  // drives the element changes (the `animate` option, or the variant inherited
+  // from the parent) and the declarative state then takes over again. The
+  // driver is compared by content: an inline `animate={{...}}` is a new object
+  // every render.
   const [variantOverride, setVariantOverride] = useState<{
     name: string
-    animate: UseVariantsOptions['animate']
+    driver: string
   } | null>(null)
-  const animateRef = useRef(animate)
-  animateRef.current = animate
+  const driver =
+    (typeof animate === 'string'
+      ? `s:${animate}`
+      : animate && typeof animate === 'object'
+        ? `o:${animatableSignature(toAnimatable(animate))}`
+        : 'u') + `|${inherit ? (parentContext.variant ?? '') : ''}`
+  const driverRef = useRef(driver)
+  driverRef.current = driver
   const overrideName =
-    variantOverride && variantOverride.animate === animate ? variantOverride.name : undefined
+    variantOverride && variantOverride.driver === driver ? variantOverride.name : undefined
 
   // Determine the target variant
   const targetVariant = useMemo(() => {
@@ -267,13 +279,17 @@ export function useVariants(options: UseVariantsOptions): UseVariantsReturn {
     const parentFirst = parentTransition?.when === 'beforeChildren' && parentContext.variant !== undefined
       ? (parentTransition.delay ?? 0) + settleTime(parentTransition.spring ?? DEFAULT_PHYSICS)
       : 0
+    // The element's own `delay` always adds to what the parent orchestrates
+    const ownDelay = transition.delay || 0
     if (index !== undefined && staggerChildren) {
       const count = parentContext.staggerCount
       const position =
         staggerDirection === -1 && count !== undefined ? count - 1 - index : index
-      return parentFirst + position * staggerChildren + (delayChildren || 0)
+      return parentFirst + position * staggerChildren + (delayChildren || 0) + ownDelay
     }
-    return parentFirst + (transition.delay || 0)
+    // No stagger: the parent's `delayChildren` still delays its children
+    const parentDelayChildren = index !== undefined ? parentTransition?.delayChildren || 0 : 0
+    return parentFirst + parentDelayChildren + ownDelay
   }, [parentContext.staggerIndex, parentContext.staggerCount, parentContext.variant, parentTransition, transition])
 
   // Values to animate: every number/string of the variant (colors, '50%',
@@ -344,7 +360,7 @@ export function useVariants(options: UseVariantsOptions): UseVariantsReturn {
   }, [targetVariant, staggerDelay, stiffness, damping, mass])
 
   const setVariant = useCallback((name: string) => {
-    setVariantOverride({ name, animate: animateRef.current })
+    setVariantOverride({ name, driver: driverRef.current })
   }, [])
 
   return {

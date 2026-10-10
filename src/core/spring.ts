@@ -1,6 +1,7 @@
 import type { SpringConfig } from './config.js'
 import { defaultConfig } from './config.js'
 import {
+  restThreshold,
   springCoefficients,
   stepSpringInto,
   type SimulationResult,
@@ -120,8 +121,9 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
       restDelta: config.restDelta ?? defaultConfig.restDelta!,
     }
     this.coefficients = springCoefficients(this.config)
-    this.restSpeed = this.config.restSpeed
-    this.restDelta = this.config.restDelta
+    // NaN/negative thresholds would make the rest check never pass
+    this.restSpeed = restThreshold(this.config.restSpeed, defaultConfig.restSpeed!)
+    this.restDelta = restThreshold(this.config.restDelta, defaultConfig.restDelta!)
 
     this.resetFinished()
   }
@@ -156,6 +158,9 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
     this.state = AnimationState.Running
     this.lastUpdateTime = 0 // Reset timing on start
     safeCall(this.config.onStart)
+    // onStart may have stopped, destroyed or paused the spring: it must not
+    // be (re)registered in the loop in that state (nothing would ever remove it)
+    if (this.state !== AnimationState.Running) return this
     globalLoop.add(this)
     return this
   }
@@ -297,10 +302,13 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
       globalLoop.remove(this)
       this.position = this.target // Ensure we end exactly at target
       this.velocity = 0
+      // Settle before the callbacks: one of them may restart the spring, and
+      // that new run must get its own pending `finished` (start() creates it
+      // only once the previous one is settled)
+      this.settleFinished()
       safeCall(this.config.onUpdate, this.position)
       safeCall(this.config.onComplete)
       safeCall(this.config.onRest)
-      this.settleFinished()
     }
   }
 

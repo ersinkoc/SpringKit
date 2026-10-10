@@ -126,6 +126,11 @@ export function useGesture(handlers: GestureHandlers): GestureBind {
       // Ignore: capture can fail (e.g. synthetic or already-released pointers)
     }
 
+    // A pointerdown for an id that is still tracked means its pointerup /
+    // pointercancel was lost (capture lost, alt-tab, ...): forget that stale
+    // press so the new one starts a fresh drag instead of inheriting its origin
+    if (pointersRef.current.has(e.pointerId)) onPointerEnd(e)
+
     pointersRef.current.set(e.pointerId, { x: e.clientX, y: e.clientY })
 
     if (!dragRef.current) {

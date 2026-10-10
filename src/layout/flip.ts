@@ -428,6 +428,10 @@ export async function flip(
   // Last: apply mutation and measure final state
   await mutate()
 
+  // Another flip() on this element may have started its FLIP while mutate was
+  // pending; its transform would skew the last measurement
+  activeFlips.get(element)?.cancel()
+
   // Force layout recalculation
   // eslint-disable-next-line @typescript-eslint/no-unused-expressions
   element.offsetHeight
@@ -464,6 +468,10 @@ export async function flipBatch(
 
   // Last: apply mutation
   await mutate()
+
+  // FLIPs started by other calls while mutate was pending would skew the
+  // last measurements
+  elements.forEach((el) => activeFlips.get(el)?.cancel())
 
   // Force layout recalculation
   // eslint-disable-next-line @typescript-eslint/no-unused-expressions

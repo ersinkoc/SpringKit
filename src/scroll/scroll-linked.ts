@@ -437,7 +437,7 @@ export function createParallax(
     const distanceFromCenter = elementCenter - viewportCenter
 
     // Apply speed and easing
-    const normalizedDistance = distanceFromCenter / windowHeight
+    const normalizedDistance = windowHeight === 0 ? 0 : distanceFromCenter / windowHeight
     const easedDistance = easing(Math.abs(normalizedDistance)) * Math.sign(normalizedDistance)
     offset = easedDistance * speed * 100
 
@@ -452,7 +452,9 @@ export function createParallax(
   // Use IntersectionObserver for performance
   observer = new IntersectionObserver(
     (entries) => {
-      const entry = entries[0]
+      // A batched delivery lists entries oldest first: the latest one is the
+      // element's current state (an earlier entry may already be stale)
+      const entry = entries[entries.length - 1]
       if (entry) {
         isInView = entry.isIntersecting
         if (isInView) update()

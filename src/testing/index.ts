@@ -90,7 +90,9 @@ export function installTestClock(options: TestClockOptions = {}): TestClock {
   }
 
   const frameRate =
-    options.frameRate !== undefined && options.frameRate > 0 ? options.frameRate : 60
+    options.frameRate !== undefined && options.frameRate > 0 && Number.isFinite(options.frameRate)
+      ? options.frameRate
+      : 60
   const frameDuration = 1000 / frameRate
   const g = globalThis as Global
   const perf = (typeof performance !== 'undefined' ? performance : undefined) as
@@ -245,6 +247,10 @@ export function installTestClock(options: TestClockOptions = {}): TestClock {
 
     advance(ms: number) {
       ensureActive()
+      // NaN / +Infinity would never reach the target and spin forever
+      if (Number.isNaN(ms) || ms === Infinity) {
+        throw new RangeError(`[SpringKit] advance(ms) expects a finite number, got ${ms}`)
+      }
       const target = time + Math.max(0, ms)
       while (step(target)) {
         // keep running events in time order
@@ -265,6 +271,10 @@ export function installTestClock(options: TestClockOptions = {}): TestClock {
 
     runAll(limitMs = 30_000) {
       ensureActive()
+      // A NaN limit makes every comparison false, so nothing would ever stop the loop
+      if (Number.isNaN(limitMs)) {
+        throw new RangeError('[SpringKit] runAll(limitMs) expects a number, got NaN')
+      }
       const start = time
       const limit = start + limitMs
       while (frameCallbacks.size > 0 || timers.size > 0) {

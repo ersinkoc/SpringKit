@@ -140,6 +140,8 @@ class DecayAnimationImpl implements Animatable, DecayAnimation {
   }
 
   start(): DecayAnimation {
+    // A destroyed animation must not be put back into the global loop
+    if (this.destroyed) return this
     if (this.state === AnimationState.Running) return this
     // The previous run already settled `finished` (completed or stopped)
     if (this.resolveComplete === null && !this.destroyed) {

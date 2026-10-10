@@ -374,8 +374,8 @@ export function stepSpring(
     velocity,
     target,
     springCoefficients(config),
-    config.restSpeed ?? 0.01,
-    config.restDelta ?? 0.01,
+    restThreshold(config.restSpeed, 0.01),
+    restThreshold(config.restDelta, 0.01),
     dt
   )
 }
@@ -416,6 +416,16 @@ export function stepSpringInto(
   out.position = target + displacement
   out.isRest = Math.abs(displacement) <= restDelta && Math.abs(out.velocity) <= restSpeed
   return out
+}
+
+/**
+ * A rest threshold must be a non-negative number: NaN or a negative value
+ * would make `|x| <= threshold` false forever (the spring never settles).
+ *
+ * @internal
+ */
+export function restThreshold(value: number | undefined, fallback: number): number {
+  return typeof value === 'number' && value >= 0 ? value : fallback
 }
 
 function positiveOr(value: number | undefined, fallback: number): number {

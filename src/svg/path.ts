@@ -98,17 +98,49 @@ export function createPathAnimation(
   // Resolvers of play()/reverse() promises waiting for the animation to finish
   const waiters = new Set<() => void>()
   const spring = createSpringValue(0, config)
+  // True while the spring is notifying us. Its jump() is ignored then, so an
+  // instant set()/reset() made from onUpdate has to move the spring once the
+  // notification is over (F3103)
+  let notifying = false
+  // Target of an instant set()/reset() made from inside a notification
+  let deferredJump: number | undefined
 
   // Subscribe to updates
   const unsubscribe = spring.subscribe((value) => {
     if (destroyed) return
 
-    currentValue = value
-    // Convert 0-1 to offset (1 = hidden, 0 = visible)
-    const offset = totalLength * (1 - value)
-    element.style.strokeDashoffset = String(offset)
-    onUpdate?.(value)
+    notifying = true
+    try {
+      currentValue = value
+      // Convert 0-1 to offset (1 = hidden, 0 = visible)
+      const offset = totalLength * (1 - value)
+      element.style.strokeDashoffset = String(offset)
+      onUpdate?.(value)
+    } finally {
+      notifying = false
+    }
   })
+
+  const applyDeferredJump = () => {
+    const value = deferredJump
+    deferredJump = undefined
+    if (value === undefined || destroyed) return
+    spring.jump(value)
+  }
+
+  // spring.jump() that also works from inside onUpdate (F3103)
+  const jumpSpring = (value: number) => {
+    if (!notifying) {
+      deferredJump = undefined
+      spring.jump(value)
+      return
+    }
+    // Stop the running animation now so it can't overwrite the new value on
+    // the next frame; the spring itself jumps right after the notification
+    spring.stop()
+    if (deferredJump === undefined) void Promise.resolve().then(applyDeferredJump)
+    deferredJump = value
+  }
 
   const cancelWatch = () => {
     if (pendingRafId !== null) {
@@ -165,6 +197,7 @@ export function createPathAnimation(
   const animateTo = (target: number): Promise<void> => {
     targetValue = target
     paused = false
+    deferredJump = undefined
     spring.set(target)
     return new Promise<void>((resolve) => {
       waiters.add(resolve)
@@ -186,13 +219,16 @@ export function createPathAnimation(
     set: (value: number, animate = false) => {
       if (destroyed) return
 
+      // Non-finite progress is treated as 0, like the spring does (F1503)
+      if (!Number.isFinite(value)) value = 0
       targetValue = value
       paused = false
       if (animate) {
+        deferredJump = undefined
         spring.set(value)
         if (waiters.size > 0) watch()
       } else {
-        spring.jump(value)
+        jumpSpring(value)
         currentValue = value
         const offset = totalLength * (1 - value)
         element.style.strokeDashoffset = String(offset)
@@ -215,6 +251,7 @@ export function createPathAnimation(
       if (destroyed) return
       paused = false
       // Resume by animating towards the target that was interrupted by pause()
+      deferredJump = undefined
       spring.set(targetValue)
       if (waiters.size > 0) watch()
     },
@@ -222,7 +259,7 @@ export function createPathAnimation(
     reset: () => {
       if (destroyed) return
       paused = false
-      spring.jump(0)
+      jumpSpring(0)
       currentValue = 0
       targetValue = 0
       element.style.strokeDashoffset = String(totalLength)
@@ -267,8 +304,10 @@ export function preparePathForAnimation(
   initialProgress = 0
 ): void {
   const length = element.getTotalLength?.() ?? 0
+  // Non-finite progress is treated as 0 (F1503)
+  const progress = Number.isFinite(initialProgress) ? initialProgress : 0
   element.style.strokeDasharray = String(length)
-  element.style.strokeDashoffset = String(length * (1 - initialProgress))
+  element.style.strokeDashoffset = String(length * (1 - progress))
 }
 
 /**

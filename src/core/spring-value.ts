@@ -132,11 +132,18 @@ class SpringValueImpl implements SpringValue {
       originalOnUpdate?.(value)
     }
     mergedConfig.onComplete = () => {
-      originalOnComplete?.()
       // Resolve the promise of the latest set(): a running spring may have
       // been retargeted (see above) since it was created. Replaced springs
       // are destroyed and never complete, so this can't resolve early.
-      this.resolveComplete?.()
+      // Capture it before the user callback runs: that callback may call
+      // set() itself, and the completion must not settle that new promise.
+      // `finally` so a throwing callback can't leave `finished` pending.
+      const resolve = this.resolveComplete
+      try {
+        originalOnComplete?.()
+      } finally {
+        if (this.resolveComplete === resolve) resolve?.()
+      }
     }
     this.currentAnimation = spring(this.value, validTo, mergedConfig)
 
@@ -179,7 +186,10 @@ class SpringValueImpl implements SpringValue {
   }
 
   subscribe(callback: (value: number) => void): () => void {
-    this.subscribers.add(callback)
+    // One entry per registration: an unsubscribe handle may only remove the
+    // registration it was returned for, never another one of the same callback
+    const entry = (value: number): void => callback(value)
+    this.subscribers.add(entry)
 
     // Immediately call with current value (with error isolation)
     try {
@@ -189,7 +199,7 @@ class SpringValueImpl implements SpringValue {
     }
 
     return () => {
-      this.subscribers.delete(callback)
+      this.subscribers.delete(entry)
     }
   }
 

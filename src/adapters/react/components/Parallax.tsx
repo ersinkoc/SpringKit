@@ -147,7 +147,9 @@ export const Parallax = memo(forwardRef<HTMLDivElement, ParallaxProps>(
       }
 
       const observer = new IntersectionObserver(
-        ([entry]) => {
+        (entries) => {
+          // Entries are batched oldest -> newest: the latest one is the current state
+          const entry = entries[entries.length - 1]
           setIsInView(entry?.isIntersecting ?? false)
         },
         { rootMargin }
@@ -175,9 +177,9 @@ export const Parallax = memo(forwardRef<HTMLDivElement, ParallaxProps>(
         const windowHeight = window.innerHeight
         const windowWidth = window.innerWidth
 
-        // Calculate position relative to viewport center
-        const centerY = (rect.top + rect.height / 2 - windowHeight / 2) / windowHeight
-        const centerX = (rect.left + rect.width / 2 - windowWidth / 2) / windowWidth
+        // Calculate position relative to viewport center (a zero-size viewport has none)
+        const centerY = windowHeight > 0 ? (rect.top + rect.height / 2 - windowHeight / 2) / windowHeight : 0
+        const centerX = windowWidth > 0 ? (rect.left + rect.width / 2 - windowWidth / 2) / windowWidth : 0
 
         if (direction === 'vertical' || direction === 'both') {
           const yOffset = centerY * speed * 200 + offsetY
@@ -357,9 +359,9 @@ export const MouseParallax = memo(forwardRef<HTMLDivElement, MouseParallaxProps>
           height = window.innerHeight
         }
 
-        // Normalize to -1 to 1 range
-        const normalizedX = (centerX / width) * 2
-        const normalizedY = (centerY / height) * 2
+        // Normalize to -1 to 1 range (a zero-size area has no pointer position)
+        const normalizedX = width > 0 ? (centerX / width) * 2 : 0
+        const normalizedY = height > 0 ? (centerY / height) * 2 : 0
 
         const factor = inverted ? -1 : 1
         const offsetX = normalizedX * strength * factor
@@ -533,8 +535,9 @@ export const TiltCard = memo(forwardRef<HTMLDivElement, TiltCardProps>(
         if (!isActive || !innerRef.current) return
 
         const rect = innerRef.current.getBoundingClientRect()
-        const centerX = (e.clientX - rect.left) / rect.width - 0.5
-        const centerY = (e.clientY - rect.top) / rect.height - 0.5
+        // A zero-size card has no pointer position: treat it as centred
+        const centerX = rect.width > 0 ? (e.clientX - rect.left) / rect.width - 0.5 : 0
+        const centerY = rect.height > 0 ? (e.clientY - rect.top) / rect.height - 0.5 : 0
 
         const tiltX = centerY * maxTilt * -1 // Invert for natural feel
         const tiltY = centerX * maxTilt

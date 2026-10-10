@@ -134,15 +134,20 @@ export function keyframes(
     typeof duration === 'number' && Number.isFinite(duration) && duration > 0 ? duration : 0
   const timed = totalDuration > 0
 
+  // A non-finite position (NaN/Infinity) can never be reached by the timed
+  // schedule, so it is treated as unspecified (evenly distributed) instead
+  const finiteAt = (at: number | undefined): number | undefined =>
+    typeof at === 'number' && Number.isFinite(at) ? at : undefined
+
   // Normalize keyframes
   const normalizedKeyframes = values.map((v, i): Keyframe<number> => {
     if (typeof v === 'number') {
       return {
         value: v,
-        at: times?.[i],
+        at: finiteAt(times?.[i]),
       }
     }
-    return { ...v, at: v.at ?? times?.[i] }
+    return { ...v, at: finiteAt(v.at) ?? finiteAt(times?.[i]) }
   })
 
   // Fill in missing time positions (evenly distributed)
@@ -178,12 +183,24 @@ export function keyframes(
   // Set when pause() interrupts a transition before it settled, so resume()
   // finishes that keyframe instead of skipping to the next one.
   let interrupted = false
+  // True while onKeyframe runs for a transition whose spring has not started
+  // yet, so a pause() from inside the callback still counts as interrupting it
+  let enteringKeyframe = false
   // Timed mode: playback time (ms, time-scaled, excludes pauses) and the
   // timestamp it was last advanced at (null while not playing)
   let elapsed = 0
   let lastFrameTime: number | null = null
 
   const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now())
+
+  /** Run a user callback; a throw must not abort the playback loop */
+  const safely = (name: string, callback: () => void) => {
+    try {
+      callback()
+    } catch (error) {
+      console.error(`[SpringKit] Error in keyframes ${name} callback:`, error)
+    }
+  }
 
   /** Advance the timed-mode playback clock to `timestamp` */
   const advanceClock = (timestamp: number) => {
@@ -311,7 +328,13 @@ export function keyframes(
     const targetKf = normalizedKeyframes[currentIndex]
     if (!targetKf) return false
 
-    onKeyframe?.(currentIndex)
+    if (onKeyframe) {
+      enteringKeyframe = true
+      safely('onKeyframe', () => onKeyframe(currentIndex))
+      enteringKeyframe = false
+    }
+    // The callback may have paused, stopped or destroyed the animation
+    if (destroyed || isPaused || id !== runId) return false
 
     await transitionTo(targetKf, id)
 
@@ -334,7 +357,7 @@ export function keyframes(
 
     if (id === runId && !isPaused && !destroyed) {
       isPlaying = false
-      onComplete?.()
+      if (onComplete) safely('onComplete', onComplete)
     }
   }
 
@@ -358,18 +381,19 @@ export function keyframes(
       lastFrameTime = now()
 
       createSpring()
-      onKeyframe?.(currentIndex)
+      if (onKeyframe) safely('onKeyframe', () => onKeyframe(currentIndex))
 
       // Animate through all keyframes
       await run(id)
     },
 
     pause: () => {
-      if (destroyed) return
-      if (isPlaying) {
-        // A transition still in flight must be finished on resume
-        interrupted = spring?.isAnimating() ?? false
-      }
+      // Only a playing animation can be paused; pausing an idle or completed one
+      // would arm resume() to replay phantom keyframes and fire onComplete again
+      if (destroyed || !isPlaying) return
+      // A transition still in flight (or about to start from inside its
+      // onKeyframe callback) must be finished on resume
+      interrupted = (spring?.isAnimating() ?? false) || enteringKeyframe
       isPaused = true
       isPlaying = false
       runId++
@@ -417,6 +441,8 @@ export function keyframes(
     isPlaying: () => isPlaying,
 
     jumpTo: (index: number) => {
+      // A destroyed animation stays inert; NaN/fractional indices don't name a keyframe
+      if (destroyed || !Number.isInteger(index)) return
       if (index < 0 || index >= normalizedKeyframes.length) return
 
       currentIndex = index
@@ -429,8 +455,8 @@ export function keyframes(
         spring.jump(targetValue)
       }
 
-      onUpdate?.(targetValue)
-      onKeyframe?.(index)
+      if (onUpdate) safely('onUpdate', () => onUpdate(targetValue))
+      if (onKeyframe) safely('onKeyframe', () => onKeyframe(index))
     },
 
     destroy: () => {
