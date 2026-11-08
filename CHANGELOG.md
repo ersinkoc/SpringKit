@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - API support/compatibility/architecture documentation and compiled canonical examples.
 
 ### Tooling and website
+- Emit static HTML entries for documentation/demo routes so direct links and shared presets open on GitHub Pages; validate route entries before deployment.
 - Upgrade the test/build dependency chain and apply scoped patched esbuild/minimatch resolutions; retain the compatible DOM test environment.
 - Validate the packed package before publishing; configure browser, consumer and website checks in CI.
 - Lazy-load documentation/home routes, add mobile documentation navigation and accessible menu state, and expose shareable/native preset JSON exports.

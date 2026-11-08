@@ -64,6 +64,7 @@ jobs:
       - run: npm ci --prefix website
       - run: npm run typecheck --prefix website
       - run: npm run build --prefix website
+      - run: npm run test:routes --prefix website
 
   consumers:
     needs: check

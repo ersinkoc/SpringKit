@@ -6,7 +6,8 @@
   "scripts": {
     "copy:springkit": "node scripts/copy-springkit.cjs",
     "dev": "npm run copy:springkit && vite",
-    "build": "npm run copy:springkit && vite build",
+    "build": "npm run copy:springkit && vite build && node scripts/static-routes.mjs",
+    "test:routes": "node --test tests/static-routes.test.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit"
   },

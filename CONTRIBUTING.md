@@ -23,4 +23,6 @@ Run `npm run metrics` to regenerate bundle sizes, the README table and machine-s
 
 Website `dev` and `build` always copy the current library build into the tracked public bundles. Build the library first; do not edit generated public bundles. Use `npm run test:consumers:web` after changing exports, client boundaries or bundling.
 
+The website build emits static entries from the app routes and documentation navigation for GitHub Pages. Run `npm run test:routes --prefix website` after building; adding a route must preserve direct URLs as well as client-side navigation.
+
 Document public changes in CHANGELOG and the API support table. 2.x keeps legacy method names and time units. A removal, renamed unit or changed default needs a major version and a migration guide. Do not publish or deploy as part of a local cleanup without an explicit release request.
