@@ -114,7 +114,7 @@
     "test:consumers:web": "node scripts/check-consumers.mjs --web",
     "test:published": "node scripts/check-consumers.mjs --registry --web",
     "test:published:provenance": "node scripts/check-consumers.mjs --registry --web --provenance",
-    "test:release": "node --test scripts/verify-published.test.mjs",
+    "test:release": "node --test scripts/verify-published.test.mjs scripts/prepare-release.test.mjs scripts/release-artifacts.test.mjs scripts/verify-site.test.mjs",
     "verify:published": "node scripts/verify-published.mjs",
     "metrics": "npm run size && npm run bench:write",
     "size": "node scripts/size.mjs --write",

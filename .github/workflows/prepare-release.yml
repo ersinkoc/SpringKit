@@ -1,0 +1,55 @@
+name: Start Release
+run-name: Start ${{ inputs.bump }} release
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Version increase (release notes come from CHANGELOG Unreleased)
+        type: choice
+        required: true
+        default: patch
+        options: [patch, minor, major]
+
+permissions:
+  contents: read
+
+# Hold preparation until its tagged pipeline finishes. The tagged workflow has
+# a different concurrency group, so waiting here cannot deadlock publication.
+concurrency:
+  group: springkit-release-preparation
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Check release preparation behavior
+        run: node --test scripts/prepare-release.test.mjs
+      - name: Configure release commit author
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+      - name: Increase version and atomically push main and tag
+        id: prepare
+        run: node scripts/prepare-release.mjs
+        env:
+          RELEASE_BUMP: ${{ inputs.bump }}
+      - name: Run and await the tagged release pipeline
+        run: node scripts/dispatch-release.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.prepare.outputs.tag }}
+          RELEASE_COMMIT: ${{ steps.prepare.outputs.commit }}

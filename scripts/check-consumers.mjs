@@ -41,7 +41,7 @@ try {
     mkdirSync(cwd)
     writeFileSync(join(cwd, 'package.json'), JSON.stringify({ private: true, type: 'module' }))
     const dependencies = version ? [tarball, `react@${version}`, `react-dom@${version}`, `@types/react@${version}`, `@types/react-dom@${version}`, 'typescript@^5.9.3'] : [tarball]
-    run([npmCli, 'install', '--ignore-scripts', '--no-audit', '--no-fund', ...dependencies], cwd)
+    run([npmCli, 'install', '--ignore-scripts', '--no-audit', '--no-fund', ...(registry ? ['--prefer-online'] : []), ...dependencies], cwd)
     if (registry) {
       const installed = JSON.parse(readFileSync(join(cwd, 'package-lock.json'), 'utf8')).packages[`node_modules/${packageInfo.name}`]
       if (installed?.version !== packageInfo.version || !installed.resolved?.startsWith('https://registry.npmjs.org/')) {

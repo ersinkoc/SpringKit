@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Release automation
+- Start patch, minor or major releases with one GitHub Actions request; update package/lock/metrics versions and move Unreleased notes into the new release entry automatically.
+- Validate the exact release tag with the full CI matrix before token-free npm publication, cryptographic provenance verification, GitHub Release creation and GitHub Pages deployment.
+- Verify the public site's version, routes and every script/style asset against the release build; reuse the same version, tag and assets when a release request is retried.
+- Refresh registry metadata for published-package consumers instead of accepting an older local npm cache entry.
+
 ## [2.1.2] - 2026-11-08
 
 ### Release automation

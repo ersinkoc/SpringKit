@@ -1,4 +1,5 @@
 name: Release
+run-name: Release ${{ github.ref_name }}${{ inputs.request_id && format(' · request {0}', inputs.request_id) || '' }}
 
 # npm Trusted Publisher: ersinkoc/SpringKit, release.yml, direct publish allowed.
 # Manual retries must select the same version tag, never a branch.
@@ -7,16 +8,50 @@ on:
   push:
     tags: ['v*.*.*']
   workflow_dispatch:
+    inputs:
+      request_id:
+        description: Internal Start Release request (leave empty for a tag retry)
+        type: string
+        default: ''
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: springkit-release-publication
   cancel-in-progress: false
 
 jobs:
+  identity:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Require the current main version and an exact immutable tag
+        run: |
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict'
+          import {readFileSync} from 'node:fs'
+          import {execFileSync} from 'node:child_process'
+          const pkg = JSON.parse(readFileSync('package.json', 'utf8'))
+          assert.equal(process.env.GITHUB_REF, `refs/tags/v${pkg.version}`, 'Start new releases with Start Release on main; retry existing releases on their tag')
+          assert.equal(execFileSync('git', ['rev-parse', 'HEAD'], {encoding:'utf8'}).trim(), process.env.GITHUB_SHA)
+          const main = JSON.parse(execFileSync('git', ['show', 'origin/main:package.json'], {encoding:'utf8'}))
+          assert.equal(main.version, pkg.version, 'An older release must not overwrite the current npm/site release')
+          execFileSync('git', ['merge-base', '--is-ancestor', 'HEAD', 'origin/main'])
+          NODE
+
+  validate:
+    needs: identity
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+
   publish:
+    needs: validate
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -59,9 +94,14 @@ jobs:
 
       - run: npm ci
 
+      - name: Detect an already uploaded matching version on retries
+        id: publication
+        run: node scripts/release-artifacts.mjs exists
+
       # The prepublishOnly lifecycle validates types, lint, build, tests and
       # the packed export/declaration shape BEFORE npm uploads anything.
       - run: npm publish --provenance --access public --registry=https://registry.npmjs.org/
+        if: steps.publication.outputs.published != 'true'
 
   # A failed post-publication check can be rerun without uploading the same
   # immutable npm version again. This job only reads the public registry.
@@ -92,3 +132,30 @@ jobs:
 
       - name: Verify signatures, source binding and clean registry consumers
         run: npm run test:published:provenance
+
+  github-release:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+      - name: Create release notes and verified npm archive assets
+        run: node scripts/release-artifacts.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}
+
+  website:
+    needs: github-release
+    uses: ./.github/workflows/deploy-website.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
