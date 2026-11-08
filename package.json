@@ -1,6 +1,6 @@
 {
   "name": "@oxog/springkit",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Zero-dependency physics-based spring animation library with gesture support",
   "author": "Ersin KOÇ",
   "license": "MIT",
@@ -108,11 +108,14 @@
     "lint:package": "publint --strict && attw --pack .",
     "bench": "node scripts/bench.mjs",
     "bench:write": "node scripts/bench.mjs --write",
-    "prepublishOnly": "npm run typecheck && npm run lint && npm run build && npm run test:all && npm run lint:package && npm run size:check && npm run test:consumers",
+    "prepublishOnly": "npm run typecheck && npm run lint && npm run test:release && npm run build && npm run test:all && npm run lint:package && npm run size:check && npm run test:consumers",
     "test:browser": "vitest run --config vitest.config.browser.mts",
     "test:consumers": "node scripts/check-consumers.mjs",
     "test:consumers:web": "node scripts/check-consumers.mjs --web",
     "test:published": "node scripts/check-consumers.mjs --registry --web",
+    "test:published:provenance": "node scripts/check-consumers.mjs --registry --web --provenance",
+    "test:release": "node --test scripts/verify-published.test.mjs",
+    "verify:published": "node scripts/verify-published.mjs",
     "metrics": "npm run size && npm run bench:write",
     "size": "node scripts/size.mjs --write",
     "size:check": "node scripts/size.mjs --check"

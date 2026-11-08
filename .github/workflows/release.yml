@@ -1,42 +1,70 @@
 name: Release
 
-# Publishes to npm when a version tag (e.g. v2.0.0) is pushed.
-# Authentication: either configure npm "Trusted Publishing" for this
-# repository/workflow on npmjs.com (no secret needed), or add an NPM_TOKEN
-# repository secret (an automation token).
+# npm Trusted Publisher: ersinkoc/SpringKit, release.yml, direct publish allowed.
+# Manual retries must select the same version tag, never a branch.
 
 on:
   push:
     tags: ['v*.*.*']
+  workflow_dispatch:
 
 permissions:
   contents: read
-  id-token: write # npm provenance / trusted publishing
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   publish:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '24'
-          registry-url: 'https://registry.npmjs.org'
-          cache: npm
+          package-manager-cache: false
+
+      - name: Use the reviewed OIDC-capable npm CLI
+        run: npm install --global npm@12.2.2 --registry=https://registry.npmjs.org/
 
       - name: Check that the tag matches package.json
         run: |
+          if [[ "$GITHUB_REF" != refs/tags/* ]]; then
+            echo 'Run releases from a version tag, including manual retries.' >&2
+            exit 1
+          fi
           version="$(node -p "require('./package.json').version")"
           if [ "v$version" != "$GITHUB_REF_NAME" ]; then
             echo "Tag $GITHUB_REF_NAME does not match package.json version $version" >&2
             exit 1
           fi
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+
+      - name: Require token-free OIDC authentication
+        run: |
+          test -n "$ACTIONS_ID_TOKEN_REQUEST_URL"
+          test -n "$ACTIONS_ID_TOKEN_REQUEST_TOKEN"
+          if [ -n "${NODE_AUTH_TOKEN:-}" ] || [ -n "${NPM_TOKEN:-}" ]; then
+            echo 'Release jobs must use npm Trusted Publishing, not stored npm tokens.' >&2
+            exit 1
+          fi
+          printf 'registry=https://registry.npmjs.org/\n' > "$RUNNER_TEMP/springkit-npmrc"
+          echo "NPM_CONFIG_USERCONFIG=$RUNNER_TEMP/springkit-npmrc" >> "$GITHUB_ENV"
 
       - run: npm ci
 
       # The prepublishOnly lifecycle validates types, lint, build, tests and
       # the packed export/declaration shape BEFORE npm uploads anything.
-      - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      - run: npm publish --provenance --access public --registry=https://registry.npmjs.org/
+
+      - name: Verify registry version and provenance availability
+        run: npm run verify:published
+
+      - name: Verify signatures, source binding and clean registry consumers
+        run: npm run test:published:provenance

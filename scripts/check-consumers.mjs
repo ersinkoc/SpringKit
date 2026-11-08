@@ -4,11 +4,14 @@ import { basename, dirname, join, resolve } from 'node:path'
 import { statSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { expectedPublication, verifyAuditedProvenance } from './verify-published.mjs'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const npmCli = process.env.npm_execpath
 const web = process.argv.includes('--web')
 const registry = process.argv.includes('--registry')
+const provenance = process.argv.includes('--provenance')
+if (provenance && !registry) throw new Error('Provenance checks require registry-installed consumers')
 const packageInfo = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 if (!npmCli) throw new Error('Run through npm run test:consumers')
 const run = (args, cwd) => {
@@ -73,6 +76,11 @@ try {
       ${body}
     `)
     run([join(cwd, 'runtime.mjs')], cwd)
+    if (provenance && !version) {
+      const report = JSON.parse(run([npmCli, 'audit', 'signatures', '--json', '--include-attestations'], cwd))
+      verifyAuditedProvenance(report, expectedPublication())
+      console.log('PASS npm cryptographic signatures and provenance bound to the release repository, workflow, tag and commit')
+    }
     if (version) {
       const source = `import * as React from 'react'; import {Animated} from '@oxog/springkit/react'; import {animate, createMotionValue} from '@oxog/springkit'; import {bindStyle} from '@oxog/springkit/dom';
         export const svg = <Animated.svg ref={React.createRef<SVGSVGElement>()} />;

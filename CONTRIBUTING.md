@@ -28,3 +28,7 @@ The website build emits static entries from the app routes and documentation nav
 Document public changes in CHANGELOG and the API support table. 2.x keeps legacy method names and time units. A removal, renamed unit or changed default needs a major version and a migration guide. Do not publish or deploy as part of a local cleanup without an explicit release request.
 
 After an authorized release, run `npm run test:published`. It installs the exact package version from the public npm registry into independent clean projects and checks core, React 18/19, type resolution, Vite and Next; it does not substitute a local tarball.
+
+Automatic releases use the npm Trusted Publisher for `ersinkoc/SpringKit`, workflow filename `release.yml`, with direct `npm publish` permission. The workflow does not consume an npm token secret. The release job obtains short-lived OIDC credentials and emits provenance. Run it from a `v<package version>` tag; manual retries must select that same tag so the signed source identity stays correct. Publisher settings require an interactive npm login and 2FA; a granular token that bypasses 2FA cannot administer them.
+
+`npm run test:release` checks the verification gates. After publication, `npm run verify:published` waits for the expected registry version/provenance and rejects a mismatched source commit. `npm run test:published:provenance` then uses npm's cryptographic signature verifier and checks the verified statement's repository, workflow, version tag, commit and hosted builder before completing clean consumer tests.

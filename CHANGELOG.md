@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.1] - 2026-11-08
+
+### Release automation
+- Publish from GitHub Actions using npm Trusted Publishing and short-lived OIDC credentials, without an npm token fallback.
+- Require a matching version tag and source commit, use a reviewed npm CLI and serialize release attempts.
+- Wait for registry propagation, verify npm signatures and SLSA provenance against the exact repository/workflow/tag/commit, and test clean registry consumers after publication.
+
 ## [2.1.0] - 2026-11-08
 
 ### Fixed
