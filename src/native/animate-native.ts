@@ -53,8 +53,8 @@ const FALLBACK_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)'
  * Animate an element with a spring using the Web Animations API.
  *
  * The spring is compiled to a CSS `linear()` easing ({@link springEasing}),
- * so the browser runs it — on the compositor thread for `transform`,
- * `opacity` and `filter`. Ideal for enter/exit and layout-free motion that
+ * so the browser runs it. Eligible `transform`/`opacity` animations may use
+ * the compositor, depending on browser support. Ideal for layout-free motion that
  * must stay smooth under main-thread load.
  *
  * @example
@@ -85,7 +85,11 @@ export function animateNative(
     // No WAAPI (SSR, very old browsers, some test environments): apply the
     // end state immediately so the UI is still correct.
     applyFinalKeyframe(element, keyframes)
-    onComplete?.()
+    try {
+      onComplete?.()
+    } catch (error) {
+      console.error('[SpringKit]', error)
+    }
     return {
       animation: null,
       duration,
@@ -99,9 +103,13 @@ export function animateNative(
     }
   }
 
+  // Non-finite delays make element.animate() throw a TypeError: treat as 0
+  const startDelay = Math.max(0, delay)
+  const safeDelay = Number.isFinite(startDelay) ? startDelay : 0
+
   const animation = element.animate(keyframes, {
     duration,
-    delay: reduced ? 0 : Math.max(0, delay),
+    delay: reduced ? 0 : safeDelay,
     easing: supportsLinearEasing() ? compiled.easing : FALLBACK_EASING,
     fill: 'both',
   })
@@ -204,7 +212,9 @@ export function animateNative(
       resumed()
     },
     seek: (ms: number) => {
-      animation.currentTime = Math.max(0, delay) + Math.min(Math.max(0, ms), duration)
+      // NaN would make the currentTime setter throw: treat it as the start
+      const target = Number.isNaN(ms) ? 0 : ms
+      animation.currentTime = safeDelay + Math.min(Math.max(0, target), duration)
     },
   }
 }

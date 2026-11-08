@@ -330,7 +330,7 @@ export function createPinchGesture(
   const touches = new Map<number, Point>()
   let scaleSpring: SpringValue | null = null
 
-  const createState = (event: TouchEvent, first = false, last = false): PinchState => {
+  const createState = (event: TouchEvent, first = false, last = false, cancelled = false): PinchState => {
     const touchArray = Array.from(touches.values())
     const p1 = touchArray[0] ?? { x: 0, y: 0 }
     const p2 = touchArray[1] ?? { x: 0, y: 0 }
@@ -342,7 +342,7 @@ export function createPinchGesture(
       last,
       event,
       elapsedTime: performance.now() - startTime,
-      cancelled: false,
+      cancelled,
       scale: currentScale,
       velocity,
       distance: touchArray.length >= 2 ? getDistance(p1, p2) : 0,
@@ -425,7 +425,7 @@ export function createPinchGesture(
     }
   }
 
-  const handleTouchEnd = (e: TouchEvent) => {
+  const handleTouchEnd = (e: TouchEvent, cancelled = false) => {
     for (const touch of Array.from(e.changedTouches)) {
       touches.delete(touch.identifier)
     }
@@ -449,7 +449,7 @@ export function createPinchGesture(
         scaleSpring.set(targetScale)
       }
 
-      onPinchEnd?.(createState(e, false, true))
+      onPinchEnd?.(createState(e, false, true, cancelled))
     } else if (active) {
       // A finger was lifted but two or more remain: the pinching pair may
       // have changed, so continue from the current scale with the remaining
@@ -460,10 +460,14 @@ export function createPinchGesture(
     }
   }
 
+  // A cancelled touch (e.g. the browser took over for scrolling) ends the
+  // gesture as cancelled
+  const handleTouchCancel = (e: TouchEvent) => handleTouchEnd(e, true)
+
   element.addEventListener('touchstart', handleTouchStart, { passive: false })
   element.addEventListener('touchmove', handleTouchMove, { passive: false })
   element.addEventListener('touchend', handleTouchEnd)
-  element.addEventListener('touchcancel', handleTouchEnd)
+  element.addEventListener('touchcancel', handleTouchCancel)
 
   return {
     enable: () => { enabled = true },
@@ -479,7 +483,7 @@ export function createPinchGesture(
       element.removeEventListener('touchstart', handleTouchStart)
       element.removeEventListener('touchmove', handleTouchMove)
       element.removeEventListener('touchend', handleTouchEnd)
-      element.removeEventListener('touchcancel', handleTouchEnd)
+      element.removeEventListener('touchcancel', handleTouchCancel)
       scaleSpring?.destroy()
       scaleSpring = null
       touches.clear()
@@ -527,10 +531,17 @@ export function createRotateGesture(
   // Last raw (wrapped) finger angle and the unwrapped rotation accumulated since start
   let lastRawAngle = 0
   let accumulatedDelta = 0
+  // The rotation threshold has been passed during the current gesture: from
+  // then on the gesture keeps tracking the fingers, even back below it
+  let thresholdPassed = false
+  // The fingers are on the same point, so their angle is undefined: wait for
+  // the first real angle and use it as the reference instead of atan2(0, 0).
+  // 'start' re-measures initialAngle too, 'rebase' only the running angle.
+  let pendingReference: 'start' | 'rebase' | null = null
 
   const touches = new Map<number, Point>()
 
-  const createState = (event: TouchEvent, first = false, last = false): RotateState => {
+  const createState = (event: TouchEvent, first = false, last = false, cancelled = false): RotateState => {
     const touchArray = Array.from(touches.values())
     const p1 = touchArray[0] ?? { x: 0, y: 0 }
     const p2 = touchArray[1] ?? { x: 0, y: 0 }
@@ -542,7 +553,7 @@ export function createRotateGesture(
       last,
       event,
       elapsedTime: performance.now() - startTime,
-      cancelled: false,
+      cancelled,
       angle: currentAngle,
       velocity,
       initialAngle,
@@ -568,6 +579,8 @@ export function createRotateGesture(
       initialAngle = getAngle(p1, p2)
       lastRawAngle = initialAngle
       accumulatedDelta = 0
+      thresholdPassed = false
+      pendingReference = getDistance(p1, p2) === 0 ? 'start' : null
       startTime = performance.now()
       lastTime = startTime
       lastAngle = currentAngle
@@ -595,6 +608,21 @@ export function createRotateGesture(
       const now = performance.now()
       const dt = now - lastTime
 
+      // Fingers on the same point have no angle: skip the sample (and take
+      // the first real angle as the reference) instead of reading it as 0
+      if (getDistance(p1, p2) === 0) {
+        e.preventDefault()
+        return
+      }
+      if (pendingReference) {
+        lastRawAngle = newAngle
+        if (pendingReference === 'start') initialAngle = newAngle
+        pendingReference = null
+        lastTime = now
+        e.preventDefault()
+        return
+      }
+
       // Accumulate the per-move change so wrap-around at ±180° is handled
       // and rotations beyond half a turn keep counting instead of flipping sign
       accumulatedDelta += normalizeAngleDelta(newAngle - lastRawAngle)
@@ -602,7 +630,10 @@ export function createRotateGesture(
       const angleDelta = accumulatedDelta
 
       // Apply threshold
-      if (Math.abs(angleDelta) >= threshold) {
+      if (!thresholdPassed && Math.abs(angleDelta) >= threshold) {
+        thresholdPassed = true
+      }
+      if (thresholdPassed) {
         currentAngle = angleOffset + angleDelta
 
         // Calculate velocity
@@ -617,7 +648,7 @@ export function createRotateGesture(
     }
   }
 
-  const handleTouchEnd = (e: TouchEvent) => {
+  const handleTouchEnd = (e: TouchEvent, cancelled = false) => {
     for (const touch of Array.from(e.changedTouches)) {
       touches.delete(touch.identifier)
     }
@@ -625,19 +656,26 @@ export function createRotateGesture(
     if (active && touches.size < 2) {
       active = false
       angleOffset = currentAngle
-      onRotateEnd?.(createState(e, false, true))
+      onRotateEnd?.(createState(e, false, true, cancelled))
     } else if (active) {
       // A finger was lifted but two or more remain: measure further rotation
       // from the remaining pair's angle (otherwise the angle jumps)
       const touchArray = Array.from(touches.values())
-      lastRawAngle = getAngle(touchArray[0]!, touchArray[1]!)
+      const p1 = touchArray[0]!
+      const p2 = touchArray[1]!
+      lastRawAngle = getAngle(p1, p2)
+      pendingReference = getDistance(p1, p2) === 0 ? 'rebase' : null
     }
   }
+
+  // A cancelled touch (e.g. the browser took over for scrolling) ends the
+  // gesture as cancelled
+  const handleTouchCancel = (e: TouchEvent) => handleTouchEnd(e, true)
 
   element.addEventListener('touchstart', handleTouchStart, { passive: false })
   element.addEventListener('touchmove', handleTouchMove, { passive: false })
   element.addEventListener('touchend', handleTouchEnd)
-  element.addEventListener('touchcancel', handleTouchEnd)
+  element.addEventListener('touchcancel', handleTouchCancel)
 
   return {
     enable: () => { enabled = true },
@@ -648,7 +686,7 @@ export function createRotateGesture(
       element.removeEventListener('touchstart', handleTouchStart)
       element.removeEventListener('touchmove', handleTouchMove)
       element.removeEventListener('touchend', handleTouchEnd)
-      element.removeEventListener('touchcancel', handleTouchEnd)
+      element.removeEventListener('touchcancel', handleTouchCancel)
       touches.clear()
     },
   }
@@ -749,14 +787,15 @@ export function createSwipeGesture(
     const meetsVelocityY = velY >= velocityThreshold && absY >= minDistance
 
     // Determine primary direction based on axis constraint
+    // A direction needs real travel along its axis (a tap has none)
     if (axis === 'x' || (axis === 'both' && absX > absY)) {
-      if ((meetsDistanceX || meetsVelocityX)) {
+      if (absX > 0 && (meetsDistanceX || meetsVelocityX)) {
         return movement.x > 0 ? 'right' : 'left'
       }
     }
 
     if (axis === 'y' || (axis === 'both' && absY > absX)) {
-      if ((meetsDistanceY || meetsVelocityY)) {
+      if (absY > 0 && (meetsDistanceY || meetsVelocityY)) {
         return movement.y > 0 ? 'down' : 'up'
       }
     }
@@ -940,6 +979,12 @@ export function createLongPressGesture(
   let startTime = 0
   let timerId: ReturnType<typeof setTimeout> | null = null
   let pointerId: number | null = null
+  // Identifies the current press, so a callback that re-enters the gesture
+  // (disable/destroy/release+press) can't leave a stale press arming a timer
+  let pressSerial = 0
+  // disable() was called during the current press before it triggered: it
+  // ends as cancelled (same rule as the swipe gesture)
+  let cancelledByDisable = false
 
   const createState = (event: PointerEvent, first = false, last = false, cancelled = false): LongPressState => ({
     active,
@@ -961,10 +1006,16 @@ export function createLongPressGesture(
     startTime = performance.now()
     active = true
     triggered = false
+    cancelledByDisable = false
+    const serial = ++pressSerial
 
     capturePointer(element, e.pointerId)
     addPressEndGuards()
     onPressStart?.(createState(e, true, false))
+
+    // onPressStart may have disabled/destroyed the gesture or ended this
+    // press: then the long-press timer must not be armed at all
+    if (!enabled || !active || serial !== pressSerial) return
 
     // Start timer for long press
     timerId = setTimeout(() => {
@@ -1004,7 +1055,7 @@ export function createLongPressGesture(
       timerId = null
     }
 
-    onPressEnd?.(createState(e, false, true, e.type !== 'pointerup'))
+    onPressEnd?.(createState(e, false, true, e.type !== 'pointerup' || cancelledByDisable))
 
     // Safety check: element might be removed from DOM
     try {
@@ -1040,6 +1091,7 @@ export function createLongPressGesture(
     enable: () => { enabled = true },
     disable: () => {
       enabled = false
+      if (active && !triggered) cancelledByDisable = true
       // Clear timer when disabled to prevent callbacks after disable
       if (timerId) {
         clearTimeout(timerId)

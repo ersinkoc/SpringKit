@@ -82,6 +82,7 @@ export function useMorph(
           // Read the latest callback (options captured at creation may be stale)
           optionsRef.current.onProgress?.(p)
         },
+        onComplete: () => optionsRef.current.onComplete?.(),
       }),
     }
   }
@@ -93,6 +94,8 @@ export function useMorph(
     // initialPath changed: the previous controller is no longer used
     if (activeRef.current !== null && activeRef.current !== morph) {
       activeRef.current.destroy()
+      // The new controller starts at progress 0; the state still holds the old one's
+      setProgressState(morph.getProgress())
     }
     activeRef.current = morph
     isMountedRef.current = true
@@ -198,7 +201,12 @@ export function useMorphSequence(
     if (paths.length === 0) return
     isMountedRef.current = true
 
-    const sequence = createMorphSequence(paths, optionsRef.current)
+    // Callbacks read the latest options (the sequence is created once per paths)
+    const sequence = createMorphSequence(paths, {
+      ...optionsRef.current,
+      onProgress: (p) => optionsRef.current.onProgress?.(p),
+      onComplete: () => optionsRef.current.onComplete?.(),
+    })
 
     // Store unsubscribe function to prevent memory leak
     const unsubscribe = sequence.subscribe((newPath) => {
@@ -294,7 +302,10 @@ export function useMorphRef(
           setProgressState(p)
           optionsRef.current.onProgress?.(p)
         },
+        onComplete: () => optionsRef.current.onComplete?.(),
       })
+      // A new controller starts at progress 0 (initialPath changed)
+      setProgressState(0)
 
       // Store unsubscribe function to prevent memory leak
       unsubscribeRef.current = morph.subscribe((path) => {

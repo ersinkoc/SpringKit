@@ -1,9 +1,13 @@
+import { installTestClock, type TestClock } from '../../../src/testing'
 /**
  * Regression tests for useVariants
  */
-import { describe, it, expect } from 'vitest'
-import { render, act } from '@testing-library/react'
+import { describe, it, expect, beforeEach, afterEach } from 'vitest'
+import { render, act, cleanup } from '@testing-library/react'
 import * as React from 'react'
+let clock: TestClock
+beforeEach(() => { clock = installTestClock() })
+afterEach(async () => { cleanup(); await Promise.resolve(); clock.uninstall() })
 import { useVariants } from '../../../src/adapters/react/hooks/useVariants'
 
 const variants = {
@@ -16,7 +20,7 @@ async function runFrames(ms: number) {
   // several short act() scopes so React flushes renders in between
   for (let t = 0; t < ms; t += 50) {
     await act(async () => {
-      await new Promise((r) => setTimeout(r, 50))
+      clock.advance(50)
     })
   }
 }

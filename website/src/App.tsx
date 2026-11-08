@@ -1,18 +1,18 @@
 import { Routes, Route, useLocation } from 'react-router-dom'
 import { lazy, Suspense } from 'react'
-import { Home } from './pages/Home'
-import { GettingStarted } from './docs/GettingStarted'
-import { Migration } from './docs/Migration'
-import { SpringBasics } from './docs/SpringBasics'
-import { Presets } from './docs/Presets'
-import { Interpolation } from './docs/Interpolation'
-import { Gestures } from './docs/Gestures'
-import { Orchestration } from './docs/Orchestration'
-import { AdvancedFeatures } from './docs/AdvancedFeatures'
-import { ApiReference } from './docs/ApiReference'
-import { ReactGuide } from './docs/ReactGuide'
+const Home = lazy(() => import('./pages/Home').then(module => ({ default: module.Home })))
+const GettingStarted = lazy(() => import('./docs/GettingStarted').then(module => ({ default: module.GettingStarted })))
+const Migration = lazy(() => import('./docs/Migration').then(module => ({ default: module.Migration })))
+const SpringBasics = lazy(() => import('./docs/SpringBasics').then(module => ({ default: module.SpringBasics })))
+const Presets = lazy(() => import('./docs/Presets').then(module => ({ default: module.Presets })))
+const Interpolation = lazy(() => import('./docs/Interpolation').then(module => ({ default: module.Interpolation })))
+const Gestures = lazy(() => import('./docs/Gestures').then(module => ({ default: module.Gestures })))
+const Orchestration = lazy(() => import('./docs/Orchestration').then(module => ({ default: module.Orchestration })))
+const AdvancedFeatures = lazy(() => import('./docs/AdvancedFeatures').then(module => ({ default: module.AdvancedFeatures })))
+const ApiReference = lazy(() => import('./docs/ApiReference').then(module => ({ default: module.ApiReference })))
+const ReactGuide = lazy(() => import('./docs/ReactGuide').then(module => ({ default: module.ReactGuide })))
 import { Header } from './components/Header'
-import { Sidebar } from './components/Sidebar'
+import { Sidebar, MobileDocsNavigation } from './components/Sidebar'
 
 // Examples pages - lazy loaded
 const ExamplesIndex = lazy(() => import('./pages/examples/index'))
@@ -49,6 +49,8 @@ function App() {
       <div className="flex">
         {showSidebar && <Sidebar />}
         <main className={`flex-1 min-w-0 ${showSidebar ? 'lg:pl-64' : ''}`}>
+          {showSidebar && <MobileDocsNavigation />}
+          <Suspense fallback={<PageLoader />}>
           <Routes>
             <Route path="/" element={<Home />} />
             <Route path="/docs/getting-started" element={<GettingStarted />} />
@@ -122,7 +124,9 @@ function App() {
                 <ExamplesAll />
               </Suspense>
             } />
+            <Route path="*" element={<div className="p-8"><h1>Page not found</h1><a href="/docs/getting-started">Open the documentation</a></div>} />
           </Routes>
+          </Suspense>
         </main>
       </div>
     </div>

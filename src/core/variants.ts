@@ -1,3 +1,4 @@
+import { writeStyle } from '../dom/style.js'
 /**
  * Variants System - Named animation states with cascading support
  *
@@ -140,6 +141,12 @@ export function getVariant(
     return { values: {}, transition: {} }
   }
 
+  // A name that is only an Object.prototype member ("constructor", "toString",
+  // ...) is a missing variant, not a resolver to call
+  if (!Object.prototype.hasOwnProperty.call(variants, name) && name in Object.prototype) {
+    return { values: {}, transition: {} }
+  }
+
   return resolveVariant(variants[name], custom)
 }
 
@@ -158,6 +165,9 @@ export function mergeVariants(...variants: (Variant | undefined)[]): Variant {
       // Merge transitions
       if (variant.transition) {
         merged.transition = { ...previousTransition, ...variant.transition }
+      } else if (previousTransition !== undefined) {
+        // An explicit `transition: undefined` must not erase earlier transitions
+        merged.transition = previousTransition
       }
     }
   }
@@ -261,33 +271,10 @@ export function applyValuesToElement(element: HTMLElement, values: AnimationValu
     element.style.transform = transform
   }
 
-  // Apply non-transform properties
-  if (values.opacity !== undefined) {
-    element.style.opacity = String(values.opacity)
-  }
-  if (values.backgroundColor !== undefined) {
-    element.style.backgroundColor = values.backgroundColor
-  }
-  if (values.borderRadius !== undefined) {
-    element.style.borderRadius =
-      typeof values.borderRadius === 'number' ? `${values.borderRadius}px` : values.borderRadius
-  }
-  if (values.borderColor !== undefined) {
-    element.style.borderColor = values.borderColor
-  }
-  if (values.boxShadow !== undefined) {
-    element.style.boxShadow = values.boxShadow
-  }
-  if (values.color !== undefined) {
-    element.style.color = values.color
-  }
-  if (values.width !== undefined) {
-    element.style.width =
-      typeof values.width === 'number' ? `${values.width}px` : values.width
-  }
-  if (values.height !== undefined) {
-    element.style.height =
-      typeof values.height === 'number' ? `${values.height}px` : values.height
+  for (const [key, value] of Object.entries(values)) {
+    if ((!isTransformProperty(key) || key === 'transformOrigin') && (typeof value === 'number' || typeof value === 'string')) {
+      writeStyle(element, key, value)
+    }
   }
 }
 
@@ -300,7 +287,10 @@ export function calculateStaggerDelays(
   count: number,
   options: OrchestrationOptions
 ): number[] {
-  const { staggerChildren = 0, staggerDirection = 1, delayChildren = 0 } = options
+  const { staggerDirection = 1 } = options
+  // Non-finite values would put NaN / Infinity in the delays: ignore them
+  const staggerChildren = Number.isFinite(options.staggerChildren) ? options.staggerChildren! : 0
+  const delayChildren = Number.isFinite(options.delayChildren) ? options.delayChildren! : 0
 
   const delays: number[] = []
   for (let i = 0; i < count; i++) {

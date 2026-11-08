@@ -9,6 +9,7 @@ import { useRef, useEffect, useState, useMemo, memo } from 'react'
 import { createSpringValue, delay } from '@oxog/springkit'
 import type { SpringConfig } from '@oxog/springkit'
 import { useStableSpringConfig } from '../utils/config.js'
+import { useShouldReduceMotion } from '../utils/reducedMotion.js'
 
 // ============ Text splitting ============
 
@@ -134,13 +135,35 @@ export const SpringText = memo(function SpringText({
   style,
 }: SpringTextProps) {
   const config = useStableSpringConfig(configProp, DEFAULT_TEXT_CONFIG)
+  const reducedMotion = useShouldReduceMotion()
 
   // Split text during render so the text is present on first paint / SSR
-  const elements = useMemo(() => splitText(children, mode), [children, mode])
-
-  const [animatedValues, setAnimatedValues] = useState<number[]>(() =>
-    new Array<number>(elements.length).fill(animateOnMount ? 0 : 1)
+  // (empty tokens, e.g. around leading/trailing whitespace in "words" mode,
+  // have no content: they must not be animated nor delay the completion)
+  const elements = useMemo(
+    () => splitText(children, mode).filter((part) => part !== ''),
+    [children, mode]
   )
+
+  // Progress per element, tagged with the elements / trigger it belongs to: after
+  // a text or trigger change the first render must not show the previous
+  // progress (or a missing entry) before the effect below resets it
+  const [progressState, setProgress] = useState<{
+    source: string[]
+    trigger: unknown
+    values: number[]
+  }>(() => ({
+    source: elements,
+    trigger,
+    values: new Array<number>(elements.length).fill(animateOnMount ? 0 : 1),
+  }))
+  const triggerChangedSinceProgress = !Object.is(progressState.trigger, trigger)
+  const animatedValues = reducedMotion ? new Array<number>(elements.length).fill(1) :
+    progressState.source === elements && !triggerChangedSinceProgress
+      ? progressState.values
+      : new Array<number>(elements.length).fill(
+          animateOnMount || triggerChangedSinceProgress ? 0 : 1
+        )
 
   // Latest onComplete (an inline callback must not restart the animation)
   const onCompleteRef = useRef(onComplete)
@@ -151,15 +174,18 @@ export const SpringText = memo(function SpringText({
 
   // Create and run animations
   useEffect(() => {
-    const triggerChanged = prevTriggerRef.current !== trigger
+    const triggerChanged = !Object.is(prevTriggerRef.current, trigger)
     prevTriggerRef.current = trigger
     const shouldAnimate = animateOnMount || triggerChanged
 
     if (elements.length === 0) return
 
     // Without animation, show the text in its final state
-    if (!shouldAnimate) {
-      setAnimatedValues(new Array<number>(elements.length).fill(1))
+    if (!shouldAnimate || reducedMotion) {
+      setProgress({ source: elements, trigger, values: new Array<number>(elements.length).fill(1) })
+      if (shouldAnimate && reducedMotion) {
+        try { onCompleteRef.current?.() } catch (error) { console.error('[SpringKit]', error) }
+      }
       return
     }
 
@@ -167,7 +193,7 @@ export const SpringText = memo(function SpringText({
     const cancelDelays = new Set<() => void>()
     let completed = 0
 
-    setAnimatedValues(new Array<number>(elements.length).fill(0))
+    setProgress({ source: elements, trigger, values: new Array<number>(elements.length).fill(0) })
 
     // Create new springs (each completes once: it is set to 1 a single time)
     const springs = elements.map((_, index) =>
@@ -175,10 +201,11 @@ export const SpringText = memo(function SpringText({
         ...config,
         onUpdate: (value) => {
           if (cancelled) return
-          setAnimatedValues((prev) => {
-            const next = [...prev]
-            next[index] = value
-            return next
+          setProgress((prev) => {
+            if (prev.source !== elements) return prev
+            const values = [...prev.values]
+            values[index] = value
+            return { ...prev, values }
           })
         },
         onComplete: () => {
@@ -212,7 +239,7 @@ export const SpringText = memo(function SpringText({
       cancelDelays.forEach((cancel) => cancel())
       springs.forEach((s) => s.destroy())
     }
-  }, [elements, stagger, config, animateOnMount, trigger])
+  }, [elements, stagger, config, animateOnMount, trigger, reducedMotion])
 
   // Calculate transform based on direction
   const getTransform = (progress: number) => {
@@ -327,6 +354,7 @@ export const SpringNumber = memo(function SpringNumber({
   className,
   style,
 }: SpringNumberProps) {
+  const reducedMotion = useShouldReduceMotion()
   const [displayValue, setDisplayValue] = useState(value)
   const springRef = useRef<ReturnType<typeof createSpringValue> | null>(null)
   const lastValueRef = useRef(value)
@@ -346,18 +374,20 @@ export const SpringNumber = memo(function SpringNumber({
 
   // Update spring when value changes
   useEffect(() => {
-    if (springRef.current && value !== lastValueRef.current) {
-      springRef.current.set(value)
+    if (springRef.current && (value !== lastValueRef.current || reducedMotion)) {
+      if (reducedMotion) { springRef.current.jump(value); setDisplayValue(value) }
+      else springRef.current.set(value)
       lastValueRef.current = value
     }
-  }, [value])
+  }, [value, reducedMotion])
 
   const formattedValue = useMemo(() => {
+    const current = reducedMotion ? value : displayValue
     if (format) {
-      return format(displayValue)
+      return format(current)
     }
-    return displayValue.toFixed(decimals)
-  }, [displayValue, decimals, format])
+    return current.toFixed(decimals)
+  }, [displayValue, decimals, format, value, reducedMotion])
 
   return (
     <span className={className} style={style}>
@@ -429,6 +459,7 @@ export const TypeWriter = memo(function TypeWriter({
   className,
   style,
 }: TypeWriterProps) {
+  const reducedMotion = useShouldReduceMotion()
   const [displayText, setDisplayText] = useState('')
   const [showCursor, setShowCursor] = useState(cursor)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
@@ -440,6 +471,11 @@ export const TypeWriter = memo(function TypeWriter({
   onCompleteRef.current = onComplete
 
   useEffect(() => {
+    if (reducedMotion) {
+      setDisplayText(children)
+      try { onCompleteRef.current?.() } catch (error) { console.error('[SpringKit]', error) }
+      return
+    }
     // Type by user-perceived characters so emoji are never cut in half
     const characters = splitCharacters(children)
     let currentIndex = 0
@@ -484,24 +520,24 @@ export const TypeWriter = memo(function TypeWriter({
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current)
     }
-  }, [children, speed, delay, loop, pauseAtEnd, deleteSpeed])
+  }, [children, speed, delay, loop, pauseAtEnd, deleteSpeed, reducedMotion])
 
   // Cursor blinking
   useEffect(() => {
-    if (!cursor) return
+    if (!cursor || reducedMotion) return
 
     const blink = setInterval(() => {
       setShowCursor((prev) => !prev)
     }, 500)
 
     return () => clearInterval(blink)
-  }, [cursor])
+  }, [cursor, reducedMotion])
 
   return (
     <span className={className} style={style}>
-      {displayText}
-      {cursor && (
-        <span style={{ opacity: showCursor ? 1 : 0 }}>{cursorChar}</span>
+      {reducedMotion ? children : displayText}
+      {cursor && !reducedMotion && (
+        <span aria-hidden="true" style={{ opacity: showCursor ? 1 : 0 }}>{cursorChar}</span>
       )}
     </span>
   )

@@ -44,7 +44,10 @@ const NAMED_COLORS: Record<string, number> = {
 
 /** Resolve a CSS color name (case-insensitive) to RGB, or null if unknown */
 export function namedColorToRgb(name: string): { r: number; g: number; b: number } | null {
-  const packed = NAMED_COLORS[name.toLowerCase()]
+  const key = name.toLowerCase()
+  // Own keys only: inherited names such as "constructor" / "__proto__" are not colors
+  if (!Object.prototype.hasOwnProperty.call(NAMED_COLORS, key)) return null
+  const packed = NAMED_COLORS[key]
   if (packed === undefined) return null
   return { r: (packed >> 16) & 0xff, g: (packed >> 8) & 0xff, b: packed & 0xff }
 }

@@ -1,14 +1,20 @@
+import { installTestClock, type TestClock } from '../../../src/testing'
 /**
  * Regression tests for useSprings / useTrail / useSpringState
  */
-import { describe, it, expect, vi } from 'vitest'
-import { render, renderHook, act } from '@testing-library/react'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { render, renderHook, act, cleanup } from '@testing-library/react'
 import * as React from 'react'
+let clock: TestClock
+beforeEach(() => { clock = installTestClock() })
+afterEach(async () => { cleanup(); await Promise.resolve(); clock.uninstall() })
 import { useSprings } from '../../../src/adapters/react/hooks/useSprings'
 import { useTrail } from '../../../src/adapters/react/hooks/useTrail'
 import { useSpringState } from '../../../src/adapters/react/hooks/usePhysics'
 
-const wait = (ms: number) => act(async () => { await new Promise((r) => setTimeout(r, ms)) })
+const wait = async (ms: number) => {
+  for (let t = 0; t < ms; t += 16) await act(async () => clock.advance(Math.min(16, ms - t)))
+}
 
 describe('useSprings', () => {
   it('animates to the target when called without a defaultConfig (inline {} default must not restart springs every render)', async () => {

@@ -270,8 +270,10 @@ export function createLayoutGroup(config: LayoutAnimationConfig = {}): LayoutGro
     if (index !== -1) {
       const entry = group[index]!
 
-      // Store final measurement before removal
-      previousMeasurements.set(id, measureElement(element))
+      // Store final measurement before removal. An element that is already
+      // detached (e.g. removed from the DOM) measures as an empty box at 0,0,
+      // so fall back to its last known box instead
+      previousMeasurements.set(id, element.isConnected ? measureElement(element) : entry.measurement)
 
       // Stop the animation (RAF + spring) and give the element its own
       // inline styles back, in case it stays in the document
@@ -316,12 +318,17 @@ export function createLayoutGroup(config: LayoutAnimationConfig = {}): LayoutGro
       initialValues.borderRadius = from.borderRadius
     }
 
-    entry.spring = createSpringGroup(initialValues, defaultSpring)
+    const spring = createSpringGroup(initialValues, defaultSpring)
+    entry.spring = spring
     entry.isAnimating = true
 
     onAnimationStart?.(entry.id)
 
-    entry.spring.subscribe((values: Record<string, number>) => {
+    // The callback may have destroyed the group or unregistered the element,
+    // which already stopped this spring
+    if (entry.spring !== spring) return
+
+    spring.subscribe((values: Record<string, number>) => {
       applyTransform(entry.element, from, to, values)
     })
 
@@ -345,7 +352,7 @@ export function createLayoutGroup(config: LayoutAnimationConfig = {}): LayoutGro
     // the default spring
     for (const [key, value] of Object.entries(targetValues)) {
       const propertyConfig = transition[key as keyof typeof transition]
-      entry.spring.set({ [key]: value }, propertyConfig ?? {})
+      spring.set({ [key]: value }, propertyConfig ?? {})
     }
 
     // Check for animation completion
@@ -365,7 +372,10 @@ export function createLayoutGroup(config: LayoutAnimationConfig = {}): LayoutGro
 
   const update = (): void => {
     for (const [id, group] of elements) {
-      for (const entry of group) {
+      for (const entry of [...group]) {
+        // A callback may have destroyed the group or unregistered this entry
+        if (elements.get(id) !== group || !group.includes(entry)) continue
+
         let previousMeasurement = previousMeasurements.get(id)
 
         // Interrupting a running animation: getBoundingClientRect includes the
@@ -388,6 +398,8 @@ export function createLayoutGroup(config: LayoutAnimationConfig = {}): LayoutGro
 
           if (hasChanged) {
             animateElement(entry, previousMeasurement, currentMeasurement)
+            // onAnimationStart may have destroyed the group or unregistered the entry
+            if (elements.get(id) !== group || !group.includes(entry)) continue
           }
         }
 

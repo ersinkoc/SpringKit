@@ -14,7 +14,6 @@ import {
   type AnimationValues,
   type VariantTransition,
 } from '@oxog/springkit'
-import { useIsomorphicLayoutEffect } from '../utils/ssr.js'
 import { useAnimatableValues } from '../utils/useAnimatableValues.js'
 import { animatableSignature, type AnimatableValue } from '../utils/animatable.js'
 
@@ -177,26 +176,36 @@ export function useVariants(options: UseVariantsOptions): UseVariantsReturn {
     variants,
     animate,
     initial,
-    custom,
+    custom: customOption,
     inherit = true,
     spring: springConfig,
     onAnimationComplete,
   } = options
 
   const parentContext = useVariantContext()
-  const currentVariantRef = useRef<string | undefined>(undefined)
-  const isAnimatingRef = useRef<boolean>(false)
+  // `custom` set on a VariantProvider reaches the variant functions of its
+  // children unless they pass their own
+  const custom = customOption !== undefined ? customOption : inherit ? parentContext.custom : undefined
 
-  // Variant requested imperatively via setVariant(). It applies until the
-  // `animate` option changes (the prop then takes over again).
+  // Variant requested imperatively via setVariant(). It applies until what
+  // drives the element changes (the `animate` option, or the variant inherited
+  // from the parent) and the declarative state then takes over again. The
+  // driver is compared by content: an inline `animate={{...}}` is a new object
+  // every render.
   const [variantOverride, setVariantOverride] = useState<{
     name: string
-    animate: UseVariantsOptions['animate']
+    driver: string
   } | null>(null)
-  const animateRef = useRef(animate)
-  animateRef.current = animate
+  const driver =
+    (typeof animate === 'string'
+      ? `s:${animate}`
+      : animate && typeof animate === 'object'
+        ? `o:${animatableSignature(toAnimatable(animate))}`
+        : 'u') + `|${inherit ? (parentContext.variant ?? '') : ''}`
+  const driverRef = useRef(driver)
+  driverRef.current = driver
   const overrideName =
-    variantOverride && variantOverride.animate === animate ? variantOverride.name : undefined
+    variantOverride && variantOverride.driver === driver ? variantOverride.name : undefined
 
   // Determine the target variant
   const targetVariant = useMemo(() => {
@@ -267,13 +276,17 @@ export function useVariants(options: UseVariantsOptions): UseVariantsReturn {
     const parentFirst = parentTransition?.when === 'beforeChildren' && parentContext.variant !== undefined
       ? (parentTransition.delay ?? 0) + settleTime(parentTransition.spring ?? DEFAULT_PHYSICS)
       : 0
+    // The element's own `delay` always adds to what the parent orchestrates
+    const ownDelay = transition.delay || 0
     if (index !== undefined && staggerChildren) {
       const count = parentContext.staggerCount
       const position =
         staggerDirection === -1 && count !== undefined ? count - 1 - index : index
-      return parentFirst + position * staggerChildren + (delayChildren || 0)
+      return parentFirst + position * staggerChildren + (delayChildren || 0) + ownDelay
     }
-    return parentFirst + (transition.delay || 0)
+    // No stagger: the parent's `delayChildren` still delays its children
+    const parentDelayChildren = index !== undefined ? parentTransition?.delayChildren || 0 : 0
+    return parentFirst + parentDelayChildren + ownDelay
   }, [parentContext.staggerIndex, parentContext.staggerCount, parentContext.variant, parentTransition, transition])
 
   // Values to animate: every number/string of the variant (colors, '50%',
@@ -312,39 +325,19 @@ export function useVariants(options: UseVariantsOptions): UseVariantsReturn {
   const springTarget = hasDelay
     ? (releasedTarget ?? initialAnimatable)
     : isMounted ? targetAnimatable : initialAnimatable
-  const springValues = useAnimatableValues(springTarget, { stiffness, damping, mass })
-
-  // Track variant changes and detect animation completion. The callback is
-  // read from a ref: an inline `onAnimationComplete` changes every render, and
-  // the animation re-renders every frame, so depending on it would cancel the
-  // completion timer before it could fire.
-  const onAnimationCompleteRef = useRef(onAnimationComplete)
-  onAnimationCompleteRef.current = onAnimationComplete
-  const completedVariantRef = useRef<string | undefined>(undefined)
-
-  useIsomorphicLayoutEffect(() => {
-    if (!targetVariant) return
-    if (targetVariant !== currentVariantRef.current) {
-      currentVariantRef.current = targetVariant
-      completedVariantRef.current = undefined
+  const { values: springValues, isAnimating } = useAnimatableValues(
+    springTarget,
+    { stiffness, damping, mass },
+    () => {
+      // A previous target may finish while a replacement is still delayed.
+      if (targetVariant && animatableSignature(springTarget) === targetSignature) {
+        onAnimationComplete?.(targetVariant)
+      }
     }
-    if (completedVariantRef.current === targetVariant) return
-    isAnimatingRef.current = true
-
-    // Settle time of the spring actually used, from the exact solution, at
-    // 0.1% of the travelled distance
-    const settleDuration = settleTime({ stiffness, damping, mass })
-    const variant = targetVariant
-    // Animation time: follows the time scale and the test clock
-    return delay(staggerDelay + settleDuration, () => {
-      isAnimatingRef.current = false
-      completedVariantRef.current = variant
-      onAnimationCompleteRef.current?.(variant)
-    })
-  }, [targetVariant, staggerDelay, stiffness, damping, mass])
+  )
 
   const setVariant = useCallback((name: string) => {
-    setVariantOverride({ name, animate: animateRef.current })
+    setVariantOverride({ name, driver: driverRef.current })
   }, [])
 
   return {
@@ -353,8 +346,8 @@ export function useVariants(options: UseVariantsOptions): UseVariantsReturn {
       ...springValues,
     },
     setVariant,
-    currentVariant: currentVariantRef.current,
-    isAnimating: isAnimatingRef.current,
+    currentVariant: targetVariant,
+    isAnimating: isAnimating || (hasDelay && animatableSignature(springTarget) !== targetSignature),
   }
 }
 

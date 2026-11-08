@@ -6,6 +6,24 @@ import { PopChild } from './PopChild.js'
 /** Default timeout for exit animations (10 seconds) */
 export const DEFAULT_EXIT_TIMEOUT = 10000
 
+/**
+ * Tracks the exit animations running inside one presence child, so that it is
+ * only removed once all of them have finished (several `Animated` elements can
+ * live in one child: nested, or siblings in a custom component).
+ * @internal
+ */
+export interface PresenceExitScope {
+  /** An element started exiting; the child must wait for it */
+  add(token: object): void
+  /** The element's exit finished: remove the child once none are pending */
+  done(token: object): void
+  /** The element stopped exiting without finishing (re-entered or unmounted) */
+  cancel(token: object): void
+}
+
+/** @internal */
+export const PresenceExitScopeContext = React.createContext<PresenceExitScope | null>(null)
+
 export interface PresenceChildProps {
   /** Unique identifier for this child */
   id: string
@@ -54,6 +72,35 @@ export function PresenceChild({
     onExitCompleteRef.current(presenceIdRef.current)
   }, [])
 
+  const isPresentRef = useRef(isPresent)
+  isPresentRef.current = isPresent
+
+  // Exit animations that are still running in the subtree (see PresenceExitScope)
+  const pendingExitsRef = useRef(new Set<object>())
+  const exitScope = useMemo<PresenceExitScope>(() => {
+    const pending = pendingExitsRef.current
+    return {
+      add: (token) => {
+        pending.add(token)
+      },
+      done: (token) => {
+        pending.delete(token)
+        if (pending.size === 0) safeToRemove()
+      },
+      cancel: (token) => {
+        // A token that finished (or never registered) has nothing to release
+        if (!pending.delete(token) || pending.size > 0) return
+        // The last running exit went away (its element unmounted): nothing will
+        // complete the exit anymore. Checked after the commit, so an effect that
+        // is merely re-run (it re-registers right away) or a re-entered child
+        // does not trigger removal.
+        void Promise.resolve().then(() => {
+          if (!isPresentRef.current && pending.size === 0) safeToRemove()
+        })
+      },
+    }
+  }, [safeToRemove])
+
   // Whether anything in the subtree has read `safeToRemove` (usePresence(),
   // Animated, or a direct PresenceContext consumer). Only such children can
   // animate out; anything else is removed as soon as it starts exiting.
@@ -99,7 +146,9 @@ export function PresenceChild({
 
   return (
     <PresenceContext.Provider value={contextValue}>
-      {popLayout ? <PopChild isPresent={isPresent}>{children}</PopChild> : children}
+      <PresenceExitScopeContext.Provider value={exitScope}>
+        {popLayout ? <PopChild isPresent={isPresent}>{children}</PopChild> : children}
+      </PresenceExitScopeContext.Provider>
     </PresenceContext.Provider>
   )
 }

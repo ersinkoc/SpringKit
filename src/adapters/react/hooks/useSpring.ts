@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useReducer, useRef, useState, useCallback } from 'react'
 import { createSpringGroup } from '@oxog/springkit'
 import type { SpringConfig, SpringGroup } from '@oxog/springkit'
 import { useDestroyOnUnmount } from './useDestroyOnUnmount.js'
@@ -65,6 +65,7 @@ export function useSpring<T extends Record<string, number>>(
   const isMounted = useRef(false)
   const configRef = useRef(config)
   const prevValuesRef = useRef<T>(values)
+  const [, forceRender] = useReducer((n: number) => n + 1, 0)
 
   // Keep config ref updated
   configRef.current = config
@@ -120,6 +121,20 @@ export function useSpring<T extends Record<string, number>>(
     // Only update if values actually changed
     if (!shallowEqual(values, prevValuesRef.current)) {
       prevValuesRef.current = values
+      const current = spring.get() as Record<string, number>
+      const added = Object.keys(values).filter((key) => !(key in current))
+      if (added.length > 0) {
+        // A group has a fixed key set: continue from where the existing keys
+        // are, start the new keys at their target, and re-subscribe (render)
+        const start: Record<string, number> = { ...current }
+        for (const key of added) start[key] = values[key] as number
+        spring.destroy()
+        const next = createSpringGroup(start as T, configRef.current)
+        springRef.current = next
+        next.set(values, configRef.current)
+        forceRender()
+        return
+      }
       spring.set(values, configRef.current)
     }
   })

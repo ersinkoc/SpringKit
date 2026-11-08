@@ -26,7 +26,7 @@ function AdvancedIndex() {
     {
       title: 'Native Springs',
       href: '/docs/advanced/native-springs',
-      desc: 'Spring physics compiled to CSS linear(), run on the compositor, exactly seekable.',
+      desc: 'Spring physics compiled to CSS linear(), with feature-detected browser animation and a seekable solver.',
       icon: Cpu,
     },
     {
@@ -123,7 +123,7 @@ function NativeSpringsDoc() {
           CSS <code>linear()</code> easing. CSS transitions and the Web Animations API can then play
           real spring motion without running JavaScript on every frame. For <code>transform</code>,{' '}
           <code>opacity</code> and <code>filter</code>, browsers run these animations on the
-          compositor thread, so they stay smooth while the main thread is busy rendering or parsing.
+          browser animation engine. Eligible properties can be composited while the main thread is busy; this depends on browser version and rendering conditions.
         </p>
         <p className="text-muted-foreground">
           Use native springs for enter/exit and other fire-and-forget motion. Use{' '}

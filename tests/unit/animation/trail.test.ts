@@ -1,5 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import { createTrail } from '@oxog/springkit'
+import { installTestClock, type TestClock } from '../../../src/testing'
+let clock: TestClock
 
 // Destroy every trail after each test: leftover timers would otherwise fire
 // after the test environment has been torn down
@@ -12,11 +14,12 @@ const makeTrail = (...args: Parameters<typeof createTrail>) => {
 
 describe('createTrail', () => {
   beforeEach(() => {
-    vi.useRealTimers()
+    clock = installTestClock({ timers: true })
   })
 
   afterEach(() => {
     trails.splice(0).forEach((t) => t.destroy())
+    clock.uninstall()
     vi.restoreAllMocks()
   })
 
@@ -150,13 +153,13 @@ describe('createTrail', () => {
       trail.set(100)
 
       // Wait for the updates to propagate
-      await new Promise(resolve => setTimeout(resolve, 50))
+      clock.advance(50)
 
       // Springs should have been updated
       expect(callback).toHaveBeenCalled()
     }, 2000)
 
-    it('should handle delayed updates via setTimeout', async () => {
+    it('should handle delayed updates on the animation clock', async () => {
       // This tests lines 96-99: the setTimeout callback
       const trail = makeTrail(2, { followDelay: 1 })
       const callback = vi.fn()
@@ -168,7 +171,7 @@ describe('createTrail', () => {
       trail.set(50)
 
       // Wait for the setTimeout to execute
-      await new Promise(resolve => setTimeout(resolve, 100))
+      clock.advance(100)
 
       // The setTimeout callback should have executed
       expect(callback).toHaveBeenCalled()
@@ -188,7 +191,7 @@ describe('createTrail', () => {
       trail.set(50)
 
       // Wait for it to complete
-      await new Promise(resolve => setTimeout(resolve, 100))
+      clock.advance(100)
 
       // Should have triggered updates
       expect(callback).toHaveBeenCalled()

@@ -48,11 +48,11 @@ export function getServerReducedMotion(): boolean {
  * function AnimatedComponent() {
  *   const prefersReducedMotion = useReducedMotion()
  *
- *   const config = prefersReducedMotion
- *     ? { duration: 0 } // Instant
- *     : { stiffness: 100, damping: 15 } // Spring
- *
- *   return <Animated.div config={config}>...</Animated.div>
+ *   return (
+ *     <MotionConfig reducedMotion={prefersReducedMotion ? 'always' : 'user'}>
+ *       <Animated.div animate={{ opacity: 1 }}>Content</Animated.div>
+ *     </MotionConfig>
+ *   )
  * }
  * ```
  *
@@ -121,11 +121,10 @@ export function useReducedMotionConfig<T>(configs: {
  * function AnimatedList() {
  *   const shouldAnimate = useShouldAnimate()
  *
- *   return items.map((item, i) => (
+ *   return items.map((item) => (
  *     <Animated.li
  *       initial={shouldAnimate ? { opacity: 0 } : false}
  *       animate={{ opacity: 1 }}
- *       transition={shouldAnimate ? { delay: i * 0.1 } : { duration: 0 }}
  *     >
  *       {item}
  *     </Animated.li>

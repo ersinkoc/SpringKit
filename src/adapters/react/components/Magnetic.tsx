@@ -22,6 +22,15 @@ import { onPointerLeaveWindow } from '../utils/dom.js'
 const DEFAULT_MAGNETIC_CONFIG: SpringConfig = { stiffness: 200, damping: 20 }
 const DEFAULT_CURSOR_CONFIG: SpringConfig = { stiffness: 150, damping: 15 }
 
+/** Run a user callback in isolation: a throw must not unwind React's effect phase */
+function callIsolated(callback: (() => void) | undefined): void {
+  try {
+    callback?.()
+  } catch (e) {
+    console.error('[SpringKit]', e)
+  }
+}
+
 // ============ Magnetic ============
 
 export interface MagneticProps {
@@ -182,7 +191,7 @@ export const Magnetic = memo(forwardRef<HTMLDivElement, MagneticProps>(
 
           if (!isAttractedRef.current) {
             isAttractedRef.current = true
-            onAttractRef.current?.()
+            callIsolated(onAttractRef.current)
           }
         } else {
           // Outside range - return to center
@@ -192,7 +201,7 @@ export const Magnetic = memo(forwardRef<HTMLDivElement, MagneticProps>(
 
           if (isAttractedRef.current) {
             isAttractedRef.current = false
-            onReleaseRef.current?.()
+            callIsolated(onReleaseRef.current)
           }
         }
       },
@@ -206,7 +215,7 @@ export const Magnetic = memo(forwardRef<HTMLDivElement, MagneticProps>(
 
       if (isAttractedRef.current) {
         isAttractedRef.current = false
-        onReleaseRef.current?.()
+        callIsolated(onReleaseRef.current)
       }
     }, [])
 

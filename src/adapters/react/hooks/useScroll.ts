@@ -175,8 +175,9 @@ export function useScroll(options: UseScrollOptions = {}): UseScrollReturn {
       scrollY.jump(position.y)
 
       // Update progress (0-1)
-      scrollXProgress.jump(size.width > 0 ? position.x / size.width : 0)
-      scrollYProgress.jump(size.height > 0 ? position.y / size.height : 0)
+      // (clamped: overscroll / rubber-banding reports positions outside the range)
+      scrollXProgress.jump(size.width > 0 ? clamp01(position.x / size.width) : 0)
+      scrollYProgress.jump(size.height > 0 ? clamp01(position.y / size.height) : 0)
     }
 
     // Target element progress (element visibility in viewport)
@@ -209,7 +210,7 @@ export function useScroll(options: UseScrollOptions = {}): UseScrollReturn {
       const range = startPoint - endPoint
 
       const progress = range !== 0 ? startPoint / range : 0
-      const clampedProgress = Math.max(0, Math.min(1, progress))
+      const clampedProgress = clamp01(progress)
 
       if (axis === 'y') {
         scrollYProgress.jump(clampedProgress)
@@ -278,6 +279,11 @@ export function useScroll(options: UseScrollOptions = {}): UseScrollReturn {
     scrollXProgress: scrollXProgressRef.current!,
     scrollYProgress: scrollYProgressRef.current!,
   }
+}
+
+/** Clamp to 0-1; a non-finite value (e.g. from a malformed offset) becomes 0 */
+function clamp01(value: number): number {
+  return Number.isFinite(value) ? Math.max(0, Math.min(1, value)) : 0
 }
 
 /**

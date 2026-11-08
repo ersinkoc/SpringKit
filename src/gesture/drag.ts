@@ -529,7 +529,7 @@ class DragSpringImpl implements DragSpring {
 
     // Check for snap points first
     if (this.config.snap?.snapOnRelease !== false) {
-      const snapPoint = this.findNearestSnapPoint()
+      const snapPoint = this.findNearestSnapPoint(this.velocity)
       if (snapPoint) {
         // The snap spring starts with the release velocity (continuous motion)
         this.startSnap(snapPoint, this.velocity)
@@ -568,7 +568,7 @@ class DragSpringImpl implements DragSpring {
     this.element.removeEventListener('pointercancel', this.onPointerUp)
   }
 
-  private findNearestSnapPoint(): SnapPoint | null {
+  private findNearestSnapPoint(velocity: { x: number; y: number }): SnapPoint | null {
     const snap = this.config.snap
     if (!snap) return null
 
@@ -577,12 +577,14 @@ class DragSpringImpl implements DragSpring {
       // Guard against division by zero (a 0 cell size disables snapping on that axis)
       const gridX = snap.grid.x === 0 ? this.position.x : Math.round(this.position.x / snap.grid.x) * snap.grid.x
       const gridY = snap.grid.y === 0 ? this.position.y : Math.round(this.position.y / snap.grid.y) * snap.grid.y
-      return { x: gridX, y: gridY }
+      // Like a release, the snap target stays inside the bounds
+      const { left, right, top, bottom } = this.getEffectiveBounds()
+      return { x: clamp(gridX, left, right), y: clamp(gridY, top, bottom) }
     }
 
     // Check snap points
     if (snap.points && snap.points.length > 0) {
-      const velocityMagnitude = Math.sqrt(this.velocity.x ** 2 + this.velocity.y ** 2)
+      const velocityMagnitude = Math.sqrt(velocity.x ** 2 + velocity.y ** 2)
       const threshold = snap.velocityThreshold ?? DEFAULT_SNAP_VELOCITY_THRESHOLD
 
       // Don't snap if moving too fast
@@ -727,6 +729,7 @@ class DragSpringImpl implements DragSpring {
   }
 
   reset(): void {
+    if (this.destroyed) return
     this.stopMomentum()
     this.springX.jump(0)
     this.springY.jump(0)
@@ -1021,7 +1024,8 @@ class DragSpringImpl implements DragSpring {
   }
 
   snapToNearest(): void {
-    const snapPoint = this.findNearestSnapPoint()
+    // The current velocity, not the (stale) release velocity of the last drag
+    const snapPoint = this.findNearestSnapPoint(this.getVelocity())
     if (snapPoint) {
       this.snapTo(snapPoint)
     }

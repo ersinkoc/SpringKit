@@ -121,6 +121,11 @@ export function useAnimate(): UseAnimateReturn {
   const springsRef = useRef<Map<string, ReturnType<typeof createSpringValue>>>(new Map())
   const valuesRef = useRef<Map<string, number>>(new Map())
   const isAnimatingRef = useRef(false)
+  // Number of animate() calls currently running (isAnimating = any running)
+  const activeRunsRef = useRef(0)
+  // Bumped by controls.stop(): runs started before it must not continue
+  // with their remaining keyframes or report completion
+  const stopGenRef = useRef(0)
   const cleanupRef = useRef<(() => void)[]>([])
   // Track RAF IDs and timeouts for proper cleanup
   const rafIdsRef = useRef<Set<number>>(new Set())
@@ -211,6 +216,7 @@ export function useAnimate(): UseAnimateReturn {
 
   const animate: AnimateFunction = useCallback(async (target, options = {}) => {
     const { config = {}, delay = 0, onComplete } = options
+    let running = false
 
     try {
       if (delay > 0) {
@@ -226,6 +232,9 @@ export function useAnimate(): UseAnimateReturn {
       // Check if destroyed during delay
       if (isDestroyedRef.current) return
 
+      const stopGen = stopGenRef.current
+      activeRunsRef.current++
+      running = true
       isAnimatingRef.current = true
 
       const promises: Promise<void>[] = []
@@ -239,8 +248,8 @@ export function useAnimate(): UseAnimateReturn {
         for (const targetValue of targetValues) {
           animationPromise = animationPromise.then(() => {
             return trackedPromise((resolve) => {
-              // Early exit if destroyed
-              if (isDestroyedRef.current) {
+              // Early exit if destroyed or stopped by controls.stop()
+              if (isDestroyedRef.current || stopGenRef.current !== stopGen) {
                 resolve()
                 return
               }
@@ -307,19 +316,27 @@ export function useAnimate(): UseAnimateReturn {
 
       await Promise.all(promises)
 
-      if (!isDestroyedRef.current) {
-        isAnimatingRef.current = false
+      running = false
+      activeRunsRef.current--
+      isAnimatingRef.current = activeRunsRef.current > 0
+
+      if (!isDestroyedRef.current && stopGenRef.current === stopGen) {
         onComplete?.()
       }
     } catch (error) {
       // Log error and ensure animating flag is reset
       console.error('[SpringKit] animate() error:', error)
-      isAnimatingRef.current = false
+      if (running) {
+        running = false
+        activeRunsRef.current--
+      }
+      isAnimatingRef.current = activeRunsRef.current > 0
     }
   }, [applyStyles, trackedPromise])
 
   const controls: AnimationControls = {
     stop: useCallback(() => {
+      stopGenRef.current++
       springsRef.current.forEach((spring) => {
         spring.stop()
       })

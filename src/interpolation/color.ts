@@ -133,7 +133,9 @@ class ColorInterpolationImpl implements ColorInterpolation {
 
     // Calculate interpolation ratio with division by zero protection
     const inputRange = this.input[i]! - this.input[i - 1]!
-    const ratio = inputRange !== 0 ? (value - this.input[i - 1]!) / inputRange : 0
+    const rawRatio = inputRange !== 0 ? (value - this.input[i - 1]!) / inputRange : 0
+    // An infinite segment gives Infinity/Infinity = NaN; treat it as degenerate
+    const ratio = Number.isFinite(rawRatio) ? rawRatio : 0
 
     // Interpolate alpha-premultiplied in the requested color space, so
     // e.g. transparent -> white doesn't pass through gray

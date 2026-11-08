@@ -44,8 +44,13 @@ function sameChannels(a: Record<string, number>, b: Record<string, number>): boo
  */
 export function useAnimatableValues(
   target: Record<string, AnimatableValue>,
-  physics: AnimatablePhysics
-): Record<string, AnimatableValue> {
+  physics: AnimatablePhysics,
+  onComplete?: () => void
+): { values: Record<string, AnimatableValue>; isAnimating: boolean } {
+  const [isAnimating, setIsAnimating] = useState(false)
+  const runRef = useRef(0)
+  const completeRef = useRef(onComplete)
+  completeRef.current = onComplete
   const [state, setState] = useState<State>(() => {
     const values = parseAnimatableRecord(target)
     return { values, channels: channelValuesOf(values, defaultChannelKeysOf) }
@@ -60,6 +65,9 @@ export function useAnimatableValues(
   const mountedRef = useRef(false)
   const physicsRef = useRef(physics)
   physicsRef.current = physics
+  const targetRef = useRef(target)
+  targetRef.current = target
+  const targetSignature = animatableSignature(target)
 
   const show = useCallback((values: Record<string, ParsedValue>, channels: Record<string, number>) => {
     const shown = shownRef.current
@@ -109,9 +117,11 @@ export function useAnimatableValues(
   )
 
   useEffect(() => {
+    const target = targetRef.current
     const signature = animatableSignature(target)
     if (signature === signatureRef.current) return
     signatureRef.current = signature
+    const run = ++runRef.current
 
     const next = parseAnimatableRecord(target)
     const plan = planTransition(appliedRef.current, next, defaultChannelKeysOf, false)
@@ -127,10 +137,16 @@ export function useAnimatableValues(
         spring.set(plan.set, { stiffness, damping, mass })
       }
     }
+    setIsAnimating(spring?.isAnimating() ?? false)
+    void (spring?.finished ?? Promise.resolve()).then(() => {
+      if (!mountedRef.current || runRef.current !== run) return
+      setIsAnimating(false)
+      completeRef.current?.()
+    })
     if (plan.structural || hasKeys(plan.jump)) {
       show(next, spring ? spring.get() : {})
     }
-  })
+  }, [targetSignature, ensureGroup, show])
 
-  return composeAnimatableRecord(state.values, state.channels, defaultChannelKeysOf)
+  return { values: composeAnimatableRecord(state.values, state.channels, defaultChannelKeysOf), isAnimating }
 }

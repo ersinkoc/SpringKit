@@ -60,6 +60,19 @@ interface ChildMap {
 }
 
 /**
+ * Whether `map` has `key` itself. A plain `key in map` also matches inherited
+ * names such as "constructor" or "toString".
+ */
+function hasKey(map: ChildMap, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(map, key)
+}
+
+/** A map without a prototype, so keys like "__proto__" are ordinary entries */
+function createChildMap(): ChildMap {
+  return Object.create(null) as ChildMap
+}
+
+/**
  * Get unique key from React element
  */
 function getChildKey(child: React.ReactElement): string {
@@ -70,7 +83,7 @@ function getChildKey(child: React.ReactElement): string {
  * Convert children array to keyed map
  */
 function getChildrenMap(children: React.ReactNode): ChildMap {
-  const map: ChildMap = {}
+  const map = createChildMap()
 
   Children.forEach(children, (child) => {
     if (isValidElement(child)) {
@@ -188,16 +201,16 @@ export function AnimatePresence({
   // Derive the exiting set during render so that a removed child stays mounted in
   // the very render it is removed in (detecting removals in an effect would unmount
   // and remount it, losing its state). Children that were re-added stop exiting.
-  const derivedExiting: ChildMap = {}
+  const derivedExiting = createChildMap()
   for (const key in exitingChildren) {
     const child = exitingChildren[key]
-    if (child && !(key in currentChildren)) derivedExiting[key] = child
+    if (child && !hasKey(currentChildren, key)) derivedExiting[key] = child
   }
   for (const key in prevChildrenRef.current) {
     const child = prevChildrenRef.current[key]
     // Only children that were actually rendered can exit (in 'wait' mode an
     // entering child may never have been mounted)
-    if (child && !(key in currentChildren) && prevOrder.includes(key)) {
+    if (child && !hasKey(currentChildren, key) && prevOrder.includes(key)) {
       derivedExiting[key] = child
     }
   }
@@ -251,14 +264,14 @@ export function AnimatePresence({
   // Handle exit completion. Stable identity so PresenceChild's fallback timer is
   // not reset by re-renders; duplicate or stale calls are ignored.
   const handleExitComplete = useCallback((key: string) => {
-    if (!(key in exitingRef.current)) return
+    if (!hasKey(exitingRef.current, key)) return
 
     const next = { ...exitingRef.current }
     delete next[key]
     exitingRef.current = next
 
     setExitingChildren((prev) => {
-      if (!(key in prev)) return prev
+      if (!hasKey(prev, key)) return prev
       const updated = { ...prev }
       delete updated[key]
       return updated

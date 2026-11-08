@@ -1,5 +1,5 @@
 import * as React from 'react'
-import { createContext, useContext, useState, useEffect, useMemo } from 'react'
+import { createContext, useContext, useState, useEffect, useMemo, useRef } from 'react'
 
 // ============ Feature Definitions ============
 
@@ -71,6 +71,14 @@ export function useMotionFeature(feature: keyof MotionFeatures): boolean {
   return isLoaded && (features[feature] ?? false)
 }
 
+const EMPTY_FEATURES: FeatureBundle = {}
+
+const FEATURE_KEYS: ReadonlyArray<keyof MotionFeatures> = ['animations', 'gestures', 'layout', 'svg', 'scroll']
+
+function sameFeatures(a: FeatureBundle, b: FeatureBundle): boolean {
+  return a === b || FEATURE_KEYS.every((key) => (a[key] ?? false) === (b[key] ?? false))
+}
+
 // ============ LazyMotion Component ============
 
 export interface LazyMotionProps {
@@ -87,6 +95,7 @@ export interface LazyMotionProps {
   /**
    * Exposed to descendants as `useLazyMotion().isStrict`; it enforces nothing
    * by itself (no-op, kept for API compatibility)
+   * @deprecated This flag does not enforce feature usage. Use MotionFeatureGuard explicitly.
    */
   strict?: boolean
 
@@ -144,46 +153,53 @@ export function LazyMotion({
   strict = false,
   children,
 }: LazyMotionProps): React.ReactElement {
-  const [loadedFeatures, setLoadedFeatures] = useState<FeatureBundle | null>(
-    typeof features === 'function' ? null : features
-  )
-  const [isLoaded, setIsLoaded] = useState(typeof features !== 'function')
+  const isAsync = typeof features === 'function'
+  const loadKey = useMemo(() => ({ features }), [features])
+  const [asyncResult, setAsyncResult] = useState<{ key: object; features: FeatureBundle } | null>(null)
+
+  // A plain bundle is used as-is in the same render (no state/effect round trip,
+  // so consumers never commit with the previous bundle). Inline bundles are new
+  // objects every render: keep the previous identity while the flags are equal.
+  const syncRef = useRef<FeatureBundle>(EMPTY_FEATURES)
+  if (!isAsync && !sameFeatures(syncRef.current, features)) {
+    syncRef.current = features
+  }
 
   // Load async features
   useEffect(() => {
-    if (typeof features !== 'function') {
-      setLoadedFeatures(features)
-      setIsLoaded(true)
-      return
-    }
+    if (typeof features !== 'function') return
 
     // Ignore results of a loader that was superseded or unmounted, so a slow
     // earlier loader can't overwrite the features of a newer one
     let cancelled = false
-    features().then(
+    // The promise executor also turns a loader that throws synchronously into a
+    // rejection, so it degrades like any other failed load
+    new Promise<FeatureBundle>((resolve) => resolve(features())).then(
       (loaded) => {
         if (cancelled) return
-        setLoadedFeatures(loaded)
-        setIsLoaded(true)
+        setAsyncResult({ key: loadKey, features: loaded })
       },
       (error: unknown) => {
         if (cancelled) return
         console.error('[SpringKit] LazyMotion: failed to load features', error)
         // Render children without optional features instead of nothing forever
-        setLoadedFeatures({})
-        setIsLoaded(true)
+        setAsyncResult({ key: loadKey, features: {} })
       }
     )
     return () => {
       cancelled = true
     }
-  }, [features])
+  }, [features, loadKey])
+
+  const loaded = asyncResult?.key === loadKey
+  const resolvedFeatures = isAsync ? loaded ? asyncResult.features : EMPTY_FEATURES : syncRef.current
+  const isLoaded = !isAsync || loaded
 
   const contextValue = useMemo<LazyMotionContextValue>(() => ({
-    features: loadedFeatures ?? {},
+    features: resolvedFeatures,
     isStrict: strict,
     isLoaded,
-  }), [loadedFeatures, strict, isLoaded])
+  }), [resolvedFeatures, strict, isLoaded])
 
   // Children always render, also while async features load: the content must be
   // part of the server-rendered HTML (SSR) and of the first client render.

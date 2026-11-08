@@ -91,6 +91,17 @@ function seededRandom(seed: number): () => number {
 }
 
 /**
+ * Coerce a `columns` option to a usable whole number of columns (>= 1).
+ * 0, negative and NaN fall back to a single column and Infinity to a single
+ * row, instead of producing NaN / negative delays or fractional cell indices.
+ */
+function normalizeColumns(columns: number, count: number): number {
+  if (!(columns >= 1)) return 1
+  if (columns === Infinity) return count >= 1 ? Math.ceil(count) : 1
+  return Math.floor(columns)
+}
+
+/**
  * Calculate distance from origin in a grid
  */
 function gridDistance(
@@ -224,12 +235,12 @@ export function edgeStagger(config: StaggerPatternConfig): number[] {
 export function gridStagger(config: GridStaggerConfig): number[] {
   const {
     count,
-    columns,
     origin = 'top-left',
     direction = 'diagonal',
     delay = 100,
     easing = (t) => t,
   } = config
+  const columns = normalizeColumns(config.columns, count)
 
   const rows = Math.ceil(count / columns)
   const delays: number[] = []
@@ -354,12 +365,12 @@ export function waveStagger(config: WaveStaggerConfig): number[] {
 export function spiralStagger(config: SpiralStaggerConfig): number[] {
   const {
     count,
-    columns,
     direction = 'clockwise',
     startFrom = 'edge',
     delay = 100,
     easing = (t) => t,
   } = config
+  const columns = normalizeColumns(config.columns, count)
 
   const rows = Math.ceil(count / columns)
   const spiral: number[] = []
@@ -429,7 +440,9 @@ export function spiralStagger(config: SpiralStaggerConfig): number[] {
   }
 
   // Create delay array
-  const delays = new Array(count).fill(0)
+  // Same length as the sibling patterns (they loop `i < count`); `new Array()`
+  // would throw a RangeError for negative, NaN or fractional counts
+  const delays: number[] = new Array(count > 0 ? Math.ceil(count) : 0).fill(0)
   const maxDelay = delay * (spiral.length - 1)
 
   spiral.forEach((originalIndex, spiralPosition) => {

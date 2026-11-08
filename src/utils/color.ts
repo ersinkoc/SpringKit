@@ -78,8 +78,9 @@ export function parseColorRGBA(color: string): RGBA {
     }
 
     if (fn.startsWith('rgb')) {
+      // CSS clamps rgb() channels to 0-255 at parse time
       const channel = (value: string, percent: string | undefined): number =>
-        Math.round(percent ? (parseFloat(value) / 100) * 255 : parseFloat(value))
+        Math.max(0, Math.min(255, Math.round(percent ? (parseFloat(value) / 100) * 255 : parseFloat(value))))
       return {
         r: channel(match[2]!, match[3] === '%' ? '%' : undefined),
         g: channel(match[4]!, match[5]),

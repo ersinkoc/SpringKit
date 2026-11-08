@@ -3,13 +3,15 @@
   "compilerOptions": {
     "noEmit": true,
     "rootDir": ".",
-    "types": ["vitest/globals", "@testing-library/jest-dom"],
+    "types": ["node", "vitest/globals", "@testing-library/jest-dom/vitest"],
+    "lib": ["ES2022", "DOM"],
     "paths": {
       "@oxog/springkit": ["./src/index.ts"],
+      "@oxog/springkit/dom": ["./src/dom/index.ts"],
       "@oxog/springkit/react": ["./src/adapters/react/index.ts"],
       "@oxog/springkit/testing": ["./src/testing/index.ts"]
     }
   },
-  "include": ["src/**/*", "tests/**/*"],
+  "include": ["src/**/*", "tests/**/*", "docs/examples/**/*"],
   "exclude": ["node_modules", "dist", "website"]
 }

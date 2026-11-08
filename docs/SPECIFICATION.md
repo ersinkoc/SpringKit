@@ -1,5 +1,7 @@
 # SpringKit - Package Specification
 
+> Historical 1.x design reference. This file is not the current runtime contract. See [API support](API_SUPPORT.md), [architecture](ARCHITECTURE.md) and [compatibility](COMPATIBILITY.md).
+
 ## 1. Package Identity
 
 | Field | Value |

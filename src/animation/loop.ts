@@ -374,7 +374,17 @@ class AnimationLoop {
             console.error('[SpringKit] Animation update error:', e)
           }
 
-          if (animation.isComplete() && this.animations.delete(animation)) {
+          // isComplete() is user code too: if it throws, the animation stays
+          // in the loop (like a throwing update()) instead of the exception
+          // escaping tick() and leaving the loop running with no frame
+          let complete = false
+          try {
+            complete = animation.isComplete()
+          } catch (e) {
+            console.error('[SpringKit] Animation isComplete error:', e)
+          }
+
+          if (complete && this.animations.delete(animation)) {
             this.idMap.delete(animation)
             // Matters for a nested tick whose outer snapshot holds it too
             removed.add(animation)

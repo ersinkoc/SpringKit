@@ -7,12 +7,19 @@
 
 import { createSpringValue, type SpringValue } from '../core/spring-value.js'
 import { globalLoop } from './loop.js'
+import { readStyle, writeStyle } from '../dom/style.js'
+import { parseAnimatableValue, composeAnimatableValue, type ParsedValue } from '../dom/values.js'
+import { createTweenValue, type TimedValue } from './tween-value.js'
 
 export interface AnimateTarget {
   [property: string]: number | string | number[] | string[]
 }
 
-export interface AnimateOptions {
+export type AnimatedTargetValues<T extends AnimateTarget> = {
+  [K in keyof T]: T[K] extends number | number[] ? number : T[K] extends string | string[] ? string : number | string
+}
+
+export interface AnimateOptions<Values = Record<string, number>> {
   /** Spring stiffness */
   stiffness?: number
   /** Spring damping */
@@ -21,12 +28,12 @@ export interface AnimateOptions {
   mass?: number
   /** Delay before animation starts (ms of animation time: follows the time scale) */
   delay?: number
-  /** Duration hint for non-spring animations */
+  /** Total duration in milliseconds; when set, uses timed interpolation instead of a spring. */
   duration?: number
   /** Ease function for non-spring animations */
   ease?: (t: number) => number
   /** Called on each frame with current values */
-  onUpdate?: (values: Record<string, number>) => void
+  onUpdate?(values: Values): void
   /** Called when animation completes */
   onComplete?: () => void
 }
@@ -46,137 +53,12 @@ export interface AnimateControls {
   finished: Promise<void>
 }
 
-// Transform properties that should be combined
-const transformProperties = new Set([
-  'x', 'y', 'z',
-  'scale', 'scaleX', 'scaleY', 'scaleZ',
-  'rotate', 'rotateX', 'rotateY', 'rotateZ',
-  'skew', 'skewX', 'skewY',
-])
-
-// Properties that need 'px' suffix
-const pxProperties = new Set([
-  'x', 'y', 'z',
-  'width', 'height',
-  'top', 'right', 'bottom', 'left',
-  'padding', 'paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft',
-  'margin', 'marginTop', 'marginRight', 'marginBottom', 'marginLeft',
-  'borderWidth', 'borderRadius',
-  'fontSize', 'letterSpacing', 'lineHeight',
-])
-
-/**
- * Last applied transform values per element. CSS transforms are a single
- * property, so without this a second animate() call (e.g. { scale }) would
- * wipe transforms set by a previous one (e.g. { x }), and transform
- * properties would always restart from their default instead of their
- * current value (the computed matrix is not parsed).
- */
-const elementTransforms = new WeakMap<Element, Map<string, number>>()
-
-/**
- * Per element: property -> releases it from the animate() call currently
- * animating it. The latest call owns a property; otherwise an earlier call
- * still in flight would keep writing it and, if it settled last, win.
- */
 const propertyOwners = new WeakMap<Element, Map<string, () => void>>()
 
-function buildTransform(values: Map<string, number>): string {
-  const parts: string[] = []
-
-  const x = values.get('x')
-  const y = values.get('y')
-  const z = values.get('z')
-
-  if (x !== undefined || y !== undefined || z !== undefined) {
-    parts.push(`translate3d(${x ?? 0}px, ${y ?? 0}px, ${z ?? 0}px)`)
-  }
-
-  const scale = values.get('scale')
-  const scaleX = values.get('scaleX')
-  const scaleY = values.get('scaleY')
-
-  if (scale !== undefined) {
-    parts.push(`scale(${scale})`)
-  } else if (scaleX !== undefined || scaleY !== undefined) {
-    parts.push(`scale(${scaleX ?? 1}, ${scaleY ?? 1})`)
-  }
-  const scaleZ = values.get('scaleZ')
-  if (scaleZ !== undefined) parts.push(`scaleZ(${scaleZ})`)
-
-  const rotate = values.get('rotate') ?? values.get('rotateZ')
-  const rotateX = values.get('rotateX')
-  const rotateY = values.get('rotateY')
-
-  if (rotateX !== undefined) parts.push(`rotateX(${rotateX}deg)`)
-  if (rotateY !== undefined) parts.push(`rotateY(${rotateY}deg)`)
-  if (rotate !== undefined) parts.push(`rotate(${rotate}deg)`)
-
-  const skew = values.get('skew')
-  if (skew !== undefined) parts.push(`skew(${skew}deg)`)
-  const skewX = values.get('skewX')
-  const skewY = values.get('skewY')
-  if (skewX !== undefined || skewY !== undefined) {
-    parts.push(`skew(${skewX ?? 0}deg, ${skewY ?? 0}deg)`)
-  }
-
-  return parts.join(' ')
-}
-
-function applyStylesToElement(element: Element, values: Map<string, number>): void {
-  const el = element as HTMLElement
-  const transformValues = new Map<string, number>()
-  const styleValues: Record<string, string> = {}
-
-  values.forEach((value, property) => {
-    if (transformProperties.has(property)) {
-      transformValues.set(property, value)
-    } else if (property === 'opacity') {
-      styleValues.opacity = String(value)
-    } else if (pxProperties.has(property)) {
-      styleValues[property] = `${value}px`
-    } else {
-      styleValues[property] = String(value)
-    }
-  })
-
-  if (transformValues.size > 0) {
-    let stored = elementTransforms.get(element)
-    if (!stored) {
-      stored = new Map()
-      elementTransforms.set(element, stored)
-    }
-    transformValues.forEach((value, property) => stored!.set(property, value))
-    el.style.transform = buildTransform(stored)
-  }
-
-  Object.entries(styleValues).forEach(([prop, val]) => {
-    el.style.setProperty(prop, val)
-  })
-}
-
 function parseCurrentValue(element: Element, property: string): number {
-  const el = element as HTMLElement
-  const computed = getComputedStyle(el)
-
-  if (property === 'opacity') {
-    // Note: `|| 1` would turn a legitimate opacity of 0 into 1
-    const opacity = parseFloat(computed.opacity)
-    return Number.isNaN(opacity) ? 1 : opacity
-  }
-
-  if (transformProperties.has(property)) {
-    // Prefer the value last applied by animate() on this element
-    const stored = elementTransforms.get(element)?.get(property)
-    if (stored !== undefined) {
-      return stored
-    }
-    // The computed matrix isn't parsed: start from the identity value
-    return property.startsWith('scale') ? 1 : 0
-  }
-
-  const value = computed.getPropertyValue(property)
-  return parseFloat(value) || 0
+  const raw = readStyle(element, property)
+  const value = typeof raw === 'number' ? raw : parseFloat(raw)
+  return Number.isFinite(value) ? value : property === 'opacity' ? 1 : 0
 }
 
 /**
@@ -218,10 +100,10 @@ function parseCurrentValue(element: Element, property: string): number {
  * controls.stop()
  * ```
  */
-export function animate(
+export function animate<T extends AnimateTarget>(
   elementOrSelector: Element | string,
-  target: AnimateTarget,
-  options: AnimateOptions = {}
+  target: T,
+  options: AnimateOptions<AnimatedTargetValues<T>> = {}
 ): AnimateControls {
   const { delay = 0, onUpdate, onComplete, ...springConfig } = options
 
@@ -235,8 +117,9 @@ export function animate(
     return createNoopControls()
   }
 
-  const springs = new Map<string, SpringValue>()
-  const currentValues = new Map<string, number>()
+  const springs = new Map<string, SpringValue | TimedValue>()
+  const currentValues = new Map<string, number | string>()
+  const transitions = new Map<string, { from: ParsedValue; to: ParsedValue }>()
   // Current keyframe target per property (used to resume after pause)
   const currentTargets = new Map<string, number>()
   // Spring velocities at pause(), restored by resume()
@@ -255,8 +138,10 @@ export function animate(
   let isRunning = true
   let isPaused = false
   let resolveFinished: () => void
-  // Track RAF IDs for proper cleanup
-  const rafIds = new Set<number>()
+  const waiters = new Set<() => void>()
+  const wake = () => { for (const resolve of waiters) resolve(); waiters.clear() }
+  const progress = new Map<string, number>()
+  const segments = new Map<string, { from: number; to: number; index: number; total: number }>()
   // Cancels the pending start delay (loop-driven: follows the time scale)
   let cancelDelay: (() => void) | null = null
 
@@ -264,20 +149,10 @@ export function animate(
     resolveFinished = resolve
   })
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const checkAllComplete = () => {
-    let allComplete = true
-    springs.forEach((spring) => {
-      if (spring.isAnimating()) {
-        allComplete = false
-      }
-    })
-    return allComplete
-  }
-
   const startAnimation = () => {
     const entries = Object.entries(target)
     let completedCount = 0
+    let completedNaturally = 0
     const totalAnimations = entries.length
 
     // Nothing to animate: complete immediately instead of never resolving
@@ -303,19 +178,21 @@ export function animate(
       const list: Array<number | string> = Array.isArray(value) ? value : [value]
       const hasFrom = list.length > 1
       const values = hasFrom ? list.slice(1) : list
-      const startValue = hasFrom
-        ? toNumber(list[0]!)
-        : parseCurrentValue(element, property)
+      const rawStart = hasFrom ? list[0]! : typeof list[0] === 'string' ? String(readStyle(element, property)) : parseCurrentValue(element, property)
+      const startValue = typeof rawStart === 'number' ? rawStart : 0
 
       // Create spring for this property
-      const spring = createSpringValue(startValue, {
+      const timed = (typeof options.duration === 'number' && Number.isFinite(options.duration)) || options.ease !== undefined
+      const spring = timed
+        ? createTweenValue(startValue, Math.max(0, Number.isFinite(options.duration) ? options.duration! : 300) / Math.max(1, values.length), options.ease)
+        : createSpringValue(startValue, {
         stiffness: springConfig.stiffness ?? 100,
         damping: springConfig.damping ?? 10,
         mass: springConfig.mass ?? 1,
       })
 
       springs.set(property, spring)
-      currentValues.set(property, startValue)
+      currentValues.set(property, rawStart)
 
       // Take the property over from an earlier call still animating it
       ownedBy.get(property)?.()
@@ -323,6 +200,7 @@ export function animate(
         released.add(property)
         releasers.delete(property)
         spring.stop()
+        wake()
         currentValues.delete(property)
         currentTargets.delete(property)
       }
@@ -332,65 +210,88 @@ export function animate(
       // Subscribe to updates
       spring.subscribe((v) => {
         if (!isRunning || isPaused || released.has(property)) return
-        currentValues.set(property, v)
-        applyStylesToElement(element, currentValues)
+        const transition = transitions.get(property)
+        const segment = segments.get(property)
+        if (segment) {
+          const fraction = segment.to === segment.from ? 1 : (v - segment.from) / (segment.to - segment.from)
+          progress.set(property, (segment.index + Math.max(0, Math.min(1, fraction))) / segment.total)
+        }
+        const rendered = transition
+          ? composeAnimatableValue(transition.to, transition.from.channels.map((from, i) => from + (transition.to.channels[i]! - from) * v))
+          : typeof rawStart === 'string' && !currentTargets.has(property) ? rawStart : v
+        currentValues.set(property, rendered)
+        writeStyle(element, property, rendered)
 
         if (onUpdate) {
-          const valuesObj: Record<string, number> = {}
+          const valuesObj: Record<string, number | string> = {}
           currentValues.forEach((val, key) => {
             valuesObj[key] = val
           })
-          onUpdate(valuesObj)
+          onUpdate(valuesObj as AnimatedTargetValues<T>)
         }
       })
 
       // Animate through keyframes sequentially
       const animateKeyframes = async () => {
-        for (const targetValue of values) {
+        for (let index = 0; index < values.length; index++) {
+          const targetValue = values[index]!
           // Early exit if stopped or taken over
           if (!isRunning || released.has(property)) break
 
-          const numValue = toNumber(targetValue)
-
-          await new Promise<void>((resolve) => {
-            currentTargets.set(property, numValue)
-            // If paused, resume() will start the spring toward this target
-            if (!isPaused) {
-              spring.set(numValue)
+          let numValue = toNumber(targetValue)
+          if (typeof targetValue === 'string') {
+            const from = parseAnimatableValue(currentValues.get(property) ?? rawStart)
+            const to = parseAnimatableValue(targetValue)
+            if (from.template.id !== to.template.id || to.template.size === 0) {
+              currentValues.set(property, targetValue)
+              writeStyle(element, property, targetValue)
+              progress.set(property, (index + 1) / values.length)
+              await Promise.resolve()
+              continue
             }
+            spring.jump(0)
+            transitions.set(property, { from, to })
+            numValue = 1
+          } else {
+            transitions.delete(property)
+          }
 
-            let checkId: number | null = null
-            const checkDone = () => {
-              // Clear previous ID from tracking
-              if (checkId !== null) {
-                rafIds.delete(checkId)
-              }
-
-              // Stopped: resolve and cleanup. While paused the spring is
-              // halted, so don't mistake "not animating" for "done".
-              if (
-                !isRunning ||
-                released.has(property) ||
-                (!isPaused && !spring.isAnimating())
-              ) {
-                resolve()
-              } else {
-                checkId = requestAnimationFrame(checkDone)
-                rafIds.add(checkId)
-              }
+          currentTargets.set(property, numValue)
+          segments.set(property, { from: spring.get(), to: numValue, index, total: values.length })
+          if (!isPaused) spring.set(numValue)
+          else if ('pause' in spring && typeof spring.pause === 'function') {
+            // A delayed timed driver can be created after pause() was called.
+            // Initialize its run before pausing so resume() has a target/clock.
+            spring.set(numValue)
+            spring.pause()
+          }
+          // The value's own completion is authoritative. A pause settles the
+          // halted run; wait for resume and then await the replacement run.
+          while (isRunning && !released.has(property)) {
+            if (isPaused) {
+              await new Promise<void>(resolve => waiters.add(resolve))
+            } else {
+              await spring.finished
+              if (!isPaused && !spring.isAnimating()) break
             }
-            // Initial check after one frame
-            checkId = requestAnimationFrame(checkDone)
-            rafIds.add(checkId)
-          })
+          }
+          progress.set(property, (index + 1) / values.length)
+
         }
 
+        // Taken over by a later call: interrupted, not completed
+        const superseded = released.has(property)
         disown(property)
+        // A settled property must not be restarted by resume()
+        currentTargets.delete(property)
+        if (!superseded) completedNaturally++
         completedCount++
         if (completedCount === totalAnimations && isRunning) {
           isRunning = false
           try {
-            onComplete?.()
+            // Like stop(), a call whose properties were all taken over does
+            // not report completion (`finished` still settles)
+            if (completedNaturally > 0) onComplete?.()
           } catch {
             // Ignore callback errors
           }
@@ -414,10 +315,7 @@ export function animate(
 
   // Cleanup function to cancel all pending RAF and timeouts
   const cleanup = () => {
-    rafIds.forEach((id) => {
-      cancelAnimationFrame(id)
-    })
-    rafIds.clear()
+    wake()
     cancelDelay?.()
     cancelDelay = null
   }
@@ -437,7 +335,8 @@ export function animate(
       // pause), remembering their velocity for resume()
       springs.forEach((spring, property) => {
         pausedVelocities.set(property, spring.getVelocity())
-        spring.stop()
+        if ('pause' in spring) spring.pause()
+        else spring.stop()
       })
     },
     resume: () => {
@@ -447,19 +346,17 @@ export function animate(
       // Continue toward the current keyframe target from where we halted,
       // with the velocity it had
       currentTargets.forEach((value, property) => {
-        springs.get(property)?.set(value, { velocity: pausedVelocities.get(property) ?? 0 })
+        const spring = springs.get(property)
+        if (spring && 'resume' in spring) spring.resume()
+        else spring?.set(value, { velocity: pausedVelocities.get(property) ?? 0 })
       })
       pausedVelocities.clear()
+      wake()
     },
     getProgress: () => {
-      // Simplified progress calculation
-      let totalProgress = 0
-      let count = 0
-      springs.forEach((spring) => {
-        totalProgress += spring.isAnimating() ? 0.5 : 1
-        count++
-      })
-      return count > 0 ? totalProgress / count : 1
+      if (!isRunning) return 1
+      const keys = Object.keys(target)
+      return keys.length ? keys.reduce((sum, key) => sum + (progress.get(key) ?? 0), 0) / keys.length : 1
     },
     isAnimating: () => isRunning && !isPaused,
     finished,
@@ -490,10 +387,10 @@ function createNoopControls(): AnimateControls {
  * })
  * ```
  */
-export function animateAll(
+export function animateAll<T extends AnimateTarget>(
   selector: string,
-  target: AnimateTarget,
-  options: AnimateOptions & { stagger?: number } = {}
+  target: T,
+  options: AnimateOptions<AnimatedTargetValues<T>> & { stagger?: number } = {}
 ): AnimateControls[] {
   const { stagger = 0, ...animateOptions } = options
   const elements = document.querySelectorAll(selector)

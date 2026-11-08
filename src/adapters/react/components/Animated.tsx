@@ -3,7 +3,8 @@ import { useEffect, useRef, useState, useContext, useCallback, memo } from 'reac
 import { createSpringGroup } from '@oxog/springkit'
 import type { SpringConfig } from '@oxog/springkit'
 import { PresenceContext } from '../context/PresenceContext.js'
-import { isBrowser, safeRequestAnimationFrame, safeCancelAnimationFrame } from '../utils/ssr.js'
+import { PresenceExitScopeContext } from './PresenceChild.js'
+import { isBrowser, safeRequestAnimationFrame, safeCancelAnimationFrame, useIsomorphicLayoutEffect } from '../utils/ssr.js'
 import {
   animatableSignature,
   channelValuesOf,
@@ -20,6 +21,7 @@ import {
 import { MotionContext } from './MotionConfig.js'
 import { useShouldReduceMotion } from '../utils/reducedMotion.js'
 import { useAnimatedDrag } from './useAnimatedDrag.js'
+import { writeStyles, type ReadableValue } from '@oxog/springkit/dom'
 import type { AnimatedDragProps } from './useAnimatedDrag.js'
 
 export type {
@@ -37,6 +39,18 @@ export type {
  */
 export interface AnimatedStyle {
   [key: string]: number | string
+}
+
+export type AnimatedCSSStyle = {
+  [K in keyof React.CSSProperties]: React.CSSProperties[K] | ReadableValue<number | string>
+} & {
+  [K in 'x' | 'y' | 'z' | 'scale' | 'scaleX' | 'scaleY' | 'rotate' | 'rotateX' | 'rotateY']?: number | string | ReadableValue<number | string>
+}
+
+type AnimatedState = { values: Record<string, ParsedValue>; channels: Record<string, number> }
+
+function isReadable(value: unknown): value is ReadableValue<number | string> {
+  return typeof value === 'object' && value !== null && 'get' in value && 'subscribe' in value
 }
 
 /**
@@ -94,7 +108,7 @@ export interface AnimatedElementProps
   viewport?: ViewportOptions
 
   /** Style object (static styles + animated values) */
-  style?: React.CSSProperties
+  style?: AnimatedCSSStyle
 
   /** Called when the exit animation (inside AnimatePresence) has completed */
   onAnimationComplete?: () => void
@@ -228,7 +242,11 @@ function buildStyle(
  * the animation props
  */
 type AnimatedComponentProps<T extends React.ElementType> =
-  Omit<React.ComponentPropsWithoutRef<T>, DragHandlerName> & AnimatedElementProps
+  Omit<React.ComponentPropsWithoutRef<T>, DragHandlerName | 'style'> & Omit<AnimatedElementProps, 'ref'>
+
+type AnimatedRef<T extends React.ElementType> = React.ComponentRef<T> extends HTMLElement
+  ? HTMLElement
+  : React.ComponentRef<T>
 
 /**
  * Create an animated component for a given tag
@@ -236,13 +254,13 @@ type AnimatedComponentProps<T extends React.ElementType> =
 function createAnimatedComponent<T extends React.ElementType>(
   tag: T
 ): React.MemoExoticComponent<
-  React.ForwardRefExoticComponent<AnimatedComponentProps<T> & React.RefAttributes<HTMLElement>>
+  React.ForwardRefExoticComponent<AnimatedComponentProps<T> & React.RefAttributes<AnimatedRef<T>>>
 > {
   const AnimatedComponent = React.forwardRef<HTMLElement, React.ComponentPropsWithoutRef<T> & AnimatedElementProps>(
     (
       {
         children,
-        style = EMPTY_STYLE,
+        style: inputStyle = EMPTY_STYLE,
         config = EMPTY_CONFIG,
         initial,
         animate,
@@ -286,6 +304,15 @@ function createAnimatedComponent<T extends React.ElementType>(
       },
       forwardedRef
     ) => {
+      const liveStyles: Record<string, ReadableValue<number | string>> = {}
+      const resolvedStyle: Record<string, unknown> = {}
+      for (const [key, value] of Object.entries(inputStyle)) {
+        if (isReadable(value)) { liveStyles[key] = value; resolvedStyle[key] = value.get() }
+        else resolvedStyle[key] = value
+      }
+      const style = resolvedStyle as React.CSSProperties
+      const renderFrameRef = useRef<(state: AnimatedState) => void>(() => {})
+      const writtenStyleKeysRef = useRef(new Set<string>())
       const springRef = useRef<ReturnType<typeof createSpringGroup> | null>(null)
       const unsubscribeRef = useRef<(() => void) | null>(null)
       const elementRef = useRef<HTMLElement | null>(null)
@@ -317,7 +344,7 @@ function createAnimatedComponent<T extends React.ElementType>(
       onTapCancelRef.current = onTapCancel
 
       // Drag gesture: offset applied on top of the animated transform
-      const { dragOffset, isDragging, startDrag, getDragCount } = useAnimatedDrag(
+      const { getOffset, isDragging, startDrag, getDragCount } = useAnimatedDrag(
         {
           drag,
           dragControls,
@@ -335,7 +362,8 @@ function createAnimatedComponent<T extends React.ElementType>(
           onDragEnd,
           onDragTransitionEnd,
         },
-        elementRef
+        elementRef,
+        () => renderFrameRef.current(shownRef.current)
       )
       // Drag count at the last pointerdown: a press that turned into a drag is
       // not a tap
@@ -345,6 +373,10 @@ function createAnimatedComponent<T extends React.ElementType>(
       const presenceContext = useContext(PresenceContext)
       const isPresent = presenceContext?.isPresent ?? true
       const safeToRemove = presenceContext?.safeToRemove
+      // Exits running in the same presence child (this element's own exit is one
+      // of them); the child is removed when the last one finishes
+      const exitScope = useContext(PresenceExitScopeContext)
+      const exitTokenRef = useRef({})
 
       // Inherit MotionConfig (default spring config, reduced motion, initial)
       const motionConfig = useContext(MotionContext)
@@ -442,7 +474,7 @@ function createAnimatedComponent<T extends React.ElementType>(
       // Numeric inline styles animate when they change; string inline styles
       // stay static unless an animation source animates that key
       for (const key in style) {
-        if (typeof (style as Record<string, unknown>)[key] === 'number') numericKeySet.add(key)
+        if (!(key in liveStyles) && typeof (style as Record<string, unknown>)[key] === 'number') numericKeySet.add(key)
       }
       for (const key of stringKeySet) numericKeySet.delete(key)
       const numericKeys = Array.from(numericKeySet).sort()
@@ -559,7 +591,7 @@ function createAnimatedComponent<T extends React.ElementType>(
       // last target given to the spring) and the channel values. Seeded
       // synchronously so the first paint (and SSR output) uses the initial
       // values instead of flashing unstyled content.
-      const [animatedState, setAnimatedState] = useState<{
+      const [animatedState] = useState<{
         values: Record<string, ParsedValue>
         channels: Record<string, number>
       }>(() => {
@@ -588,7 +620,7 @@ function createAnimatedComponent<T extends React.ElementType>(
           if (shown.values === values && sameChannels(shown.channels, channels)) return
           const state = { values, channels }
           shownRef.current = state
-          setAnimatedState(state)
+          renderFrameRef.current(state)
         },
         []
       )
@@ -707,6 +739,15 @@ function createAnimatedComponent<T extends React.ElementType>(
         applyTarget(targetValues, reducedMotion)
       })
 
+      // Register as a running exit before any element's exit effect runs, so a
+      // sibling or ancestor that finishes first doesn't remove the child early
+      useIsomorphicLayoutEffect(() => {
+        if (isPresent || !exitScope) return
+        const token = exitTokenRef.current
+        exitScope.add(token)
+        return () => exitScope.cancel(token)
+      }, [isPresent, exitScope])
+
       // Handle exit animation completion. `exit` and `onAnimationComplete` are
       // usually inline: read them from refs so re-renders (every animation
       // frame) don't restart the wait.
@@ -719,7 +760,8 @@ function createAnimatedComponent<T extends React.ElementType>(
         const complete = () => {
           if (hasCalledSafeToRemove.current) return
           hasCalledSafeToRemove.current = true
-          safeToRemove()
+          if (exitScope) exitScope.done(exitTokenRef.current)
+          else safeToRemove()
           onAnimationCompleteRef.current?.()
         }
 
@@ -749,7 +791,7 @@ function createAnimatedComponent<T extends React.ElementType>(
           unsubscribe?.()
         }
         // The spring is re-created when its config or channels change
-      }, [isPresent, hasExit, safeToRemove, springConfig.stiffness, springConfig.damping, springConfig.mass, channelKeysSignature])
+      }, [isPresent, hasExit, safeToRemove, exitScope, springConfig.stiffness, springConfig.damping, springConfig.mass, channelKeysSignature])
 
       // Reset flag when becoming present again
       useEffect(() => {
@@ -868,13 +910,6 @@ function createAnimatedComponent<T extends React.ElementType>(
         Object.entries(style).filter(([_, v]) => typeof v !== 'number')
       ) as React.CSSProperties
 
-      // Recompose the animated values (hidden channels never reach the DOM)
-      const animatedValues = composeAnimatableRecord(
-        animatedState.values,
-        animatedState.channels,
-        channelKeysOf
-      )
-
       // User event handlers we destructured are always passed through; gesture
       // handlers below wrap (and call) them when gestures are in use
       const eventHandlers: Record<string, unknown> = {
@@ -915,7 +950,11 @@ function createAnimatedComponent<T extends React.ElementType>(
         eventHandlers.onBlur = handleBlur
       }
 
-      const elementStyle: React.CSSProperties = {
+      const frameStyle = (state: AnimatedState): React.CSSProperties => {
+        const dragOffset = getOffset()
+        const animatedValues = composeAnimatableRecord(state.values, state.channels, channelKeysOf)
+        for (const [key, value] of Object.entries(liveStyles)) animatedValues[key] = value.get()
+        const elementStyle: React.CSSProperties = {
         // Keep touch input from scrolling the page instead of dragging
         ...(isDragListener
           ? { touchAction: drag === 'x' ? 'pan-y' : drag === 'y' ? 'pan-x' : 'none' }
@@ -930,6 +969,25 @@ function createAnimatedComponent<T extends React.ElementType>(
           : ''
         elementStyle.transform = `translate3d(${dragOffset.x}px, ${dragOffset.y}px, 0px)${rest}`
       }
+
+        return elementStyle
+      }
+      const elementStyle = frameStyle(shownRef.current)
+      renderFrameRef.current = state => {
+        const element = elementRef.current
+        if (!element || isDestroyedRef.current) return
+        const next = frameStyle(state)
+        const previous = writtenStyleKeysRef.current
+        for (const key of previous) {
+          if (!(key in next)) element.style.removeProperty(key.replace(/[A-Z]/g, c => `-${c.toLowerCase()}`))
+        }
+        writeStyles(element, next as Record<string, number | string | undefined>)
+        writtenStyleKeysRef.current = new Set(Object.keys(next))
+      }
+      useEffect(() => {
+        const unsubscribers = Object.values(liveStyles).map(value => value.subscribe(() => renderFrameRef.current(shownRef.current)))
+        return () => { for (const unsubscribe of unsubscribers) unsubscribe() }
+      })
 
       return React.createElement(
         tag,
@@ -951,7 +1009,7 @@ function createAnimatedComponent<T extends React.ElementType>(
   // generic tag's props can't be destructured); the public type drops the
   // native onDrag* handlers whose names the drag gesture callbacks reuse
   return MemoizedComponent as unknown as React.MemoExoticComponent<
-    React.ForwardRefExoticComponent<AnimatedComponentProps<T> & React.RefAttributes<HTMLElement>>
+    React.ForwardRefExoticComponent<AnimatedComponentProps<T> & React.RefAttributes<AnimatedRef<T>>>
   >
 }
 

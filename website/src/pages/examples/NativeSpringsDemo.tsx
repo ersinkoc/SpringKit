@@ -22,7 +22,7 @@ spring(0, 260, {
 }).start()
 
 // 2. Native: the spring is compiled to CSS linear() and the browser
-//    plays it on the compositor — no JavaScript per frame
+//    plays it without per-frame JavaScript; compositing depends on the property/browser
 animateNative(nativeBox, {
   transform: ['translateX(0px)', 'translateX(260px)'],
 }, config)
@@ -51,10 +51,17 @@ function blockMainThread(ms: number) {
 }
 
 function NativeSpringsDemo() {
-  const [duration, setDuration] = useState(600)
-  const [bounce, setBounce] = useState(0.35)
+  const [duration, setDuration] = useState(() => {
+    const value = Number(new URLSearchParams(window.location.search).get('duration') ?? 600)
+    return Number.isFinite(value) ? Math.max(150, Math.min(1500, value)) : 600
+  })
+  const [bounce, setBounce] = useState(() => {
+    const value = Number(new URLSearchParams(window.location.search).get('bounce') ?? 0.35)
+    return Number.isFinite(value) ? Math.max(-0.5, Math.min(0.9, value)) : 0.35
+  })
   const [scrub, setScrub] = useState(1)
   const [copied, setCopied] = useState(false)
+  const [copyStatus, setCopyStatus] = useState('')
   const [atEnd, setAtEnd] = useState(false)
   const [timeScale, setTimeScale] = useState(() => globalLoop.getTimeScale())
 
@@ -141,12 +148,23 @@ function NativeSpringsDemo() {
   }
 
   const css = `transition: transform ${compiled};`
+  const shareUrl = () => {
+    const url = new URL(window.location.href)
+    url.searchParams.set('duration', String(duration))
+    url.searchParams.set('bounce', String(bounce))
+    return url.toString()
+  }
 
   const copy = async () => {
-    await navigator.clipboard.writeText(css)
-    setCopied(true)
-    if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current)
-    copyTimeoutRef.current = setTimeout(() => setCopied(false), 1500)
+    try {
+      await navigator.clipboard.writeText(css)
+      setCopied(true)
+      setCopyStatus('CSS copied.')
+      if (copyTimeoutRef.current) clearTimeout(copyTimeoutRef.current)
+      copyTimeoutRef.current = setTimeout(() => setCopied(false), 1500)
+    } catch {
+      setCopyStatus('Clipboard unavailable. Select and copy the generated CSS below.')
+    }
   }
 
   return (
@@ -187,9 +205,27 @@ function NativeSpringsDemo() {
       </div>
       <p className="text-xs text-white/40">
         “Block main thread” busy-waits while the springs run. The JavaScript spring freezes; the
-        native one keeps moving because the browser animates it off the main thread.
+        native one can keep moving when the browser composites the selected property.
       </p>
 
+      <div className="flex flex-wrap gap-3 text-sm">
+        <button className="rounded-lg border border-white/20 px-3 py-2" onClick={async () => {
+          const url = shareUrl()
+          window.history.replaceState(null, '', url)
+          try {
+            await navigator.clipboard.writeText(url)
+            setCopyStatus('Preset link copied.')
+          } catch {
+            setCopyStatus('Clipboard unavailable. Copy the preset link from the address bar.')
+          }
+        }}>Copy preset link</button>
+        <button className="rounded-lg border border-white/20 px-3 py-2" onClick={() => {
+          const url = URL.createObjectURL(new Blob([JSON.stringify({ duration, bounce, physics: config }, null, 2)], { type: 'application/json' }))
+          const link = document.createElement('a'); link.href = url; link.download = 'springkit-preset.json'; link.click()
+          setTimeout(() => URL.revokeObjectURL(url), 0)
+        }}>Export preset JSON</button>
+      </div>
+      <p role="status" className="text-xs text-white/60">{copyStatus}</p>
       {/* Slow motion */}
       <label className="block text-xs text-white/60">
         Slow motion <code className="font-mono">globalLoop.setTimeScale()</code>{' '}
@@ -276,7 +312,7 @@ export default function NativeSpringsDemoPage() {
   return (
     <DemoPageLayout
       title="Native Springs"
-      description="Real spring physics compiled to CSS linear() and played by the browser's compositor. Stays smooth when the main thread is busy, and every spring is exactly seekable."
+      description="Real spring physics compiled to CSS linear(). Eligible browser/property combinations can use compositing, and the analytic solver is seekable."
       category="Core Features"
       categoryPath="/examples"
       code={CODE}

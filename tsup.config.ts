@@ -30,7 +30,7 @@ const targets = {
   // Main package + the standalone testing helpers (no shared code)
   core: {
     ...base,
-    entry: { index: 'src/index.ts', 'testing/index': 'src/testing/index.ts' },
+    entry: { index: 'src/index.ts', 'testing/index': 'src/testing/index.ts', 'dom/index': 'src/dom/index.ts' },
     outDir: 'dist',
   },
   // React adapter. Core is imported via the package's own name and kept

@@ -67,7 +67,11 @@ export function useMotionValueState<T>(motionValue: MotionValue<T> | null | unde
   const [value, setValue] = useState<T | undefined>(() => motionValue?.get())
 
   useEffect(() => {
-    if (!motionValue) return
+    if (!motionValue) {
+      // No source (anymore): do not keep reporting the previous source's value
+      setValue(undefined)
+      return
+    }
 
     // Sync initial value in case it changed between initial state and effect
     setValue(motionValue.get())

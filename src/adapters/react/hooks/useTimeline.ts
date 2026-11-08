@@ -111,7 +111,14 @@ export function useTimeline(
 
   // Create timeline on mount
   useIsomorphicLayoutEffect(() => {
-    const instance = createTimeline(optionsRef.current)
+    // Callbacks read the latest render's options (not the ones from mount)
+    const instance = createTimeline({
+      ...optionsRef.current,
+      onStart: () => optionsRef.current.onStart?.(),
+      onUpdate: (progress) => optionsRef.current.onUpdate?.(progress),
+      onComplete: () => optionsRef.current.onComplete?.(),
+      onRepeat: (iteration) => optionsRef.current.onRepeat?.(iteration),
+    })
     timelineRef.current = instance
     setTimeline(instance)
 
@@ -216,6 +223,14 @@ export interface UseTimelineStateReturn {
   isReversed: boolean
 }
 
+/** State reported while there is no timeline (also the state before the first poll) */
+const IDLE_TIMELINE_STATE: UseTimelineStateReturn = {
+  progress: 0,
+  isPlaying: false,
+  isPaused: true,
+  isReversed: false,
+}
+
 /**
  * Subscribe to timeline state changes
  *
@@ -236,15 +251,20 @@ export interface UseTimelineStateReturn {
 export function useTimelineState(
   timeline: Timeline | null
 ): UseTimelineStateReturn {
-  const [state, setState] = useState<UseTimelineStateReturn>({
-    progress: 0,
-    isPlaying: false,
-    isPaused: true,
-    isReversed: false,
-  })
+  const [state, setState] = useState<UseTimelineStateReturn>(IDLE_TIMELINE_STATE)
+  const polledRef = useRef(false)
 
   useIsomorphicLayoutEffect(() => {
-    if (!timeline) return
+    if (!timeline) {
+      // No timeline any more: report the idle state, not the last state of the
+      // previous one (skipped when none was ever polled: no extra render)
+      if (polledRef.current) {
+        polledRef.current = false
+        setState(IDLE_TIMELINE_STATE)
+      }
+      return
+    }
+    polledRef.current = true
 
     // Only re-render when something actually changed
     const updateState = () => {

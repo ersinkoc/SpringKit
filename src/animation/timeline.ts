@@ -9,6 +9,7 @@ import type { SpringConfig } from '../core/config.js'
 import { springMotion } from '../core/physics.js'
 import { clamp } from '../utils/math.js'
 import { globalLoop } from './loop.js'
+import { readStyle, writeStyle } from '../dom/style.js'
 
 // ============ Types ============
 
@@ -267,12 +268,34 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
   // position are eligible to fire on the next tick (fresh start, restart,
   // repeat, seek). Otherwise only positions strictly crossed fire.
   let includeStartPosition = true
+  // Incremented by kill(): a tick that was running when the timeline got
+  // killed (from one of its own callbacks) must not run its remaining steps
+  let killEpoch = 0
 
   // ============ Utility Functions ============
 
+  /**
+   * Run a user callback so that a throwing one can neither break the frame
+   * (leaving the timeline without a scheduled tick) nor skip the rest of it.
+   */
+  const safeCall = <A extends unknown[]>(fn: ((...args: A) => void) | undefined, ...args: A) => {
+    if (!fn) return
+    try {
+      fn(...args)
+    } catch (e) {
+      console.error('[SpringKit] Timeline callback error:', e)
+    }
+  }
+
   const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now())
 
+  /** Resolve a position to a time; a non-finite result falls back to the end of the timeline */
   const parsePosition = (position?: TimelinePosition): number => {
+    const time = resolvePosition(position)
+    return Number.isFinite(time) ? time : insertTime
+  }
+
+  const resolvePosition = (position?: TimelinePosition): number => {
     if (position === undefined) {
       return insertTime
     }
@@ -378,7 +401,6 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
   }
 
   const applyPropsToElement = (element: HTMLElement, props: Record<string, number>) => {
-    const cssProps: Record<string, string> = {}
     let stored = elementTransforms.get(element)
     let transformChanged = false
 
@@ -390,11 +412,8 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
         }
         stored.set(key, value)
         transformChanged = true
-      } else if (key === 'opacity') {
-        cssProps.opacity = String(value)
       } else {
-        // Assume pixels for numeric values
-        cssProps[key] = `${value}px`
+        writeStyle(element, key, value)
       }
     }
 
@@ -407,9 +426,6 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
       element.style.transform = transforms.join(' ')
     }
 
-    for (const [prop, val] of Object.entries(cssProps)) {
-      ;(element.style as unknown as Record<string, string>)[prop] = val
-    }
   }
 
   /** CSS transform function for a transform property, or null if it isn't one */
@@ -476,7 +492,7 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
           current[key] = stored?.get(key) ?? (key.startsWith('scale') ? 1 : 0)
           break
         default:
-          current[key] = parseFloat(computed.getPropertyValue(key)) || 0
+          current[key] = parseFloat(String(readStyle(element, key))) || 0
       }
     }
 
@@ -556,11 +572,13 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
     // first so that earlier segments' starting values win
     let restored = false
     for (let i = segments.length - 1; i >= 0; i--) {
-      const segment = segments[i]!
+      const segment = segments[i]
+      // kill() from a callback empties the list mid-loop
+      if (!segment) continue
       if (time < segment.startTime && segment.lastProgress > 0) {
         renderSegment(segment, 0, false)
         restored = true
-        if (events) segment.props.onUpdate?.(0)
+        if (events) safeCall(segment.props.onUpdate, 0)
       }
     }
 
@@ -577,15 +595,15 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
 
       if (!segment.isActive) {
         segment.isActive = true
-        if (events) segment.props.onStart?.()
+        if (events) safeCall(segment.props.onStart)
       }
 
       const changed = renderSegment(segment, progress, restored)
-      if (events && changed) segment.props.onUpdate?.(progress)
+      if (events && changed) safeCall(segment.props.onUpdate, progress)
 
       if (progress >= 1 && !segment.isComplete) {
         segment.isComplete = true
-        if (events) segment.props.onComplete?.()
+        if (events) safeCall(segment.props.onComplete)
       }
     }
   }
@@ -593,6 +611,7 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
   const tick = (timestamp: number) => {
     rafId = null
     if (!isPlaying || isPaused) return
+    const epoch = killEpoch
 
     // Clamp delta time to prevent jumps after tab suspension or debugger
     // pauses, and follow the global time scale (slow motion / freeze)
@@ -625,19 +644,18 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
       .sort((a, b) => (isReversed ? b - a : a - b))
     for (const ms of crossedCallbacks) {
       callbacks.get(ms)?.forEach(cb => {
-        try {
-          cb()
-        } catch (e) {
-          console.error('[SpringKit] Timeline callback error:', e)
-        }
+        if (epoch !== killEpoch) return
+        safeCall(cb)
       })
     }
+    if (epoch !== killEpoch) return
 
     if (pauseMs !== undefined) {
       isPaused = true
       // Stop exactly at the pause position
       currentTime = reachedTime
       renderAt(currentTime, true)
+      if (epoch !== killEpoch) return
       const pauseCallback = pauses.get(pauseMs)
       try {
         pauseCallback?.()
@@ -651,14 +669,17 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
     // reached its start and completes once its progress reaches 1, even if
     // a single frame jumped past it.
     renderAt(currentTime, true)
+    if (epoch !== killEpoch) return
 
-    onUpdate?.(totalDuration > 0 ? currentTime / totalDuration : 1)
+    safeCall(onUpdate, totalDuration > 0 ? currentTime / totalDuration : 1)
+    if (epoch !== killEpoch) return
 
     // Check for completion
     if ((isReversed && currentTime <= 0) || (!isReversed && currentTime >= totalDuration)) {
       if (repeat === -1 || repeatCount < repeat) {
         repeatCount++
-        onRepeat?.(repeatCount)
+        safeCall(onRepeat, repeatCount)
+        if (epoch !== killEpoch) return
 
         if (yoyo) {
           isReversed = !isReversed
@@ -683,7 +704,7 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
         }
       } else {
         isPlaying = false
-        onComplete?.()
+        safeCall(onComplete)
         return
       }
     }
@@ -700,8 +721,9 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
     fromValues: Record<string, number> | null,
     adapter: TargetAdapter | null
   ) => {
-    const startTime = parsePosition(position) + (props.delay || 0)
-    const duration = props.duration || 0.5
+    // A non-finite delay / duration would make the whole timeline endless
+    const startTime = parsePosition(position) + (Number.isFinite(props.delay) ? (props.delay as number) : 0)
+    const duration = (Number.isFinite(props.duration) && (props.duration as number)) || 0.5
     const endTime = startTime + duration
 
     const segment: TimelineSegment = {
@@ -800,7 +822,8 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
       isPaused = false
       // Count the time from now to the first frame (a 0 delta would lose it)
       lastFrameTime = now()
-      scheduleTick()
+      // A pending repeat delay restarts the ticks itself when it elapses
+      if (cancelRepeatDelay === null) scheduleTick()
       return timeline
     },
 
@@ -817,7 +840,8 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
       if (isPaused) {
         isPaused = false
         lastFrameTime = now()
-        scheduleTick()
+        // A pending repeat delay restarts the ticks itself when it elapses
+        if (cancelRepeatDelay === null) scheduleTick()
       }
       return timeline
     },
@@ -828,6 +852,9 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
     },
 
     restart() {
+      // A repeat delay of the previous run must not fire into the new one
+      cancelRepeatDelay?.()
+      cancelRepeatDelay = null
       currentTime = isReversed ? totalDuration : 0
       repeatCount = 0
       hasStarted = false
@@ -840,11 +867,9 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
     },
 
     seek(position) {
-      if (typeof position === 'string') {
-        currentTime = labels.get(position) ?? 0
-      } else {
-        currentTime = clamp(position, 0, totalDuration)
-      }
+      // Labels may sit outside the timeline; a NaN target counts as unknown
+      const target = typeof position === 'string' ? (labels.get(position) ?? 0) : position
+      currentTime = clamp(Number.isNaN(target) ? 0 : target, 0, totalDuration)
       // Reset segments that lie ahead of the new playhead so they play again
       segments.forEach(s => {
         if (currentTime < s.startTime) {
@@ -866,6 +891,7 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
     },
 
     kill() {
+      killEpoch++
       isPlaying = false
       if (rafId) {
         cancelAnimationFrame(rafId)

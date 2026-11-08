@@ -334,8 +334,8 @@ function stepSpring(position, velocity, target, config, dt) {
     velocity,
     target,
     springCoefficients(config),
-    config.restSpeed ?? 0.01,
-    config.restDelta ?? 0.01,
+    restThreshold(config.restSpeed, 0.01),
+    restThreshold(config.restDelta, 0.01),
     dt
   );
 }
@@ -357,6 +357,9 @@ function stepSpringInto(out, position, velocity, target, c, restSpeed, restDelta
   out.position = target + displacement;
   out.isRest = Math.abs(displacement) <= restDelta && Math.abs(out.velocity) <= restSpeed;
   return out;
+}
+function restThreshold(value, fallback) {
+  return typeof value === "number" && value >= 0 ? value : fallback;
 }
 function positiveOr(value, fallback) {
   return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : fallback;
@@ -464,9 +467,20 @@ function validateDecayConfig(config) {
     );
   }
 }
+function describeValue(value) {
+  try {
+    return String(value);
+  } catch {
+    try {
+      return Object.prototype.toString.call(value);
+    } catch {
+      return "[unprintable value]";
+    }
+  }
+}
 function validateAnimationValue(value, context) {
   if (typeof value !== "number" || Number.isNaN(value)) {
-    errorOnce(`Invalid animation value in ${context}: expected number, got ${value}`);
+    errorOnce(`Invalid animation value in ${context}: expected number, got ${describeValue(value)}`);
     return 0;
   }
   if (!Number.isFinite(value)) {
@@ -608,7 +622,13 @@ var AnimationLoop = class {
             } catch (e) {
               console.error("[SpringKit] Animation update error:", e);
             }
-            if (animation.isComplete() && this.animations.delete(animation)) {
+            let complete = false;
+            try {
+              complete = animation.isComplete();
+            } catch (e) {
+              console.error("[SpringKit] Animation isComplete error:", e);
+            }
+            if (complete && this.animations.delete(animation)) {
               this.idMap.delete(animation);
               removed.add(animation);
             }
@@ -877,8 +897,8 @@ var SpringAnimationImpl = class {
       restDelta: config.restDelta ?? defaultConfig.restDelta
     };
     this.coefficients = springCoefficients(this.config);
-    this.restSpeed = this.config.restSpeed;
-    this.restDelta = this.config.restDelta;
+    this.restSpeed = restThreshold(this.config.restSpeed, defaultConfig.restSpeed);
+    this.restDelta = restThreshold(this.config.restDelta, defaultConfig.restDelta);
     this.resetFinished();
   }
   /** Create a new pending `finished` promise for the next run */
@@ -905,6 +925,7 @@ var SpringAnimationImpl = class {
     this.state = "running" /* Running */;
     this.lastUpdateTime = 0;
     safeCall(this.config.onStart);
+    if (this.state !== "running" /* Running */) return this;
     globalLoop.add(this);
     return this;
   }
@@ -969,7 +990,7 @@ var SpringAnimationImpl = class {
     const elapsed = elapsedMs / 1e3;
     this.lastUpdateTime = now;
     const MAX_DELTA_TIME2 = 1 / 15;
-    const safeElapsed = Math.min(Math.max(elapsed, 0), MAX_DELTA_TIME2);
+    const safeElapsed = deltaTime === void 0 ? Math.min(Math.max(elapsed, 0), MAX_DELTA_TIME2) : Math.max(elapsed, 0);
     const result = stepSpringInto(
       stepScratch,
       this.position,
@@ -1002,10 +1023,10 @@ var SpringAnimationImpl = class {
       globalLoop.remove(this);
       this.position = this.target;
       this.velocity = 0;
+      this.settleFinished();
       safeCall(this.config.onUpdate, this.position);
       safeCall(this.config.onComplete);
       safeCall(this.config.onRest);
-      this.settleFinished();
     }
   }
   isAnimating() {
@@ -1092,8 +1113,12 @@ var SpringValueImpl = class {
       originalOnUpdate?.(value);
     };
     mergedConfig.onComplete = () => {
-      originalOnComplete?.();
-      this.resolveComplete?.();
+      const resolve = this.resolveComplete;
+      try {
+        originalOnComplete?.();
+      } finally {
+        if (this.resolveComplete === resolve) resolve?.();
+      }
     };
     this.currentAnimation = spring(this.value, validTo, mergedConfig);
     this.currentAnimation.start();
@@ -1124,14 +1149,15 @@ var SpringValueImpl = class {
     this.configChanged = true;
   }
   subscribe(callback) {
-    this.subscribers.add(callback);
+    const entry = (value) => callback(value);
+    this.subscribers.add(entry);
     try {
       callback(this.value);
     } catch (e) {
       console.error("[SpringKit] Subscriber error:", e);
     }
     return () => {
-      this.subscribers.delete(callback);
+      this.subscribers.delete(entry);
     };
   }
   isAnimating() {
@@ -1241,13 +1267,16 @@ var SpringGroupImpl = class {
     this.resolveComplete?.();
   }
   subscribe(callback) {
-    this.subscribers.add(callback);
+    const entry = (values) => callback(values);
+    this.subscribers.add(entry);
     try {
       callback(this.get());
     } catch (e) {
       console.error("[SpringKit] SpringGroup subscriber error:", e);
     }
-    return () => this.subscribers.delete(callback);
+    return () => {
+      this.subscribers.delete(entry);
+    };
   }
   isAnimating() {
     for (const springValue of this.values.values()) {
@@ -1300,6 +1329,90 @@ function createSpringGroup(initialValues, config) {
   return new SpringGroupImpl(initialValues, config);
 }
 
+// src/dom/style.ts
+var unitless = /* @__PURE__ */ new Set([
+  "animationIterationCount",
+  "aspectRatio",
+  "borderImageOutset",
+  "borderImageSlice",
+  "borderImageWidth",
+  "boxFlex",
+  "boxFlexGroup",
+  "boxOrdinalGroup",
+  "columnCount",
+  "columns",
+  "fillOpacity",
+  "flex",
+  "flexGrow",
+  "flexPositive",
+  "flexShrink",
+  "flexNegative",
+  "flexOrder",
+  "floodOpacity",
+  "fontWeight",
+  "gridArea",
+  "gridRow",
+  "gridRowEnd",
+  "gridRowSpan",
+  "gridRowStart",
+  "gridColumn",
+  "gridColumnEnd",
+  "gridColumnSpan",
+  "gridColumnStart",
+  "lineClamp",
+  "lineHeight",
+  "opacity",
+  "order",
+  "orphans",
+  "scale",
+  "stopOpacity",
+  "strokeDasharray",
+  "strokeDashoffset",
+  "strokeMiterlimit",
+  "strokeOpacity",
+  "strokeWidth",
+  "tabSize",
+  "widows",
+  "zIndex",
+  "zoom",
+  "WebkitLineClamp"
+]);
+var transforms = /* @__PURE__ */ new WeakMap();
+var transformKeys = /* @__PURE__ */ new Set(["x", "y", "z", "scale", "scaleX", "scaleY", "scaleZ", "rotate", "rotateX", "rotateY", "rotateZ", "skew", "skewX", "skewY", "perspective"]);
+var cssName = (property) => property.startsWith("--") ? property : property.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
+var unit = (value, suffix, fallback = 0) => typeof value === "string" ? value : `${value ?? fallback}${suffix}`;
+function transformStyle(values) {
+  const parts = [];
+  if (values.perspective !== void 0) parts.push(`perspective(${unit(values.perspective, "px")})`);
+  if (values.x !== void 0 || values.y !== void 0 || values.z !== void 0) parts.push(`translate3d(${unit(values.x, "px")}, ${unit(values.y, "px")}, ${unit(values.z, "px")})`);
+  if (values.scale !== void 0) parts.push(`scale(${values.scale})`);
+  else if (values.scaleX !== void 0 || values.scaleY !== void 0) parts.push(`scale(${values.scaleX ?? 1}, ${values.scaleY ?? 1})`);
+  if (values.scaleZ !== void 0) parts.push(`scaleZ(${values.scaleZ})`);
+  for (const key of ["rotateX", "rotateY", "rotate", "skew", "skewX", "skewY"]) {
+    const value = values[key] ?? (key === "rotate" ? values.rotateZ : void 0);
+    if (value !== void 0) parts.push(`${key}(${unit(value, "deg")})`);
+  }
+  return parts.join(" ");
+}
+function writeStyle(element, property, value) {
+  const style = element.style;
+  if (!style) return;
+  if (transformKeys.has(property)) {
+    const values = transforms.get(element) ?? {};
+    transforms.set(element, values);
+    values[property] = value;
+    style.transform = transformStyle(values);
+  } else {
+    const suffix = typeof value === "number" && value !== 0 && !property.startsWith("--") && !unitless.has(property) ? "px" : "";
+    style.setProperty(cssName(property), `${value}${suffix}`);
+  }
+}
+function readStyle(element, property) {
+  if (transformKeys.has(property)) return transforms.get(element)?.[property] ?? (property.startsWith("scale") ? 1 : 0);
+  const value = element.style?.getPropertyValue(cssName(property)) || getComputedStyle(element).getPropertyValue(cssName(property));
+  return value || (property === "opacity" ? 1 : 0);
+}
+
 // src/core/variants.ts
 function resolveVariant(variant, custom) {
   if (!variant) {
@@ -1313,6 +1426,9 @@ function getVariant(variants, name, custom) {
   if (!variants || !name) {
     return { values: {}, transition: {} };
   }
+  if (!Object.prototype.hasOwnProperty.call(variants, name) && name in Object.prototype) {
+    return { values: {}, transition: {} };
+  }
   return resolveVariant(variants[name], custom);
 }
 function mergeVariants(...variants) {
@@ -1323,6 +1439,8 @@ function mergeVariants(...variants) {
       Object.assign(merged, variant);
       if (variant.transition) {
         merged.transition = { ...previousTransition, ...variant.transition };
+      } else if (previousTransition !== void 0) {
+        merged.transition = previousTransition;
       }
     }
   }
@@ -1362,75 +1480,58 @@ function parseValueWithUnit(value) {
   return { value: 0, unit: "" };
 }
 function buildTransformString(values) {
-  const transforms = [];
+  const transforms2 = [];
   if (values.x !== void 0 || values.y !== void 0) {
     const toLength = (v) => typeof v === "number" ? `${v}px` : v;
     const x = toLength(values.x ?? 0);
     const y = toLength(values.y ?? 0);
-    transforms.push(`translate(${x}, ${y})`);
+    transforms2.push(`translate(${x}, ${y})`);
   }
   if (values.scale !== void 0) {
-    transforms.push(`scale(${values.scale})`);
+    transforms2.push(`scale(${values.scale})`);
   } else {
     if (values.scaleX !== void 0) {
-      transforms.push(`scaleX(${values.scaleX})`);
+      transforms2.push(`scaleX(${values.scaleX})`);
     }
     if (values.scaleY !== void 0) {
-      transforms.push(`scaleY(${values.scaleY})`);
+      transforms2.push(`scaleY(${values.scaleY})`);
     }
   }
   if (values.rotate !== void 0) {
-    transforms.push(`rotate(${values.rotate}deg)`);
+    transforms2.push(`rotate(${values.rotate}deg)`);
   }
   if (values.rotateX !== void 0) {
-    transforms.push(`rotateX(${values.rotateX}deg)`);
+    transforms2.push(`rotateX(${values.rotateX}deg)`);
   }
   if (values.rotateY !== void 0) {
-    transforms.push(`rotateY(${values.rotateY}deg)`);
+    transforms2.push(`rotateY(${values.rotateY}deg)`);
   }
   if (values.rotateZ !== void 0) {
-    transforms.push(`rotateZ(${values.rotateZ}deg)`);
+    transforms2.push(`rotateZ(${values.rotateZ}deg)`);
   }
   if (values.skewX !== void 0) {
-    transforms.push(`skewX(${values.skewX}deg)`);
+    transforms2.push(`skewX(${values.skewX}deg)`);
   }
   if (values.skewY !== void 0) {
-    transforms.push(`skewY(${values.skewY}deg)`);
+    transforms2.push(`skewY(${values.skewY}deg)`);
   }
-  return transforms.join(" ");
+  return transforms2.join(" ");
 }
 function applyValuesToElement(element, values) {
   const transform = buildTransformString(values);
   if (transform) {
     element.style.transform = transform;
   }
-  if (values.opacity !== void 0) {
-    element.style.opacity = String(values.opacity);
-  }
-  if (values.backgroundColor !== void 0) {
-    element.style.backgroundColor = values.backgroundColor;
-  }
-  if (values.borderRadius !== void 0) {
-    element.style.borderRadius = typeof values.borderRadius === "number" ? `${values.borderRadius}px` : values.borderRadius;
-  }
-  if (values.borderColor !== void 0) {
-    element.style.borderColor = values.borderColor;
-  }
-  if (values.boxShadow !== void 0) {
-    element.style.boxShadow = values.boxShadow;
-  }
-  if (values.color !== void 0) {
-    element.style.color = values.color;
-  }
-  if (values.width !== void 0) {
-    element.style.width = typeof values.width === "number" ? `${values.width}px` : values.width;
-  }
-  if (values.height !== void 0) {
-    element.style.height = typeof values.height === "number" ? `${values.height}px` : values.height;
+  for (const [key, value] of Object.entries(values)) {
+    if ((!isTransformProperty(key) || key === "transformOrigin") && (typeof value === "number" || typeof value === "string")) {
+      writeStyle(element, key, value);
+    }
   }
 }
 function calculateStaggerDelays(count, options) {
-  const { staggerChildren = 0, staggerDirection = 1, delayChildren = 0 } = options;
+  const { staggerDirection = 1 } = options;
+  const staggerChildren = Number.isFinite(options.staggerChildren) ? options.staggerChildren : 0;
+  const delayChildren = Number.isFinite(options.delayChildren) ? options.delayChildren : 0;
   const delays = [];
   for (let i = 0; i < count; i++) {
     const index = staggerDirection === -1 ? count - 1 - i : i;
@@ -1626,18 +1727,18 @@ async function stagger(items, animate2, options = {}) {
   const getDelay = typeof delay2 === "function" ? (i) => delay2(i) : (i) => Math.abs(indices[i] - startIndex) * delay2;
   const animations = [];
   const cancelDelays = [];
-  for (let i = 0; i < indices.length; i++) {
-    const index = indices[i];
-    const anim = animate2(items[index], index);
-    animations.push(anim);
-    const delayMs = getDelay(i);
-    if (delayMs > 0) {
-      cancelDelays.push(globalLoop.delay(delayMs, () => anim.start()));
-    } else {
-      anim.start();
-    }
-  }
   try {
+    for (let i = 0; i < indices.length; i++) {
+      const index = indices[i];
+      const anim = animate2(items[index], index);
+      animations.push(anim);
+      const delayMs = getDelay(i);
+      if (delayMs > 0) {
+        cancelDelays.push(globalLoop.delay(delayMs, () => anim.start()));
+      } else {
+        anim.start();
+      }
+    }
     await Promise.all(animations.map((a) => a.finished));
   } finally {
     cancelDelays.forEach((cancel) => cancel());
@@ -1653,6 +1754,9 @@ var TrailImpl = class {
     // follow the time scale), cleared on jump/destroy
     this.pendingDelays = /* @__PURE__ */ new Set();
     this.destroyed = false;
+    // True while the leader notifies for something that must not reach followers
+    // as a delayed update (constructor replay, jump)
+    this.ignoreLeader = false;
     const { followDelay = 2, ...springConfig } = config;
     this.followDelay = followDelay;
     this.leader = createSpringValue(0, springConfig);
@@ -1661,10 +1765,13 @@ var TrailImpl = class {
       const spring2 = createSpringValue(0, springConfig);
       this.springs.push(spring2);
     }
+    this.ignoreLeader = true;
     this.leader.subscribe(() => {
+      if (this.ignoreLeader) return;
       this.frameCount++;
       this.scheduleFollowerUpdates();
     });
+    this.ignoreLeader = false;
   }
   scheduleFollowerUpdates() {
     const targetValue = this.leader.get();
@@ -1694,7 +1801,12 @@ var TrailImpl = class {
   }
   jump(value) {
     this.clearPendingDelays();
-    this.leader.jump(value);
+    this.ignoreLeader = true;
+    try {
+      this.leader.jump(value);
+    } finally {
+      this.ignoreLeader = false;
+    }
     for (const spring2 of this.springs) {
       spring2.jump(value);
     }
@@ -1795,6 +1907,7 @@ var DecayAnimationImpl = class {
     resolve?.();
   }
   start() {
+    if (this.destroyed) return this;
     if (this.state === "running" /* Running */) return this;
     if (this.resolveComplete === null && !this.destroyed) {
       this.resetFinished();
@@ -1822,7 +1935,7 @@ var DecayAnimationImpl = class {
     if (this.state !== "running" /* Running */) return;
     const rawElapsed = this.lastUpdateTime === 0 ? deltaTime ?? 0 : now - this.lastUpdateTime;
     this.lastUpdateTime = now;
-    this.elapsed += Math.min(Math.max(rawElapsed, 0), MAX_DELTA_MS);
+    this.elapsed += deltaTime === void 0 ? Math.min(Math.max(rawElapsed, 0), MAX_DELTA_MS) : Math.max(rawElapsed, 0);
     const decayFactor = Math.exp(this.logDecel * this.elapsed);
     const velocityMs = this.velocityMs * decayFactor;
     const remaining = Math.abs(velocityMs / this.logDecel);
@@ -1880,14 +1993,15 @@ function keyframes(values, options = {}) {
   } = options;
   const totalDuration = typeof duration === "number" && Number.isFinite(duration) && duration > 0 ? duration : 0;
   const timed = totalDuration > 0;
+  const finiteAt = (at) => typeof at === "number" && Number.isFinite(at) ? at : void 0;
   const normalizedKeyframes = values.map((v, i) => {
     if (typeof v === "number") {
       return {
         value: v,
-        at: times?.[i]
+        at: finiteAt(times?.[i])
       };
     }
-    return { ...v, at: v.at ?? times?.[i] };
+    return { ...v, at: finiteAt(v.at) ?? finiteAt(times?.[i]) };
   });
   const keyframeCount = normalizedKeyframes.length;
   normalizedKeyframes.forEach((kf, i) => {
@@ -1908,9 +2022,17 @@ function keyframes(values, options = {}) {
   let pendingResolve = null;
   let runId = 0;
   let interrupted = false;
+  let enteringKeyframe = false;
   let elapsed = 0;
   let lastFrameTime = null;
   const now = () => typeof performance !== "undefined" ? performance.now() : Date.now();
+  const safely = (name, callback) => {
+    try {
+      callback();
+    } catch (error) {
+      console.error(`[SpringKit] Error in keyframes ${name} callback:`, error);
+    }
+  };
   const advanceClock = (timestamp) => {
     if (lastFrameTime !== null) {
       const delta = Math.min(Math.max(timestamp - lastFrameTime, 0), MAX_FRAME_MS);
@@ -2011,7 +2133,12 @@ function keyframes(values, options = {}) {
     currentIndex++;
     const targetKf = normalizedKeyframes[currentIndex];
     if (!targetKf) return false;
-    onKeyframe?.(currentIndex);
+    if (onKeyframe) {
+      enteringKeyframe = true;
+      safely("onKeyframe", () => onKeyframe(currentIndex));
+      enteringKeyframe = false;
+    }
+    if (destroyed || isPaused || id !== runId) return false;
     await transitionTo(targetKf, id);
     return id === runId && !destroyed && !isPaused;
   };
@@ -2027,7 +2154,7 @@ function keyframes(values, options = {}) {
     }
     if (id === runId && !isPaused && !destroyed) {
       isPlaying = false;
-      onComplete?.();
+      if (onComplete) safely("onComplete", onComplete);
     }
   };
   const animation = {
@@ -2046,14 +2173,12 @@ function keyframes(values, options = {}) {
       }
       lastFrameTime = now();
       createSpring();
-      onKeyframe?.(currentIndex);
+      if (onKeyframe) safely("onKeyframe", () => onKeyframe(currentIndex));
       await run(id);
     },
     pause: () => {
-      if (destroyed) return;
-      if (isPlaying) {
-        interrupted = spring2?.isAnimating() ?? false;
-      }
+      if (destroyed || !isPlaying) return;
+      interrupted = (spring2?.isAnimating() ?? false) || enteringKeyframe;
       isPaused = true;
       isPlaying = false;
       runId++;
@@ -2091,6 +2216,7 @@ function keyframes(values, options = {}) {
     getCurrentKeyframe: () => currentIndex,
     isPlaying: () => isPlaying,
     jumpTo: (index) => {
+      if (destroyed || !Number.isInteger(index)) return;
       if (index < 0 || index >= normalizedKeyframes.length) return;
       currentIndex = index;
       interrupted = false;
@@ -2100,8 +2226,8 @@ function keyframes(values, options = {}) {
       if (spring2) {
         spring2.jump(targetValue);
       }
-      onUpdate?.(targetValue);
-      onKeyframe?.(index);
+      if (onUpdate) safely("onUpdate", () => onUpdate(targetValue));
+      if (onKeyframe) safely("onKeyframe", () => onKeyframe(index));
     },
     destroy: () => {
       destroyed = true;
@@ -2125,398 +2251,6 @@ function parseKeyframeArray(values, times) {
 }
 function isKeyframeArray(value) {
   return Array.isArray(value) && value.every((v) => typeof v === "number");
-}
-
-// src/animation/animate.ts
-var transformProperties = /* @__PURE__ */ new Set([
-  "x",
-  "y",
-  "z",
-  "scale",
-  "scaleX",
-  "scaleY",
-  "scaleZ",
-  "rotate",
-  "rotateX",
-  "rotateY",
-  "rotateZ",
-  "skew",
-  "skewX",
-  "skewY"
-]);
-var pxProperties = /* @__PURE__ */ new Set([
-  "x",
-  "y",
-  "z",
-  "width",
-  "height",
-  "top",
-  "right",
-  "bottom",
-  "left",
-  "padding",
-  "paddingTop",
-  "paddingRight",
-  "paddingBottom",
-  "paddingLeft",
-  "margin",
-  "marginTop",
-  "marginRight",
-  "marginBottom",
-  "marginLeft",
-  "borderWidth",
-  "borderRadius",
-  "fontSize",
-  "letterSpacing",
-  "lineHeight"
-]);
-var elementTransforms = /* @__PURE__ */ new WeakMap();
-var propertyOwners = /* @__PURE__ */ new WeakMap();
-function buildTransform(values) {
-  const parts = [];
-  const x = values.get("x");
-  const y = values.get("y");
-  const z = values.get("z");
-  if (x !== void 0 || y !== void 0 || z !== void 0) {
-    parts.push(`translate3d(${x ?? 0}px, ${y ?? 0}px, ${z ?? 0}px)`);
-  }
-  const scale = values.get("scale");
-  const scaleX = values.get("scaleX");
-  const scaleY = values.get("scaleY");
-  if (scale !== void 0) {
-    parts.push(`scale(${scale})`);
-  } else if (scaleX !== void 0 || scaleY !== void 0) {
-    parts.push(`scale(${scaleX ?? 1}, ${scaleY ?? 1})`);
-  }
-  const scaleZ = values.get("scaleZ");
-  if (scaleZ !== void 0) parts.push(`scaleZ(${scaleZ})`);
-  const rotate = values.get("rotate") ?? values.get("rotateZ");
-  const rotateX = values.get("rotateX");
-  const rotateY = values.get("rotateY");
-  if (rotateX !== void 0) parts.push(`rotateX(${rotateX}deg)`);
-  if (rotateY !== void 0) parts.push(`rotateY(${rotateY}deg)`);
-  if (rotate !== void 0) parts.push(`rotate(${rotate}deg)`);
-  const skew = values.get("skew");
-  if (skew !== void 0) parts.push(`skew(${skew}deg)`);
-  const skewX = values.get("skewX");
-  const skewY = values.get("skewY");
-  if (skewX !== void 0 || skewY !== void 0) {
-    parts.push(`skew(${skewX ?? 0}deg, ${skewY ?? 0}deg)`);
-  }
-  return parts.join(" ");
-}
-function applyStylesToElement(element, values) {
-  const el = element;
-  const transformValues = /* @__PURE__ */ new Map();
-  const styleValues = {};
-  values.forEach((value, property) => {
-    if (transformProperties.has(property)) {
-      transformValues.set(property, value);
-    } else if (property === "opacity") {
-      styleValues.opacity = String(value);
-    } else if (pxProperties.has(property)) {
-      styleValues[property] = `${value}px`;
-    } else {
-      styleValues[property] = String(value);
-    }
-  });
-  if (transformValues.size > 0) {
-    let stored = elementTransforms.get(element);
-    if (!stored) {
-      stored = /* @__PURE__ */ new Map();
-      elementTransforms.set(element, stored);
-    }
-    transformValues.forEach((value, property) => stored.set(property, value));
-    el.style.transform = buildTransform(stored);
-  }
-  Object.entries(styleValues).forEach(([prop, val]) => {
-    el.style.setProperty(prop, val);
-  });
-}
-function parseCurrentValue(element, property) {
-  const el = element;
-  const computed = getComputedStyle(el);
-  if (property === "opacity") {
-    const opacity = parseFloat(computed.opacity);
-    return Number.isNaN(opacity) ? 1 : opacity;
-  }
-  if (transformProperties.has(property)) {
-    const stored = elementTransforms.get(element)?.get(property);
-    if (stored !== void 0) {
-      return stored;
-    }
-    return property.startsWith("scale") ? 1 : 0;
-  }
-  const value = computed.getPropertyValue(property);
-  return parseFloat(value) || 0;
-}
-function animate(elementOrSelector, target, options = {}) {
-  const { delay: delay2 = 0, onUpdate, onComplete, ...springConfig } = options;
-  const element = typeof elementOrSelector === "string" ? document.querySelector(elementOrSelector) : elementOrSelector;
-  if (!element) {
-    console.warn("animate: Element not found");
-    return createNoopControls();
-  }
-  const springs = /* @__PURE__ */ new Map();
-  const currentValues = /* @__PURE__ */ new Map();
-  const currentTargets = /* @__PURE__ */ new Map();
-  const pausedVelocities = /* @__PURE__ */ new Map();
-  const released = /* @__PURE__ */ new Set();
-  const ownedBy = propertyOwners.get(element) ?? /* @__PURE__ */ new Map();
-  propertyOwners.set(element, ownedBy);
-  const releasers = /* @__PURE__ */ new Map();
-  const disown = (property) => {
-    const release = releasers.get(property);
-    if (release && ownedBy.get(property) === release) ownedBy.delete(property);
-    releasers.delete(property);
-  };
-  let isRunning = true;
-  let isPaused = false;
-  let resolveFinished;
-  const rafIds = /* @__PURE__ */ new Set();
-  let cancelDelay = null;
-  const finished = new Promise((resolve, _reject) => {
-    resolveFinished = resolve;
-  });
-  const startAnimation = () => {
-    const entries = Object.entries(target);
-    let completedCount = 0;
-    const totalAnimations = entries.length;
-    if (totalAnimations === 0) {
-      if (isRunning) {
-        isRunning = false;
-        try {
-          onComplete?.();
-        } catch {
-        }
-        resolveFinished();
-      }
-      return;
-    }
-    const toNumber = (v) => typeof v === "string" ? parseFloat(v) || 0 : v;
-    entries.forEach(([property, value]) => {
-      const list = Array.isArray(value) ? value : [value];
-      const hasFrom = list.length > 1;
-      const values = hasFrom ? list.slice(1) : list;
-      const startValue = hasFrom ? toNumber(list[0]) : parseCurrentValue(element, property);
-      const spring2 = createSpringValue(startValue, {
-        stiffness: springConfig.stiffness ?? 100,
-        damping: springConfig.damping ?? 10,
-        mass: springConfig.mass ?? 1
-      });
-      springs.set(property, spring2);
-      currentValues.set(property, startValue);
-      ownedBy.get(property)?.();
-      const release = () => {
-        released.add(property);
-        releasers.delete(property);
-        spring2.stop();
-        currentValues.delete(property);
-        currentTargets.delete(property);
-      };
-      releasers.set(property, release);
-      ownedBy.set(property, release);
-      spring2.subscribe((v) => {
-        if (!isRunning || isPaused || released.has(property)) return;
-        currentValues.set(property, v);
-        applyStylesToElement(element, currentValues);
-        if (onUpdate) {
-          const valuesObj = {};
-          currentValues.forEach((val, key) => {
-            valuesObj[key] = val;
-          });
-          onUpdate(valuesObj);
-        }
-      });
-      const animateKeyframes = async () => {
-        for (const targetValue of values) {
-          if (!isRunning || released.has(property)) break;
-          const numValue = toNumber(targetValue);
-          await new Promise((resolve) => {
-            currentTargets.set(property, numValue);
-            if (!isPaused) {
-              spring2.set(numValue);
-            }
-            let checkId = null;
-            const checkDone = () => {
-              if (checkId !== null) {
-                rafIds.delete(checkId);
-              }
-              if (!isRunning || released.has(property) || !isPaused && !spring2.isAnimating()) {
-                resolve();
-              } else {
-                checkId = requestAnimationFrame(checkDone);
-                rafIds.add(checkId);
-              }
-            };
-            checkId = requestAnimationFrame(checkDone);
-            rafIds.add(checkId);
-          });
-        }
-        disown(property);
-        completedCount++;
-        if (completedCount === totalAnimations && isRunning) {
-          isRunning = false;
-          try {
-            onComplete?.();
-          } catch {
-          }
-          resolveFinished();
-        }
-      };
-      animateKeyframes();
-    });
-  };
-  if (delay2 > 0) {
-    cancelDelay = globalLoop.delay(delay2, () => {
-      cancelDelay = null;
-      startAnimation();
-    });
-  } else {
-    startAnimation();
-  }
-  const cleanup = () => {
-    rafIds.forEach((id) => {
-      cancelAnimationFrame(id);
-    });
-    rafIds.clear();
-    cancelDelay?.();
-    cancelDelay = null;
-  };
-  return {
-    stop: () => {
-      isRunning = false;
-      cleanup();
-      for (const property of [...releasers.keys()]) disown(property);
-      springs.forEach((spring2) => spring2.stop());
-      resolveFinished();
-    },
-    pause: () => {
-      if (!isRunning || isPaused) return;
-      isPaused = true;
-      springs.forEach((spring2, property) => {
-        pausedVelocities.set(property, spring2.getVelocity());
-        spring2.stop();
-      });
-    },
-    resume: () => {
-      if (!isPaused) return;
-      isPaused = false;
-      if (!isRunning) return;
-      currentTargets.forEach((value, property) => {
-        springs.get(property)?.set(value, { velocity: pausedVelocities.get(property) ?? 0 });
-      });
-      pausedVelocities.clear();
-    },
-    getProgress: () => {
-      let totalProgress = 0;
-      let count = 0;
-      springs.forEach((spring2) => {
-        totalProgress += spring2.isAnimating() ? 0.5 : 1;
-        count++;
-      });
-      return count > 0 ? totalProgress / count : 1;
-    },
-    isAnimating: () => isRunning && !isPaused,
-    finished
-  };
-}
-function createNoopControls() {
-  return {
-    stop: () => {
-    },
-    pause: () => {
-    },
-    resume: () => {
-    },
-    getProgress: () => 1,
-    isAnimating: () => false,
-    finished: Promise.resolve()
-  };
-}
-function animateAll(selector, target, options = {}) {
-  const { stagger: stagger2 = 0, ...animateOptions } = options;
-  const elements = document.querySelectorAll(selector);
-  return Array.from(elements).map((element, index) => {
-    return animate(element, target, {
-      ...animateOptions,
-      delay: (animateOptions.delay ?? 0) + stagger2 * index
-    });
-  });
-}
-
-// src/interpolation/interpolate.ts
-var defaultInterpolateOptions = {
-  clamp: false
-};
-var InterpolationImpl = class {
-  constructor(source, input, output, options = {}) {
-    this.source = source;
-    const length = Math.min(input.length, output.length);
-    let normalizedInput = input.slice(0, length);
-    let normalizedOutput = output.slice(0, length);
-    if (length > 1 && normalizedInput[0] > normalizedInput[length - 1]) {
-      normalizedInput = normalizedInput.reverse();
-      normalizedOutput = normalizedOutput.reverse();
-    }
-    this.input = normalizedInput;
-    this.output = normalizedOutput;
-    this.options = { ...defaultInterpolateOptions, ...options };
-  }
-  get() {
-    const value = typeof this.source === "function" ? this.source() : this.source.get();
-    if (!Number.isFinite(value)) {
-      return this.output[0] ?? 0;
-    }
-    return this.interpolate(value);
-  }
-  interpolate(value) {
-    const { input, output } = this;
-    const { extrapolate, extrapolateLeft, extrapolateRight, clamp: clamp2 } = this.options;
-    if (input.length <= 1) {
-      return output[0] ?? 0;
-    }
-    if (value < input[0]) {
-      const mode = this.getExtrapolationMode(extrapolateLeft, extrapolate);
-      if (mode === "clamp") {
-        value = input[0];
-      } else if (mode === "identity") {
-        return value;
-      }
-    } else if (value > input[input.length - 1]) {
-      const mode = this.getExtrapolationMode(extrapolateRight, extrapolate);
-      if (mode === "clamp") {
-        value = input[input.length - 1];
-      } else if (mode === "identity") {
-        return value;
-      }
-    }
-    let i = 1;
-    while (i < input.length - 1 && value > input[i]) {
-      i++;
-    }
-    const denominator = input[i] - input[i - 1];
-    const ratio = denominator === 0 ? 0 : (value - input[i - 1]) / denominator;
-    const result = output[i - 1] + ratio * (output[i] - output[i - 1]);
-    if (clamp2) {
-      const min = Math.min(...output);
-      const max = Math.max(...output);
-      return Math.max(min, Math.min(max, result));
-    }
-    return result;
-  }
-  getExtrapolationMode(specificMode, fallbackMode) {
-    if (specificMode !== void 0) {
-      return specificMode;
-    }
-    if (fallbackMode !== void 0) {
-      return fallbackMode;
-    }
-    return "extend";
-  }
-};
-function interpolate(value, input, output, options) {
-  return new InterpolationImpl(value, input, output, options);
 }
 
 // src/utils/named-colors.ts
@@ -2671,7 +2405,9 @@ var NAMED_COLORS = {
   yellowgreen: 10145074
 };
 function namedColorToRgb(name) {
-  const packed = NAMED_COLORS[name.toLowerCase()];
+  const key = name.toLowerCase();
+  if (!Object.prototype.hasOwnProperty.call(NAMED_COLORS, key)) return null;
+  const packed = NAMED_COLORS[key];
   if (packed === void 0) return null;
   return { r: packed >> 16 & 255, g: packed >> 8 & 255, b: packed & 255 };
 }
@@ -2705,7 +2441,7 @@ function parseColorRGBA(color) {
       a = Math.max(0, Math.min(1, a));
     }
     if (fn.startsWith("rgb")) {
-      const channel = (value, percent) => Math.round(percent ? parseFloat(value) / 100 * 255 : parseFloat(value));
+      const channel = (value, percent) => Math.max(0, Math.min(255, Math.round(percent ? parseFloat(value) / 100 * 255 : parseFloat(value))));
       return {
         r: channel(match[2], match[3] === "%" ? "%" : void 0),
         g: channel(match[4], match[5]),
@@ -2889,6 +2625,539 @@ function formatRGBA(color) {
   return alpha >= 1 ? `rgb(${rgb})` : `rgba(${rgb}, ${alpha})`;
 }
 
+// src/dom/values.ts
+var NUMERIC_TEMPLATE = {
+  id: "number",
+  numeric: true,
+  parts: ["", ""],
+  kinds: ["n"],
+  size: 1
+};
+var TOKEN_REGEX = /\burl\([^)]*\)|#(?:[0-9a-f]{8}|[0-9a-f]{6}|[0-9a-f]{3,4})\b|(?:rgba?|hsla?)\([^)]*\)|[a-z][a-z0-9-]*|[-+]?(?:\d+\.?\d*|\.\d+)(?:e[+-]?\d+)?/gi;
+var ALPHA_EPSILON = 1e-6;
+function parseString(value) {
+  const parts = [];
+  const kinds = [];
+  const channels = [];
+  const colors = [];
+  let literal = "";
+  let last = 0;
+  for (const match of value.matchAll(TOKEN_REGEX)) {
+    const text = match[0];
+    const index = match.index ?? 0;
+    const first = text.charCodeAt(0);
+    const isNumber = first >= 48 && first <= 57 || text[0] === "." || text[0] === "-" || text[0] === "+";
+    let color = null;
+    if (!isNumber) {
+      const isFunction = text.endsWith(")");
+      const nested = isFunction && text.indexOf("(") !== text.lastIndexOf("(");
+      const isCall = !isFunction && value[index + text.length] === "(";
+      if (!nested && !isCall && isColorString(text)) color = parseColorRGBA(text);
+      if (!color) continue;
+    }
+    literal += value.slice(last, index);
+    parts.push(literal);
+    literal = "";
+    last = index + text.length;
+    if (color) {
+      kinds.push("c");
+      const a = Math.max(0, Math.min(1, color.a));
+      channels.push(color.r * a, color.g * a, color.b * a, a);
+      colors.push(color);
+    } else {
+      kinds.push("n");
+      channels.push(parseFloat(text));
+      colors.push(void 0);
+    }
+  }
+  literal += value.slice(last);
+  parts.push(literal);
+  return {
+    raw: value,
+    template: {
+      id: `${kinds.join("")}${parts.join("")}`,
+      numeric: false,
+      parts,
+      kinds,
+      size: channels.length
+    },
+    channels,
+    colors
+  };
+}
+var cache = /* @__PURE__ */ new Map();
+var CACHE_LIMIT = 500;
+function parseAnimatableValue(value) {
+  if (typeof value === "number") {
+    return { raw: value, template: NUMERIC_TEMPLATE, channels: [value], colors: [] };
+  }
+  let parsed = cache.get(value);
+  if (!parsed) {
+    parsed = parseString(value);
+    if (cache.size >= CACHE_LIMIT) cache.clear();
+    cache.set(value, parsed);
+  }
+  return parsed;
+}
+var formatNumber = (value) => String(Math.round(value * 1e6) / 1e6 || 0);
+function composeAnimatableValue(target, channels) {
+  const { template } = target;
+  if (template.numeric) return channels[0] ?? target.raw;
+  let exact = true;
+  for (let i = 0; i < template.size; i++) {
+    const value = channels[i];
+    if (value === void 0) return target.raw;
+    if (value !== target.channels[i]) exact = false;
+  }
+  if (exact) return target.raw;
+  let result = template.parts[0] ?? "";
+  let c = 0;
+  for (let i = 0; i < template.kinds.length; i++) {
+    if (template.kinds[i] === "n") {
+      result += formatNumber(channels[c]);
+      c += 1;
+    } else {
+      const alpha = channels[c + 3];
+      if (alpha <= ALPHA_EPSILON) {
+        const color = target.colors[i] ?? { r: 0, g: 0, b: 0};
+        result += formatRGBA({ r: color.r, g: color.g, b: color.b, a: 0 });
+      } else {
+        result += formatRGBA({
+          r: channels[c] / alpha,
+          g: channels[c + 1] / alpha,
+          b: channels[c + 2] / alpha,
+          a: alpha
+        });
+      }
+      c += 4;
+    }
+    result += template.parts[i + 1] ?? "";
+  }
+  return result;
+}
+
+// src/animation/tween-value.ts
+function createTweenValue(initial, duration, ease = (p) => p) {
+  let value = initial;
+  let from = initial;
+  let to = initial;
+  let elapsed = 0;
+  let running = false;
+  let paused = false;
+  let destroyed = false;
+  let generation = 0;
+  let resolve;
+  let finished = Promise.resolve();
+  const subscribers = /* @__PURE__ */ new Set();
+  const notify = () => {
+    for (const callback of subscribers) {
+      try {
+        callback(value);
+      } catch (error) {
+        console.error("[SpringKit] Tween subscriber error:", error);
+      }
+    }
+  };
+  const stop = () => {
+    generation++;
+    running = paused = false;
+    globalLoop.remove(driver);
+    resolve?.();
+    resolve = void 0;
+  };
+  const driver = {
+    update(_now, delta = 0) {
+      if (!running) return;
+      const run = generation;
+      elapsed += delta;
+      const progress = duration > 0 && elapsed + 1e-6 < duration ? elapsed / duration : 1;
+      let eased = progress;
+      try {
+        const result = ease(progress);
+        if (Number.isFinite(result)) eased = result;
+      } catch (error) {
+        console.error("[SpringKit] Tween easing error:", error);
+      }
+      value = progress >= 1 ? to : from + (to - from) * eased;
+      notify();
+      if (progress >= 1 && run === generation) stop();
+    },
+    isComplete: () => !running && !paused
+  };
+  return {
+    get: () => value,
+    getVelocity: () => 0,
+    get finished() {
+      return finished;
+    },
+    set(target) {
+      if (destroyed) return;
+      stop();
+      from = value;
+      to = validateAnimationValue(target, "tween.target");
+      elapsed = 0;
+      finished = new Promise((done) => {
+        resolve = done;
+      });
+      running = true;
+      globalLoop.add(driver);
+    },
+    jump(target) {
+      if (!destroyed) {
+        stop();
+        value = validateAnimationValue(target, "tween.value");
+        notify();
+      }
+    },
+    stop,
+    pause() {
+      if (running) {
+        paused = true;
+        running = false;
+        globalLoop.remove(driver);
+      }
+    },
+    resume() {
+      if (paused && !destroyed) {
+        paused = false;
+        running = true;
+        globalLoop.add(driver);
+      }
+    },
+    isAnimating: () => running,
+    isDestroyed: () => destroyed,
+    setConfig: () => {
+    },
+    subscribe(callback) {
+      const entry = (v) => callback(v);
+      subscribers.add(entry);
+      try {
+        callback(value);
+      } catch (error) {
+        console.error("[SpringKit] Tween subscriber error:", error);
+      }
+      return () => {
+        subscribers.delete(entry);
+      };
+    },
+    destroy() {
+      if (!destroyed) {
+        stop();
+        destroyed = true;
+        subscribers.clear();
+      }
+    }
+  };
+}
+
+// src/animation/animate.ts
+var propertyOwners = /* @__PURE__ */ new WeakMap();
+function parseCurrentValue(element, property) {
+  const raw = readStyle(element, property);
+  const value = typeof raw === "number" ? raw : parseFloat(raw);
+  return Number.isFinite(value) ? value : property === "opacity" ? 1 : 0;
+}
+function animate(elementOrSelector, target, options = {}) {
+  const { delay: delay2 = 0, onUpdate, onComplete, ...springConfig } = options;
+  const element = typeof elementOrSelector === "string" ? document.querySelector(elementOrSelector) : elementOrSelector;
+  if (!element) {
+    console.warn("animate: Element not found");
+    return createNoopControls();
+  }
+  const springs = /* @__PURE__ */ new Map();
+  const currentValues = /* @__PURE__ */ new Map();
+  const transitions = /* @__PURE__ */ new Map();
+  const currentTargets = /* @__PURE__ */ new Map();
+  const pausedVelocities = /* @__PURE__ */ new Map();
+  const released = /* @__PURE__ */ new Set();
+  const ownedBy = propertyOwners.get(element) ?? /* @__PURE__ */ new Map();
+  propertyOwners.set(element, ownedBy);
+  const releasers = /* @__PURE__ */ new Map();
+  const disown = (property) => {
+    const release = releasers.get(property);
+    if (release && ownedBy.get(property) === release) ownedBy.delete(property);
+    releasers.delete(property);
+  };
+  let isRunning = true;
+  let isPaused = false;
+  let resolveFinished;
+  const waiters = /* @__PURE__ */ new Set();
+  const wake = () => {
+    for (const resolve of waiters) resolve();
+    waiters.clear();
+  };
+  const progress = /* @__PURE__ */ new Map();
+  const segments = /* @__PURE__ */ new Map();
+  let cancelDelay = null;
+  const finished = new Promise((resolve, _reject) => {
+    resolveFinished = resolve;
+  });
+  const startAnimation = () => {
+    const entries = Object.entries(target);
+    let completedCount = 0;
+    let completedNaturally = 0;
+    const totalAnimations = entries.length;
+    if (totalAnimations === 0) {
+      if (isRunning) {
+        isRunning = false;
+        try {
+          onComplete?.();
+        } catch {
+        }
+        resolveFinished();
+      }
+      return;
+    }
+    const toNumber = (v) => typeof v === "string" ? parseFloat(v) || 0 : v;
+    entries.forEach(([property, value]) => {
+      const list = Array.isArray(value) ? value : [value];
+      const hasFrom = list.length > 1;
+      const values = hasFrom ? list.slice(1) : list;
+      const rawStart = hasFrom ? list[0] : typeof list[0] === "string" ? String(readStyle(element, property)) : parseCurrentValue(element, property);
+      const startValue = typeof rawStart === "number" ? rawStart : 0;
+      const timed = typeof options.duration === "number" && Number.isFinite(options.duration) || options.ease !== void 0;
+      const spring2 = timed ? createTweenValue(startValue, Math.max(0, Number.isFinite(options.duration) ? options.duration : 300) / Math.max(1, values.length), options.ease) : createSpringValue(startValue, {
+        stiffness: springConfig.stiffness ?? 100,
+        damping: springConfig.damping ?? 10,
+        mass: springConfig.mass ?? 1
+      });
+      springs.set(property, spring2);
+      currentValues.set(property, rawStart);
+      ownedBy.get(property)?.();
+      const release = () => {
+        released.add(property);
+        releasers.delete(property);
+        spring2.stop();
+        wake();
+        currentValues.delete(property);
+        currentTargets.delete(property);
+      };
+      releasers.set(property, release);
+      ownedBy.set(property, release);
+      spring2.subscribe((v) => {
+        if (!isRunning || isPaused || released.has(property)) return;
+        const transition = transitions.get(property);
+        const segment = segments.get(property);
+        if (segment) {
+          const fraction = segment.to === segment.from ? 1 : (v - segment.from) / (segment.to - segment.from);
+          progress.set(property, (segment.index + Math.max(0, Math.min(1, fraction))) / segment.total);
+        }
+        const rendered = transition ? composeAnimatableValue(transition.to, transition.from.channels.map((from, i) => from + (transition.to.channels[i] - from) * v)) : typeof rawStart === "string" && !currentTargets.has(property) ? rawStart : v;
+        currentValues.set(property, rendered);
+        writeStyle(element, property, rendered);
+        if (onUpdate) {
+          const valuesObj = {};
+          currentValues.forEach((val, key) => {
+            valuesObj[key] = val;
+          });
+          onUpdate(valuesObj);
+        }
+      });
+      const animateKeyframes = async () => {
+        for (let index = 0; index < values.length; index++) {
+          const targetValue = values[index];
+          if (!isRunning || released.has(property)) break;
+          let numValue = toNumber(targetValue);
+          if (typeof targetValue === "string") {
+            const from = parseAnimatableValue(currentValues.get(property) ?? rawStart);
+            const to = parseAnimatableValue(targetValue);
+            if (from.template.id !== to.template.id || to.template.size === 0) {
+              currentValues.set(property, targetValue);
+              writeStyle(element, property, targetValue);
+              progress.set(property, (index + 1) / values.length);
+              await Promise.resolve();
+              continue;
+            }
+            spring2.jump(0);
+            transitions.set(property, { from, to });
+            numValue = 1;
+          } else {
+            transitions.delete(property);
+          }
+          currentTargets.set(property, numValue);
+          segments.set(property, { from: spring2.get(), to: numValue, index, total: values.length });
+          if (!isPaused) spring2.set(numValue);
+          else if ("pause" in spring2 && typeof spring2.pause === "function") {
+            spring2.set(numValue);
+            spring2.pause();
+          }
+          while (isRunning && !released.has(property)) {
+            if (isPaused) {
+              await new Promise((resolve) => waiters.add(resolve));
+            } else {
+              await spring2.finished;
+              if (!isPaused && !spring2.isAnimating()) break;
+            }
+          }
+          progress.set(property, (index + 1) / values.length);
+        }
+        const superseded = released.has(property);
+        disown(property);
+        currentTargets.delete(property);
+        if (!superseded) completedNaturally++;
+        completedCount++;
+        if (completedCount === totalAnimations && isRunning) {
+          isRunning = false;
+          try {
+            if (completedNaturally > 0) onComplete?.();
+          } catch {
+          }
+          resolveFinished();
+        }
+      };
+      animateKeyframes();
+    });
+  };
+  if (delay2 > 0) {
+    cancelDelay = globalLoop.delay(delay2, () => {
+      cancelDelay = null;
+      startAnimation();
+    });
+  } else {
+    startAnimation();
+  }
+  const cleanup = () => {
+    wake();
+    cancelDelay?.();
+    cancelDelay = null;
+  };
+  return {
+    stop: () => {
+      isRunning = false;
+      cleanup();
+      for (const property of [...releasers.keys()]) disown(property);
+      springs.forEach((spring2) => spring2.stop());
+      resolveFinished();
+    },
+    pause: () => {
+      if (!isRunning || isPaused) return;
+      isPaused = true;
+      springs.forEach((spring2, property) => {
+        pausedVelocities.set(property, spring2.getVelocity());
+        if ("pause" in spring2) spring2.pause();
+        else spring2.stop();
+      });
+    },
+    resume: () => {
+      if (!isPaused) return;
+      isPaused = false;
+      if (!isRunning) return;
+      currentTargets.forEach((value, property) => {
+        const spring2 = springs.get(property);
+        if (spring2 && "resume" in spring2) spring2.resume();
+        else spring2?.set(value, { velocity: pausedVelocities.get(property) ?? 0 });
+      });
+      pausedVelocities.clear();
+      wake();
+    },
+    getProgress: () => {
+      if (!isRunning) return 1;
+      const keys = Object.keys(target);
+      return keys.length ? keys.reduce((sum, key) => sum + (progress.get(key) ?? 0), 0) / keys.length : 1;
+    },
+    isAnimating: () => isRunning && !isPaused,
+    finished
+  };
+}
+function createNoopControls() {
+  return {
+    stop: () => {
+    },
+    pause: () => {
+    },
+    resume: () => {
+    },
+    getProgress: () => 1,
+    isAnimating: () => false,
+    finished: Promise.resolve()
+  };
+}
+function animateAll(selector, target, options = {}) {
+  const { stagger: stagger2 = 0, ...animateOptions } = options;
+  const elements = document.querySelectorAll(selector);
+  return Array.from(elements).map((element, index) => {
+    return animate(element, target, {
+      ...animateOptions,
+      delay: (animateOptions.delay ?? 0) + stagger2 * index
+    });
+  });
+}
+
+// src/interpolation/interpolate.ts
+var defaultInterpolateOptions = {
+  clamp: false
+};
+var InterpolationImpl = class {
+  constructor(source, input, output, options = {}) {
+    this.source = source;
+    const length = Math.min(input.length, output.length);
+    let normalizedInput = input.slice(0, length);
+    let normalizedOutput = output.slice(0, length);
+    if (length > 1 && normalizedInput[0] > normalizedInput[length - 1]) {
+      normalizedInput = normalizedInput.reverse();
+      normalizedOutput = normalizedOutput.reverse();
+    }
+    this.input = normalizedInput;
+    this.output = normalizedOutput;
+    this.options = { ...defaultInterpolateOptions, ...options };
+  }
+  get() {
+    const value = typeof this.source === "function" ? this.source() : this.source.get();
+    if (!Number.isFinite(value)) {
+      return this.output[0] ?? 0;
+    }
+    return this.interpolate(value);
+  }
+  interpolate(value) {
+    const { input, output } = this;
+    const { extrapolate, extrapolateLeft, extrapolateRight, clamp: clamp2 } = this.options;
+    if (input.length <= 1) {
+      return output[0] ?? 0;
+    }
+    if (value < input[0]) {
+      const mode = this.getExtrapolationMode(extrapolateLeft, extrapolate);
+      if (mode === "clamp") {
+        value = input[0];
+      } else if (mode === "identity") {
+        return value;
+      }
+    } else if (value > input[input.length - 1]) {
+      const mode = this.getExtrapolationMode(extrapolateRight, extrapolate);
+      if (mode === "clamp") {
+        value = input[input.length - 1];
+      } else if (mode === "identity") {
+        return value;
+      }
+    }
+    let i = 1;
+    while (i < input.length - 1 && value > input[i]) {
+      i++;
+    }
+    const denominator = input[i] - input[i - 1];
+    const rawRatio = denominator === 0 ? 0 : (value - input[i - 1]) / denominator;
+    const ratio = Number.isFinite(rawRatio) ? rawRatio : 0;
+    const result = output[i - 1] + ratio * (output[i] - output[i - 1]);
+    if (clamp2) {
+      const min = Math.min(...output);
+      const max = Math.max(...output);
+      return Math.max(min, Math.min(max, result));
+    }
+    return result;
+  }
+  getExtrapolationMode(specificMode, fallbackMode) {
+    if (specificMode !== void 0) {
+      return specificMode;
+    }
+    if (fallbackMode !== void 0) {
+      return fallbackMode;
+    }
+    return "extend";
+  }
+};
+function interpolate(value, input, output, options) {
+  return new InterpolationImpl(value, input, output, options);
+}
+
 // src/interpolation/color.ts
 var MAX_COLOR_CACHE_SIZE = 1e3;
 var colorCache = /* @__PURE__ */ new Map();
@@ -2955,7 +3224,8 @@ var ColorInterpolationImpl = class {
       i++;
     }
     const inputRange = this.input[i] - this.input[i - 1];
-    const ratio = inputRange !== 0 ? (value - this.input[i - 1]) / inputRange : 0;
+    const rawRatio = inputRange !== 0 ? (value - this.input[i - 1]) / inputRange : 0;
+    const ratio = Number.isFinite(rawRatio) ? rawRatio : 0;
     const from = this.colors[i - 1];
     const to = this.colors[i];
     const mixed = mixColorsRGBA(
@@ -3109,7 +3379,7 @@ var DragSpringImpl = class {
       this.samples = [];
       this.endDrag(e.pointerId);
       if (this.config.snap?.snapOnRelease !== false) {
-        const snapPoint = this.findNearestSnapPoint();
+        const snapPoint = this.findNearestSnapPoint(this.velocity);
         if (snapPoint) {
           this.startSnap(snapPoint, this.velocity);
           if (this.config.onDragEnd) {
@@ -3226,16 +3496,17 @@ var DragSpringImpl = class {
     this.element.removeEventListener("pointerup", this.onPointerUp);
     this.element.removeEventListener("pointercancel", this.onPointerUp);
   }
-  findNearestSnapPoint() {
+  findNearestSnapPoint(velocity) {
     const snap = this.config.snap;
     if (!snap) return null;
     if (snap.grid) {
       const gridX = snap.grid.x === 0 ? this.position.x : Math.round(this.position.x / snap.grid.x) * snap.grid.x;
       const gridY = snap.grid.y === 0 ? this.position.y : Math.round(this.position.y / snap.grid.y) * snap.grid.y;
-      return { x: gridX, y: gridY };
+      const { left, right, top, bottom } = this.getEffectiveBounds();
+      return { x: clamp(gridX, left, right), y: clamp(gridY, top, bottom) };
     }
     if (snap.points && snap.points.length > 0) {
-      const velocityMagnitude = Math.sqrt(this.velocity.x ** 2 + this.velocity.y ** 2);
+      const velocityMagnitude = Math.sqrt(velocity.x ** 2 + velocity.y ** 2);
       const threshold = snap.velocityThreshold ?? DEFAULT_SNAP_VELOCITY_THRESHOLD;
       if (velocityMagnitude > threshold) return null;
       let nearestPoint = null;
@@ -3340,6 +3611,7 @@ var DragSpringImpl = class {
     return this._isDragging;
   }
   reset() {
+    if (this.destroyed) return;
     this.stopMomentum();
     this.springX.jump(0);
     this.springY.jump(0);
@@ -3559,7 +3831,7 @@ var DragSpringImpl = class {
     return { damping: 2 * Math.sqrt(stiffness * mass) * dampingRatio };
   }
   snapToNearest() {
-    const snapPoint = this.findNearestSnapPoint();
+    const snapPoint = this.findNearestSnapPoint(this.getVelocity());
     if (snapPoint) {
       this.snapTo(snapPoint);
     }
@@ -3770,6 +4042,8 @@ var ScrollSpringImpl = class {
     return { ...this.scroll };
   }
   scrollTo(x, y) {
+    if (!Number.isFinite(x)) x = 0;
+    if (!Number.isFinite(y)) y = 0;
     this.target = { x, y };
     this.rawTarget = { x, y };
     this.springX.set(x);
@@ -3871,7 +4145,7 @@ function createPinchGesture(element, config = {}) {
   let lastTime = 0;
   const touches = /* @__PURE__ */ new Map();
   let scaleSpring = null;
-  const createState = (event, first = false, last = false) => {
+  const createState = (event, first = false, last = false, cancelled = false) => {
     const touchArray = Array.from(touches.values());
     const p1 = touchArray[0] ?? { x: 0, y: 0 };
     const p2 = touchArray[1] ?? { x: 0, y: 0 };
@@ -3882,7 +4156,7 @@ function createPinchGesture(element, config = {}) {
       last,
       event,
       elapsedTime: performance.now() - startTime,
-      cancelled: false,
+      cancelled,
       scale: currentScale,
       velocity,
       distance: touchArray.length >= 2 ? getDistance(p1, p2) : 0,
@@ -3945,7 +4219,7 @@ function createPinchGesture(element, config = {}) {
       e.preventDefault();
     }
   };
-  const handleTouchEnd = (e) => {
+  const handleTouchEnd = (e, cancelled = false) => {
     for (const touch of Array.from(e.changedTouches)) {
       touches.delete(touch.identifier);
     }
@@ -3963,17 +4237,18 @@ function createPinchGesture(element, config = {}) {
         });
         scaleSpring.set(targetScale);
       }
-      onPinchEnd?.(createState(e, false, true));
+      onPinchEnd?.(createState(e, false, true, cancelled));
     } else if (active) {
       const touchArray = Array.from(touches.values());
       initialDistance = getDistance(touchArray[0], touchArray[1]);
       initialScale = currentScale;
     }
   };
+  const handleTouchCancel = (e) => handleTouchEnd(e, true);
   element.addEventListener("touchstart", handleTouchStart, { passive: false });
   element.addEventListener("touchmove", handleTouchMove, { passive: false });
   element.addEventListener("touchend", handleTouchEnd);
-  element.addEventListener("touchcancel", handleTouchEnd);
+  element.addEventListener("touchcancel", handleTouchCancel);
   return {
     enable: () => {
       enabled = true;
@@ -3988,7 +4263,7 @@ function createPinchGesture(element, config = {}) {
       element.removeEventListener("touchstart", handleTouchStart);
       element.removeEventListener("touchmove", handleTouchMove);
       element.removeEventListener("touchend", handleTouchEnd);
-      element.removeEventListener("touchcancel", handleTouchEnd);
+      element.removeEventListener("touchcancel", handleTouchCancel);
       scaleSpring?.destroy();
       scaleSpring = null;
       touches.clear();
@@ -4015,8 +4290,10 @@ function createRotateGesture(element, config = {}) {
   let gestureStartAngle = 0;
   let lastRawAngle = 0;
   let accumulatedDelta = 0;
+  let thresholdPassed = false;
+  let pendingReference = null;
   const touches = /* @__PURE__ */ new Map();
-  const createState = (event, first = false, last = false) => {
+  const createState = (event, first = false, last = false, cancelled = false) => {
     const touchArray = Array.from(touches.values());
     const p1 = touchArray[0] ?? { x: 0, y: 0 };
     const p2 = touchArray[1] ?? { x: 0, y: 0 };
@@ -4027,7 +4304,7 @@ function createRotateGesture(element, config = {}) {
       last,
       event,
       elapsedTime: performance.now() - startTime,
-      cancelled: false,
+      cancelled,
       angle: currentAngle,
       velocity,
       initialAngle,
@@ -4050,6 +4327,8 @@ function createRotateGesture(element, config = {}) {
       initialAngle = getAngle(p1, p2);
       lastRawAngle = initialAngle;
       accumulatedDelta = 0;
+      thresholdPassed = false;
+      pendingReference = getDistance(p1, p2) === 0 ? "start" : null;
       startTime = performance.now();
       lastTime = startTime;
       lastAngle = currentAngle;
@@ -4072,10 +4351,25 @@ function createRotateGesture(element, config = {}) {
       const newAngle = getAngle(p1, p2);
       const now = performance.now();
       const dt = now - lastTime;
+      if (getDistance(p1, p2) === 0) {
+        e.preventDefault();
+        return;
+      }
+      if (pendingReference) {
+        lastRawAngle = newAngle;
+        if (pendingReference === "start") initialAngle = newAngle;
+        pendingReference = null;
+        lastTime = now;
+        e.preventDefault();
+        return;
+      }
       accumulatedDelta += normalizeAngleDelta(newAngle - lastRawAngle);
       lastRawAngle = newAngle;
       const angleDelta = accumulatedDelta;
-      if (Math.abs(angleDelta) >= threshold) {
+      if (!thresholdPassed && Math.abs(angleDelta) >= threshold) {
+        thresholdPassed = true;
+      }
+      if (thresholdPassed) {
         currentAngle = angleOffset + angleDelta;
         velocity = dt > 0 ? (currentAngle - lastAngle) / dt * 1e3 : 0;
         lastAngle = currentAngle;
@@ -4085,23 +4379,27 @@ function createRotateGesture(element, config = {}) {
       e.preventDefault();
     }
   };
-  const handleTouchEnd = (e) => {
+  const handleTouchEnd = (e, cancelled = false) => {
     for (const touch of Array.from(e.changedTouches)) {
       touches.delete(touch.identifier);
     }
     if (active && touches.size < 2) {
       active = false;
       angleOffset = currentAngle;
-      onRotateEnd?.(createState(e, false, true));
+      onRotateEnd?.(createState(e, false, true, cancelled));
     } else if (active) {
       const touchArray = Array.from(touches.values());
-      lastRawAngle = getAngle(touchArray[0], touchArray[1]);
+      const p1 = touchArray[0];
+      const p2 = touchArray[1];
+      lastRawAngle = getAngle(p1, p2);
+      pendingReference = getDistance(p1, p2) === 0 ? "rebase" : null;
     }
   };
+  const handleTouchCancel = (e) => handleTouchEnd(e, true);
   element.addEventListener("touchstart", handleTouchStart, { passive: false });
   element.addEventListener("touchmove", handleTouchMove, { passive: false });
   element.addEventListener("touchend", handleTouchEnd);
-  element.addEventListener("touchcancel", handleTouchEnd);
+  element.addEventListener("touchcancel", handleTouchCancel);
   return {
     enable: () => {
       enabled = true;
@@ -4114,7 +4412,7 @@ function createRotateGesture(element, config = {}) {
       element.removeEventListener("touchstart", handleTouchStart);
       element.removeEventListener("touchmove", handleTouchMove);
       element.removeEventListener("touchend", handleTouchEnd);
-      element.removeEventListener("touchcancel", handleTouchEnd);
+      element.removeEventListener("touchcancel", handleTouchCancel);
       touches.clear();
     }
   };
@@ -4175,12 +4473,12 @@ function createSwipeGesture(element, config = {}) {
     const meetsVelocityX = velX >= velocityThreshold && absX >= minDistance;
     const meetsVelocityY = velY >= velocityThreshold && absY >= minDistance;
     if (axis === "x" || axis === "both" && absX > absY) {
-      if (meetsDistanceX || meetsVelocityX) {
+      if (absX > 0 && (meetsDistanceX || meetsVelocityX)) {
         return movement.x > 0 ? "right" : "left";
       }
     }
     if (axis === "y" || axis === "both" && absY > absX) {
-      if (meetsDistanceY || meetsVelocityY) {
+      if (absY > 0 && (meetsDistanceY || meetsVelocityY)) {
         return movement.y > 0 ? "down" : "up";
       }
     }
@@ -4311,6 +4609,8 @@ function createLongPressGesture(element, config = {}) {
   let startTime = 0;
   let timerId = null;
   let pointerId = null;
+  let pressSerial = 0;
+  let cancelledByDisable = false;
   const createState = (event, first = false, last = false, cancelled = false) => ({
     active,
     first,
@@ -4329,9 +4629,12 @@ function createLongPressGesture(element, config = {}) {
     startTime = performance.now();
     active = true;
     triggered = false;
+    cancelledByDisable = false;
+    const serial = ++pressSerial;
     capturePointer(element, e.pointerId);
     addPressEndGuards();
     onPressStart?.(createState(e, true, false));
+    if (!enabled || !active || serial !== pressSerial) return;
     timerId = setTimeout(() => {
       if (active && !triggered) {
         triggered = true;
@@ -4360,7 +4663,7 @@ function createLongPressGesture(element, config = {}) {
       clearTimeout(timerId);
       timerId = null;
     }
-    onPressEnd?.(createState(e, false, true, e.type !== "pointerup"));
+    onPressEnd?.(createState(e, false, true, e.type !== "pointerup" || cancelledByDisable));
     try {
       element.releasePointerCapture(e.pointerId);
     } catch {
@@ -4390,6 +4693,7 @@ function createLongPressGesture(element, config = {}) {
     },
     disable: () => {
       enabled = false;
+      if (active && !triggered) cancelledByDisable = true;
       if (timerId) {
         clearTimeout(timerId);
         timerId = null;
@@ -4600,7 +4904,7 @@ function createParallax(element, config = {}) {
     const elementCenter = rect.top + rect.height / 2;
     const viewportCenter = windowHeight / 2;
     const distanceFromCenter = elementCenter - viewportCenter;
-    const normalizedDistance = distanceFromCenter / windowHeight;
+    const normalizedDistance = windowHeight === 0 ? 0 : distanceFromCenter / windowHeight;
     const easedDistance = easing(Math.abs(normalizedDistance)) * Math.sign(normalizedDistance);
     offset = easedDistance * speed * 100;
     if (direction === "vertical") {
@@ -4611,7 +4915,7 @@ function createParallax(element, config = {}) {
   };
   observer = new IntersectionObserver(
     (entries) => {
-      const entry = entries[0];
+      const entry = entries[entries.length - 1];
       if (entry) {
         isInView = entry.isIntersecting;
         if (isInView) update();
@@ -4866,7 +5170,7 @@ var scrollEasings = {
 };
 
 // src/animation/timeline.ts
-var elementTransforms2 = /* @__PURE__ */ new WeakMap();
+var elementTransforms = /* @__PURE__ */ new WeakMap();
 var SETTLE_THRESHOLD = 1e-3;
 var MAX_SETTLE_TIME = 10;
 function springCurve(config) {
@@ -4920,8 +5224,21 @@ function createTimeline(config = {}) {
   let hasStarted = false;
   let insertTime = 0;
   let includeStartPosition = true;
+  let killEpoch = 0;
+  const safeCall2 = (fn, ...args) => {
+    if (!fn) return;
+    try {
+      fn(...args);
+    } catch (e) {
+      console.error("[SpringKit] Timeline callback error:", e);
+    }
+  };
   const now = () => typeof performance !== "undefined" ? performance.now() : Date.now();
   const parsePosition = (position) => {
+    const time = resolvePosition(position);
+    return Number.isFinite(time) ? time : insertTime;
+  };
+  const resolvePosition = (position) => {
     if (position === void 0) {
       return insertTime;
     }
@@ -5010,33 +5327,27 @@ function createTimeline(config = {}) {
     return result;
   };
   const applyPropsToElement = (element, props) => {
-    const cssProps = {};
-    let stored = elementTransforms2.get(element);
+    let stored = elementTransforms.get(element);
     let transformChanged = false;
     for (const [key, value] of Object.entries(props)) {
       if (transformFunction(key, 0) !== null) {
         if (!stored) {
           stored = /* @__PURE__ */ new Map();
-          elementTransforms2.set(element, stored);
+          elementTransforms.set(element, stored);
         }
         stored.set(key, value);
         transformChanged = true;
-      } else if (key === "opacity") {
-        cssProps.opacity = String(value);
       } else {
-        cssProps[key] = `${value}px`;
+        writeStyle(element, key, value);
       }
     }
     if (transformChanged && stored) {
-      const transforms = [];
+      const transforms2 = [];
       stored.forEach((value, key) => {
         const fn = transformFunction(key, value);
-        if (fn) transforms.push(fn);
+        if (fn) transforms2.push(fn);
       });
-      element.style.transform = transforms.join(" ");
-    }
-    for (const [prop, val] of Object.entries(cssProps)) {
-      element.style[prop] = val;
+      element.style.transform = transforms2.join(" ");
     }
   };
   const transformFunction = (key, value) => {
@@ -5073,7 +5384,7 @@ function createTimeline(config = {}) {
   const getCurrentElementValues = (element, keys) => {
     const current = {};
     const computed = getComputedStyle(element);
-    const stored = elementTransforms2.get(element);
+    const stored = elementTransforms.get(element);
     for (const key of keys) {
       switch (key) {
         case "opacity": {
@@ -5097,7 +5408,7 @@ function createTimeline(config = {}) {
           current[key] = stored?.get(key) ?? (key.startsWith("scale") ? 1 : 0);
           break;
         default:
-          current[key] = parseFloat(computed.getPropertyValue(key)) || 0;
+          current[key] = parseFloat(String(readStyle(element, key))) || 0;
       }
     }
     return current;
@@ -5143,10 +5454,11 @@ function createTimeline(config = {}) {
     let restored = false;
     for (let i = segments.length - 1; i >= 0; i--) {
       const segment = segments[i];
+      if (!segment) continue;
       if (time < segment.startTime && segment.lastProgress > 0) {
         renderSegment(segment, 0, false);
         restored = true;
-        if (events) segment.props.onUpdate?.(0);
+        if (events) safeCall2(segment.props.onUpdate, 0);
       }
     }
     for (const segment of segments) {
@@ -5159,19 +5471,20 @@ function createTimeline(config = {}) {
       if (progress < 1) segment.isComplete = false;
       if (!segment.isActive) {
         segment.isActive = true;
-        if (events) segment.props.onStart?.();
+        if (events) safeCall2(segment.props.onStart);
       }
       const changed = renderSegment(segment, progress, restored);
-      if (events && changed) segment.props.onUpdate?.(progress);
+      if (events && changed) safeCall2(segment.props.onUpdate, progress);
       if (progress >= 1 && !segment.isComplete) {
         segment.isComplete = true;
-        if (events) segment.props.onComplete?.();
+        if (events) safeCall2(segment.props.onComplete);
       }
     }
   };
   const tick = (timestamp) => {
     rafId = null;
     if (!isPlaying || isPaused) return;
+    const epoch = killEpoch;
     const rawDelta = lastFrameTime !== null ? timestamp - lastFrameTime : 0;
     const deltaTime = Math.min(Math.max(rawDelta, 0), MAX_DELTA_TIME2) / 1e3 * globalLoop.getTimeScale();
     lastFrameTime = timestamp;
@@ -5186,17 +5499,16 @@ function createTimeline(config = {}) {
     const crossedCallbacks = Array.from(callbacks.keys()).filter((ms) => isCrossed(ms, prevTime, reachedTime, includeStart)).sort((a, b) => isReversed ? b - a : a - b);
     for (const ms of crossedCallbacks) {
       callbacks.get(ms)?.forEach((cb) => {
-        try {
-          cb();
-        } catch (e) {
-          console.error("[SpringKit] Timeline callback error:", e);
-        }
+        if (epoch !== killEpoch) return;
+        safeCall2(cb);
       });
     }
+    if (epoch !== killEpoch) return;
     if (pauseMs !== void 0) {
       isPaused = true;
       currentTime = reachedTime;
       renderAt(currentTime, true);
+      if (epoch !== killEpoch) return;
       const pauseCallback = pauses.get(pauseMs);
       try {
         pauseCallback?.();
@@ -5206,11 +5518,14 @@ function createTimeline(config = {}) {
       return;
     }
     renderAt(currentTime, true);
-    onUpdate?.(totalDuration > 0 ? currentTime / totalDuration : 1);
+    if (epoch !== killEpoch) return;
+    safeCall2(onUpdate, totalDuration > 0 ? currentTime / totalDuration : 1);
+    if (epoch !== killEpoch) return;
     if (isReversed && currentTime <= 0 || !isReversed && currentTime >= totalDuration) {
       if (repeat === -1 || repeatCount < repeat) {
         repeatCount++;
-        onRepeat?.(repeatCount);
+        safeCall2(onRepeat, repeatCount);
+        if (epoch !== killEpoch) return;
         if (yoyo) {
           isReversed = !isReversed;
         } else {
@@ -5231,15 +5546,15 @@ function createTimeline(config = {}) {
         }
       } else {
         isPlaying = false;
-        onComplete?.();
+        safeCall2(onComplete);
         return;
       }
     }
     scheduleTick();
   };
   const addSegment = (target, props, position, toValues, fromValues, adapter) => {
-    const startTime = parsePosition(position) + (props.delay || 0);
-    const duration = props.duration || 0.5;
+    const startTime = parsePosition(position) + (Number.isFinite(props.delay) ? props.delay : 0);
+    const duration = Number.isFinite(props.duration) && props.duration || 0.5;
     const endTime = startTime + duration;
     const segment = {
       id: `segment_${timelineInstanceId}_${segmentIdCounter++}`,
@@ -5320,7 +5635,7 @@ function createTimeline(config = {}) {
       isPlaying = true;
       isPaused = false;
       lastFrameTime = now();
-      scheduleTick();
+      if (cancelRepeatDelay === null) scheduleTick();
       return timeline;
     },
     pause() {
@@ -5335,7 +5650,7 @@ function createTimeline(config = {}) {
       if (isPaused) {
         isPaused = false;
         lastFrameTime = now();
-        scheduleTick();
+        if (cancelRepeatDelay === null) scheduleTick();
       }
       return timeline;
     },
@@ -5344,6 +5659,8 @@ function createTimeline(config = {}) {
       return timeline;
     },
     restart() {
+      cancelRepeatDelay?.();
+      cancelRepeatDelay = null;
       currentTime = isReversed ? totalDuration : 0;
       repeatCount = 0;
       hasStarted = false;
@@ -5355,11 +5672,8 @@ function createTimeline(config = {}) {
       return this.play();
     },
     seek(position) {
-      if (typeof position === "string") {
-        currentTime = labels.get(position) ?? 0;
-      } else {
-        currentTime = clamp(position, 0, totalDuration);
-      }
+      const target = typeof position === "string" ? labels.get(position) ?? 0 : position;
+      currentTime = clamp(Number.isNaN(target) ? 0 : target, 0, totalDuration);
       segments.forEach((s) => {
         if (currentTime < s.startTime) {
           s.isActive = false;
@@ -5377,6 +5691,7 @@ function createTimeline(config = {}) {
       return timeline;
     },
     kill() {
+      killEpoch++;
       isPlaying = false;
       if (rafId) {
         cancelAnimationFrame(rafId);
@@ -5687,16 +6002,25 @@ function createMorph(initialPath, config = {}) {
   const subscribers = /* @__PURE__ */ new Set();
   let completed = false;
   let notifications = 0;
+  let dispatching = false;
+  let deferredPath;
+  let destroyed = false;
   const initialCommands = parsePath(initialPath);
   fromPoints = samplePath(toAbsolute(initialCommands), samples);
   currentPoints = [...fromPoints];
   toPoints = [...fromPoints];
   const progressSpring = createSpringValue(0, springConfig);
   let initialized = false;
-  progressSpring.subscribe(() => {
+  const update = () => {
     notifications++;
     const progress = progressSpring.get();
-    if (initialized) onProgress?.(progress);
+    if (initialized) {
+      try {
+        onProgress?.(progress);
+      } catch (e) {
+        console.error("[SpringKit] Morph onProgress error:", e);
+      }
+    }
     currentPoints = fromPoints.map(
       (from, i) => interpolatePoint(from, toPoints[i] ?? from, progress)
     );
@@ -5708,16 +6032,37 @@ function createMorph(initialPath, config = {}) {
         console.error("[SpringKit] Morph subscriber error:", e);
       }
     });
-    if (progress >= 0.999 && !completed) {
+    if (progress >= 0.999 && !completed && !destroyed) {
       completed = true;
       onComplete?.();
     }
+  };
+  progressSpring.subscribe(() => {
+    dispatching = true;
+    try {
+      update();
+    } finally {
+      dispatching = false;
+    }
   });
   initialized = true;
-  return {
+  const startDeferred = () => {
+    const path = deferredPath;
+    deferredPath = void 0;
+    if (path === void 0 || progressSpring.isDestroyed()) return;
+    controller.morphTo(path);
+  };
+  const controller = {
     getPath: () => currentPath,
     getProgress: () => progressSpring.get(),
     morphTo(path) {
+      if (destroyed) return;
+      if (dispatching) {
+        if (deferredPath === void 0) void Promise.resolve().then(startDeferred);
+        deferredPath = path;
+        return;
+      }
+      deferredPath = void 0;
       const targetCommands = parsePath(path);
       const targetPoints = samplePath(toAbsolute(targetCommands), samples);
       fromPoints = [...currentPoints];
@@ -5733,6 +6078,7 @@ function createMorph(initialPath, config = {}) {
       progressSpring.set(1);
     },
     setProgress(progress) {
+      if (destroyed) return;
       const p = clamp(progress, 0, 1);
       const before = notifications;
       progressSpring.jump(p);
@@ -5750,19 +6096,25 @@ function createMorph(initialPath, config = {}) {
       });
     },
     subscribe(callback) {
-      subscribers.add(callback);
+      const entry = (path) => callback(path);
+      if (!destroyed) subscribers.add(entry);
       try {
         callback(currentPath);
       } catch (e) {
         console.error("[SpringKit] Morph subscriber error:", e);
       }
-      return () => subscribers.delete(callback);
+      return () => {
+        subscribers.delete(entry);
+      };
     },
     destroy() {
+      destroyed = true;
+      deferredPath = void 0;
       progressSpring.destroy();
       subscribers.clear();
     }
   };
+  return controller;
 }
 function createMorphSequence(paths, config = {}) {
   if (paths.length === 0) {
@@ -5982,7 +6334,7 @@ function createLayoutGroup(config = {}) {
     const index = group.findIndex((e) => e.element === element);
     if (index !== -1) {
       const entry = group[index];
-      previousMeasurements.set(id, measureElement(element));
+      previousMeasurements.set(id, element.isConnected ? measureElement(element) : entry.measurement);
       resetTransform(entry);
       group.splice(index, 1);
       if (group.length === 0) {
@@ -6009,10 +6361,12 @@ function createLayoutGroup(config = {}) {
     if (from.borderRadius !== void 0) {
       initialValues.borderRadius = from.borderRadius;
     }
-    entry.spring = createSpringGroup(initialValues, defaultSpring);
+    const spring2 = createSpringGroup(initialValues, defaultSpring);
+    entry.spring = spring2;
     entry.isAnimating = true;
     onAnimationStart?.(entry.id);
-    entry.spring.subscribe((values) => {
+    if (entry.spring !== spring2) return;
+    spring2.subscribe((values) => {
       applyTransform(entry.element, from, to, values);
     });
     const targetValues = {
@@ -6029,7 +6383,7 @@ function createLayoutGroup(config = {}) {
     }
     for (const [key, value] of Object.entries(targetValues)) {
       const propertyConfig = transition[key];
-      entry.spring.set({ [key]: value }, propertyConfig ?? {});
+      spring2.set({ [key]: value }, propertyConfig ?? {});
     }
     const checkComplete = () => {
       entry.pendingRafId = null;
@@ -6044,7 +6398,8 @@ function createLayoutGroup(config = {}) {
   };
   const update = () => {
     for (const [id, group] of elements) {
-      for (const entry of group) {
+      for (const entry of [...group]) {
+        if (elements.get(id) !== group || !group.includes(entry)) continue;
         let previousMeasurement = previousMeasurements.get(id);
         if (entry.isAnimating) {
           previousMeasurement = measureElement(entry.element);
@@ -6055,6 +6410,7 @@ function createLayoutGroup(config = {}) {
           const hasChanged = previousMeasurement.x !== currentMeasurement.x || previousMeasurement.y !== currentMeasurement.y || previousMeasurement.width !== currentMeasurement.width || previousMeasurement.height !== currentMeasurement.height;
           if (hasChanged) {
             animateElement(entry, previousMeasurement, currentMeasurement);
+            if (elements.get(id) !== group || !group.includes(entry)) continue;
           }
         }
         entry.measurement = currentMeasurement;
@@ -6231,6 +6587,11 @@ function seededRandom(seed) {
     return state / 2147483647;
   };
 }
+function normalizeColumns(columns, count) {
+  if (!(columns >= 1)) return 1;
+  if (columns === Infinity) return count >= 1 ? Math.ceil(count) : 1;
+  return Math.floor(columns);
+}
 function gridDistance(index, columns, rows, origin) {
   const col = index % columns;
   const row = Math.floor(index / columns);
@@ -6303,12 +6664,12 @@ function edgeStagger(config) {
 function gridStagger(config) {
   const {
     count,
-    columns,
     origin = "top-left",
     direction = "diagonal",
     delay: delay2 = 100,
     easing = (t) => t
   } = config;
+  const columns = normalizeColumns(config.columns, count);
   const rows = Math.ceil(count / columns);
   const delays = [];
   let maxRadialDistance = 0;
@@ -6376,12 +6737,12 @@ function waveStagger(config) {
 function spiralStagger(config) {
   const {
     count,
-    columns,
     direction = "clockwise",
     startFrom = "edge",
     delay: delay2 = 100,
     easing = (t) => t
   } = config;
+  const columns = normalizeColumns(config.columns, count);
   const rows = Math.ceil(count / columns);
   const spiral = [];
   const visited = /* @__PURE__ */ new Set();
@@ -6432,7 +6793,7 @@ function spiralStagger(config) {
   if (startFrom === "center") {
     spiral.reverse();
   }
-  const delays = new Array(count).fill(0);
+  const delays = new Array(count > 0 ? Math.ceil(count) : 0).fill(0);
   const maxDelay = delay2 * (spiral.length - 1);
   spiral.forEach((originalIndex, spiralPosition) => {
     const t = spiral.length > 1 ? spiralPosition / (spiral.length - 1) : 0;
@@ -6505,17 +6866,29 @@ var MotionValue = class {
     this._springValue = null;
     this._isAnimating = false;
     this._destroyed = false;
-    this._checkEndRafId = null;
-    this._value = initialValue;
+    this._runId = 0;
+    this._value = this._validate(initialValue);
     this._springConfig = options.spring ?? { stiffness: 100, damping: 15 };
     if (typeof initialValue === "number") {
-      this._springValue = createSpringValue(initialValue, {
+      this._springValue = createSpringValue(this._value, {
         ...this._springConfig,
         onUpdate: (v) => {
           if (this._destroyed) return;
           this._value = v;
           this._velocity = this._springValue?.getVelocity() ?? 0;
           this._notify();
+        },
+        onComplete: () => {
+          const run = this._runId;
+          try {
+            this._springConfig.onComplete?.();
+          } finally {
+            if (!this._destroyed && this._isAnimating && run === this._runId) {
+              this._isAnimating = false;
+              this._velocity = 0;
+              this._emitEnd("animationComplete");
+            }
+          }
         }
       });
     }
@@ -6549,35 +6922,19 @@ var MotionValue = class {
    */
   set(newValue, animate2 = true) {
     if (this._destroyed) return;
-    if (this._checkEndRafId !== null) {
-      cancelAnimationFrame(this._checkEndRafId);
-      this._checkEndRafId = null;
-    }
+    newValue = this._validate(newValue);
+    const run = ++this._runId;
     if (typeof newValue === "number" && this._springValue && animate2) {
       this._isAnimating = true;
       this._emit("animationStart");
+      if (this._destroyed || !this._isAnimating || run !== this._runId) return;
       this._springValue.set(newValue);
-      const checkEnd = () => {
-        if (this._destroyed) {
-          this._checkEndRafId = null;
-          return;
-        }
-        const isSettled = !(this._springValue?.isAnimating() ?? false);
-        if (isSettled) {
-          this._isAnimating = false;
-          this._checkEndRafId = null;
-          this._emitEnd("animationComplete");
-        } else if (this._isAnimating) {
-          this._checkEndRafId = requestAnimationFrame(checkEnd);
-        } else {
-          this._checkEndRafId = null;
-        }
-      };
-      this._checkEndRafId = requestAnimationFrame(checkEnd);
     } else {
       const wasAnimating = this._isAnimating;
       if (typeof newValue === "number" && this._springValue) {
         this._springValue.jump(newValue);
+      } else {
+        this._springValue?.stop();
       }
       this._isAnimating = false;
       this._value = newValue;
@@ -6593,15 +6950,15 @@ var MotionValue = class {
    */
   jump(newValue) {
     if (this._destroyed) return;
-    if (this._checkEndRafId !== null) {
-      cancelAnimationFrame(this._checkEndRafId);
-      this._checkEndRafId = null;
-    }
+    newValue = this._validate(newValue);
+    this._runId++;
     const wasAnimating = this._isAnimating;
     this._value = newValue;
     this._velocity = 0;
     if (typeof newValue === "number" && this._springValue) {
       this._springValue.jump(newValue);
+    } else {
+      this._springValue?.stop();
     }
     this._isAnimating = false;
     this._notify();
@@ -6613,15 +6970,13 @@ var MotionValue = class {
    * Stop any running animation at current position
    */
   stop() {
-    if (this._checkEndRafId !== null) {
-      cancelAnimationFrame(this._checkEndRafId);
-      this._checkEndRafId = null;
-    }
+    this._runId++;
     if (this._springValue) {
       this._springValue.stop();
     }
     const wasAnimating = this._isAnimating;
     this._isAnimating = false;
+    this._velocity = 0;
     if (wasAnimating) {
       this._emitEnd("animationCancel");
     }
@@ -6631,10 +6986,15 @@ var MotionValue = class {
    * Returns unsubscribe function
    */
   subscribe(callback) {
-    this._subscribers.add(callback);
-    callback(this._value);
+    const entry = (value) => callback(value);
+    this._subscribers.add(entry);
+    try {
+      callback(this._value);
+    } catch (error) {
+      console.error("MotionValue subscriber error:", error);
+    }
     return () => {
-      this._subscribers.delete(callback);
+      this._subscribers.delete(entry);
     };
   }
   /**
@@ -6644,9 +7004,10 @@ var MotionValue = class {
     if (!this._eventListeners.has(event)) {
       this._eventListeners.set(event, /* @__PURE__ */ new Set());
     }
-    this._eventListeners.get(event).add(callback);
+    const entry = () => callback();
+    this._eventListeners.get(event).add(entry);
     return () => {
-      this._eventListeners.get(event)?.delete(callback);
+      this._eventListeners.get(event)?.delete(entry);
     };
   }
   /**
@@ -6657,7 +7018,10 @@ var MotionValue = class {
   setConfig(config) {
     this._springConfig = { ...this._springConfig, ...config };
     if (this._springValue) {
-      this._springValue.setConfig(config);
+      const physics = { ...config };
+      delete physics.onComplete;
+      delete physics.onUpdate;
+      this._springValue.setConfig(physics);
     }
   }
   /**
@@ -6666,10 +7030,7 @@ var MotionValue = class {
   destroy() {
     if (this._destroyed) return;
     this._destroyed = true;
-    if (this._checkEndRafId !== null) {
-      cancelAnimationFrame(this._checkEndRafId);
-      this._checkEndRafId = null;
-    }
+    this._runId++;
     if (this._isAnimating) {
       this._isAnimating = false;
       this._emitEnd("animationCancel");
@@ -6680,6 +7041,13 @@ var MotionValue = class {
       this._springValue.destroy();
       this._springValue = null;
     }
+  }
+  /** Current numeric run; resolves on completion or interruption. */
+  get finished() {
+    return this._springValue?.finished ?? Promise.resolve();
+  }
+  _validate(value) {
+    return typeof value === "number" ? validateAnimationValue(value, "MotionValue") : value;
   }
   _notify() {
     for (const callback of this._subscribers) {
@@ -6811,7 +7179,7 @@ function positiveOr2(value, fallback) {
 
 // src/native/easing.ts
 var MAX_CACHE_SIZE = 64;
-var cache = /* @__PURE__ */ new Map();
+var cache2 = /* @__PURE__ */ new Map();
 function springEasing(options = {}) {
   const precision = options.precision !== void 0 && options.precision > 0 ? options.precision : 2e-3;
   const key = [
@@ -6823,7 +7191,7 @@ function springEasing(options = {}) {
     options.restDelta,
     precision
   ].join("|");
-  const cached = cache.get(key);
+  const cached = cache2.get(key);
   if (cached) return cached;
   const solver = solveSpring(options, 0, 1);
   const duration = Math.max(1, Math.round(solver.duration));
@@ -6843,11 +7211,11 @@ function springEasing(options = {}) {
     duration,
     toString: () => `${duration}ms ${easing}`
   };
-  if (cache.size >= MAX_CACHE_SIZE) {
-    const oldest = cache.keys().next().value;
-    if (oldest !== void 0) cache.delete(oldest);
+  if (cache2.size >= MAX_CACHE_SIZE) {
+    const oldest = cache2.keys().next().value;
+    if (oldest !== void 0) cache2.delete(oldest);
   }
-  cache.set(key, result);
+  cache2.set(key, result);
   return result;
 }
 function springTransition(properties, options = {}) {
@@ -6915,7 +7283,11 @@ function animateNative(element, keyframes2, options = {}) {
   const canAnimate = typeof element.animate === "function";
   if (!canAnimate) {
     applyFinalKeyframe(element, keyframes2);
-    onComplete?.();
+    try {
+      onComplete?.();
+    } catch (error) {
+      console.error("[SpringKit]", error);
+    }
     return {
       animation: null,
       duration,
@@ -6928,9 +7300,11 @@ function animateNative(element, keyframes2, options = {}) {
       seek: noop
     };
   }
+  const startDelay = Math.max(0, delay2);
+  const safeDelay = Number.isFinite(startDelay) ? startDelay : 0;
   const animation = element.animate(keyframes2, {
     duration,
-    delay: reduced ? 0 : Math.max(0, delay2),
+    delay: reduced ? 0 : safeDelay,
     easing: supportsLinearEasing() ? compiled.easing : FALLBACK_EASING,
     fill: "both"
   });
@@ -7018,7 +7392,8 @@ function animateNative(element, keyframes2, options = {}) {
       resumed();
     },
     seek: (ms) => {
-      animation.currentTime = Math.max(0, delay2) + Math.min(Math.max(0, ms), duration);
+      const target = Number.isNaN(ms) ? 0 : ms;
+      animation.currentTime = safeDelay + Math.min(Math.max(0, target), duration);
     }
   };
 }
@@ -7071,13 +7446,36 @@ function createPathAnimation(element, options = {}) {
   let pendingTimeoutId = null;
   const waiters = /* @__PURE__ */ new Set();
   const spring2 = createSpringValue(0, config);
+  let notifying = false;
+  let deferredJump;
   const unsubscribe = spring2.subscribe((value) => {
     if (destroyed) return;
-    currentValue = value;
-    const offset = totalLength * (1 - value);
-    element.style.strokeDashoffset = String(offset);
-    onUpdate?.(value);
+    notifying = true;
+    try {
+      currentValue = value;
+      const offset = totalLength * (1 - value);
+      element.style.strokeDashoffset = String(offset);
+      onUpdate?.(value);
+    } finally {
+      notifying = false;
+    }
   });
+  const applyDeferredJump = () => {
+    const value = deferredJump;
+    deferredJump = void 0;
+    if (value === void 0 || destroyed) return;
+    spring2.jump(value);
+  };
+  const jumpSpring = (value) => {
+    if (!notifying) {
+      deferredJump = void 0;
+      spring2.jump(value);
+      return;
+    }
+    spring2.stop();
+    if (deferredJump === void 0) void Promise.resolve().then(applyDeferredJump);
+    deferredJump = value;
+  };
   const cancelWatch = () => {
     if (pendingRafId !== null) {
       cancelAnimationFrame(pendingRafId);
@@ -7121,6 +7519,7 @@ function createPathAnimation(element, options = {}) {
   const animateTo = (target) => {
     targetValue = target;
     paused = false;
+    deferredJump = void 0;
     spring2.set(target);
     return new Promise((resolve) => {
       waiters.add(resolve);
@@ -7138,13 +7537,15 @@ function createPathAnimation(element, options = {}) {
     },
     set: (value, animate2 = false) => {
       if (destroyed) return;
+      if (!Number.isFinite(value)) value = 0;
       targetValue = value;
       paused = false;
       if (animate2) {
+        deferredJump = void 0;
         spring2.set(value);
         if (waiters.size > 0) watch();
       } else {
-        spring2.jump(value);
+        jumpSpring(value);
         currentValue = value;
         const offset = totalLength * (1 - value);
         element.style.strokeDashoffset = String(offset);
@@ -7161,13 +7562,14 @@ function createPathAnimation(element, options = {}) {
     resume: () => {
       if (destroyed) return;
       paused = false;
+      deferredJump = void 0;
       spring2.set(targetValue);
       if (waiters.size > 0) watch();
     },
     reset: () => {
       if (destroyed) return;
       paused = false;
-      spring2.jump(0);
+      jumpSpring(0);
       currentValue = 0;
       targetValue = 0;
       element.style.strokeDashoffset = String(totalLength);
@@ -7192,8 +7594,9 @@ function getPathLength(element) {
 }
 function preparePathForAnimation(element, initialProgress = 0) {
   const length = element.getTotalLength?.() ?? 0;
+  const progress = Number.isFinite(initialProgress) ? initialProgress : 0;
   element.style.strokeDasharray = String(length);
-  element.style.strokeDashoffset = String(length * (1 - initialProgress));
+  element.style.strokeDashoffset = String(length * (1 - progress));
 }
 function getPointAtProgress(path, progress) {
   try {
@@ -7313,23 +7716,23 @@ function createFlip(element, first, last, options = {}) {
   const applyTransform2 = (t) => {
     progress = t;
     const invertedT = 1 - t;
-    const transforms = [];
+    const transforms2 = [];
     const scaleX = isScaling ? 1 + (deltaWidth - 1) * invertedT : 1;
     const scaleY = isScaling ? 1 + (deltaHeight - 1) * invertedT : 1;
     if (position) {
-      transforms.push(`translate(${deltaX * invertedT}px, ${deltaY * invertedT}px)`);
+      transforms2.push(`translate(${deltaX * invertedT}px, ${deltaY * invertedT}px)`);
     }
     if (isScaling) {
       if (anchor.x !== 0 || anchor.y !== 0) {
-        transforms.push(`translate(${(1 - scaleX) * anchor.x}px, ${(1 - scaleY) * anchor.y}px)`);
+        transforms2.push(`translate(${(1 - scaleX) * anchor.x}px, ${(1 - scaleY) * anchor.y}px)`);
       }
       const hasOrigin = origin.x !== 0 || origin.y !== 0;
       if (hasOrigin) {
-        transforms.push(`translate(${-origin.x}px, ${-origin.y}px)`);
+        transforms2.push(`translate(${-origin.x}px, ${-origin.y}px)`);
       }
-      transforms.push(`scale(${scaleX}, ${scaleY})`);
+      transforms2.push(`scale(${scaleX}, ${scaleY})`);
       if (hasOrigin) {
-        transforms.push(`translate(${origin.x}px, ${origin.y}px)`);
+        transforms2.push(`translate(${origin.x}px, ${origin.y}px)`);
       }
       if (borderRadius > 0) {
         const radiusX = scaleX === 0 ? 0 : borderRadius / scaleX;
@@ -7338,9 +7741,9 @@ function createFlip(element, first, last, options = {}) {
       }
     }
     if (originalTransform && originalTransform !== "none") {
-      transforms.push(originalTransform);
+      transforms2.push(originalTransform);
     }
-    element.style.transform = transforms.length > 0 ? transforms.join(" ") : "";
+    element.style.transform = transforms2.length > 0 ? transforms2.join(" ") : "";
     try {
       onUpdate?.(t);
     } catch (e) {
@@ -7433,6 +7836,7 @@ async function flip(element, mutate, options = {}) {
   const first = measureElement2(element);
   activeFlips.get(element)?.cancel();
   await mutate();
+  activeFlips.get(element)?.cancel();
   element.offsetHeight;
   const last = measureElement2(element);
   const animation = createFlip(element, first, last, options);
@@ -7442,6 +7846,7 @@ async function flipBatch(elements, mutate, options = {}) {
   const firstStates = elements.map((el) => measureElement2(el));
   elements.forEach((el) => activeFlips.get(el)?.cancel());
   await mutate();
+  elements.forEach((el) => activeFlips.get(el)?.cancel());
   document.body.offsetHeight;
   const animations = elements.map((element, i) => {
     const last = measureElement2(element);
