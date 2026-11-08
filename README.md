@@ -452,6 +452,30 @@ function DraggableCard() {
 }
 ```
 
+## Publishing a release
+
+Maintainers can publish npm, GitHub Release and the documentation site from one request:
+
+1. Add release notes under `[Unreleased]` in [CHANGELOG.md](CHANGELOG.md), using a category such as `### Fixed` and at least one bullet. Merge the changes into `main` and wait for CI to pass.
+2. Open **Actions → [Start Release](https://github.com/ersinkoc/SpringKit/actions/workflows/prepare-release.yml) → Run workflow**.
+3. Select `main`, choose `patch`, `minor` or `major`, and click **Run workflow** once. The workflow updates the versions, moves the release notes into a dated entry, and creates the release commit and tag.
+4. Open the new **Start Release** run. Its summary links to **Release vX.Y.Z**, which runs the full CI matrix, publishes to npm with Trusted Publishing/provenance, verifies the installed package, creates the GitHub Release, and deploys the site.
+5. Wait for both runs to finish successfully, including **website / verify**. Check the [npm version](https://www.npmjs.com/package/@oxog/springkit), [GitHub Release and its package/checksum files](https://github.com/ersinkoc/SpringKit/releases), and [live site version/commit](https://springkit.oxog.dev/release.json).
+
+With an authenticated GitHub CLI and repository write access, step 2–3 is:
+
+```sh
+gh workflow run prepare-release.yml --repo ersinkoc/SpringKit --ref main -f bump=patch
+```
+
+### Retry a failed release
+
+1. Open the **original Start Release run** and follow its **Release vX.Y.Z** link, if one was created. Read the first failed job's logs and resolve the cause.
+2. For a transient failure or a settings fix that does not change the tagged source, return to the same **Start Release** run and choose **Re-run jobs → Re-run all jobs**, then confirm **Re-run jobs**. It reuses the existing release commit/tag and resumes failed work in the linked release run.
+3. Wait for both runs to succeed and repeat the version/site checks above. If npm publication already succeeded, the later verification, GitHub Release or site jobs can be retried without uploading the package again.
+
+Use the existing run's retry action; **Run workflow** starts a new release request. A code/workflow fix to an already tagged release needs a new version instead of changing its tag. See [the full release and recovery guide](CONTRIBUTING.md#releasing-springkit) for CLI commands, failure-specific recovery and completion checks.
+
 ## Documentation
 
 Visit [springkit.oxog.dev](https://springkit.oxog.dev) for full documentation.
