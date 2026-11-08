@@ -1883,7 +1883,7 @@ const drag = createDragSpring(element, {
                         <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75" />
                         <span className="relative inline-flex rounded-full h-2 w-2 bg-orange-500" />
                       </span>
-                      <span className="text-sm text-white/70">v2.0 — Exact physics, compositor springs, Animated drag, test clock</span>
+                      <span className="text-sm text-white/70">v{bundleSizes.version} — Live DOM bindings, direct React drawing, timed animations</span>
                       <ArrowRight className="w-3.5 h-3.5 text-white/50" />
                     </AnimatedDiv>
                   </Link>

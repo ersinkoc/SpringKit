@@ -1,5 +1,5 @@
 {
-  "version": "2.0.0",
+  "version": "2.1.0",
   "method": "esbuild; ESM browser ES2021; React external; gzipSync defaults; bytes",
   "results": {
     "spring": {

@@ -8,6 +8,8 @@ import { fileURLToPath } from 'node:url'
 const root = fileURLToPath(new URL('..', import.meta.url))
 const npmCli = process.env.npm_execpath
 const web = process.argv.includes('--web')
+const registry = process.argv.includes('--registry')
+const packageInfo = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8'))
 if (!npmCli) throw new Error('Run through npm run test:consumers')
 const run = (args, cwd) => {
   const result = spawnSync(process.execPath, args, { cwd, encoding: 'utf8', timeout: 180_000, maxBuffer: 8e6 })
@@ -16,14 +18,14 @@ const run = (args, cwd) => {
 }
 const artifactDir = join(root, '.temp_files', 'packages')
 mkdirSync(artifactDir, { recursive: true })
-let tarball = process.env.SPRINGKIT_TARBALL
+let tarball = registry ? `${packageInfo.name}@${packageInfo.version}` : process.env.SPRINGKIT_TARBALL
 if (!tarball) {
   run([npmCli, 'pack', '--ignore-scripts', '--pack-destination', artifactDir], root)
   const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version
   tarball = join(artifactDir, `oxog-springkit-${version}.tgz`)
 }
-tarball = resolve(tarball)
-if (statSync(tarball).isDirectory()) {
+if (!registry) tarball = resolve(tarball)
+if (!registry && statSync(tarball).isDirectory()) {
   const matches = readdirSync(tarball).filter(name => name.startsWith('oxog-springkit-') && name.endsWith('.tgz'))
   if (matches.length !== 1) throw new Error(`Expected one package archive in ${tarball}`)
   tarball = join(tarball, matches[0])
@@ -37,6 +39,13 @@ try {
     writeFileSync(join(cwd, 'package.json'), JSON.stringify({ private: true, type: 'module' }))
     const dependencies = version ? [tarball, `react@${version}`, `react-dom@${version}`, `@types/react@${version}`, `@types/react-dom@${version}`, 'typescript@^5.9.3'] : [tarball]
     run([npmCli, 'install', '--ignore-scripts', '--no-audit', '--no-fund', ...dependencies], cwd)
+    if (registry) {
+      const installed = JSON.parse(readFileSync(join(cwd, 'package-lock.json'), 'utf8')).packages[`node_modules/${packageInfo.name}`]
+      if (installed?.version !== packageInfo.version || !installed.resolved?.startsWith('https://registry.npmjs.org/')) {
+        throw new Error(`Consumer did not install ${tarball} from the public npm registry`)
+      }
+      console.log(`PASS installed ${tarball} from npm into clean ${version ? `React ${version}` : 'core'} project`)
+    }
     const body = version ? `
       import * as React from 'react';
       import {renderToString} from 'react-dom/server';
@@ -55,6 +64,7 @@ try {
       import {installTestClock} from '@oxog/springkit/testing';
       const require = createRequire(import.meta.url);
       const cjsCore = require('@oxog/springkit');
+      assert.equal(require('@oxog/springkit/package.json').version, '${packageInfo.version}');
       assert.equal(typeof dom.bindStyle, 'function');
       assert.equal(typeof require('@oxog/springkit/dom').bindStyle, 'function');
       const clock = installTestClock();

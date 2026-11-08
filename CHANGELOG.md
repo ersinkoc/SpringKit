@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-11-08
+
 ### Fixed
 - Preserve scaled animation time at high playback rates for spring and decay.
 - Keep MotionValue numeric inputs finite and subscription registrations independent; finish directly from the spring instead of per-value RAF polling.

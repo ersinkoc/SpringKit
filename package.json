@@ -1,17 +1,17 @@
 {
   "name": "@oxog/springkit",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "description": "Zero-dependency physics-based spring animation library with gesture support",
   "author": "Ersin KOÇ",
   "license": "MIT",
   "type": "module",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/ersinkoc/springkit.git"
+    "url": "git+https://github.com/ersinkoc/SpringKit.git"
   },
   "homepage": "https://springkit.oxog.dev",
   "bugs": {
-    "url": "https://github.com/ersinkoc/springkit/issues"
+    "url": "https://github.com/ersinkoc/SpringKit/issues"
   },
   "keywords": [
     "animation",
@@ -112,6 +112,7 @@
     "test:browser": "vitest run --config vitest.config.browser.mts",
     "test:consumers": "node scripts/check-consumers.mjs",
     "test:consumers:web": "node scripts/check-consumers.mjs --web",
+    "test:published": "node scripts/check-consumers.mjs --registry --web",
     "metrics": "npm run size && npm run bench:write",
     "size": "node scripts/size.mjs --write",
     "size:check": "node scripts/size.mjs --check"

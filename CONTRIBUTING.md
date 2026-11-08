@@ -26,3 +26,5 @@ Website `dev` and `build` always copy the current library build into the tracked
 The website build emits static entries from the app routes and documentation navigation for GitHub Pages. Run `npm run test:routes --prefix website` after building; adding a route must preserve direct URLs as well as client-side navigation.
 
 Document public changes in CHANGELOG and the API support table. 2.x keeps legacy method names and time units. A removal, renamed unit or changed default needs a major version and a migration guide. Do not publish or deploy as part of a local cleanup without an explicit release request.
+
+After an authorized release, run `npm run test:published`. It installs the exact package version from the public npm registry into independent clean projects and checks core, React 18/19, type resolution, Vite and Next; it does not substitute a local tarball.
