@@ -1,3 +1,4 @@
+import bundleSizes from '../../../docs/metrics/bundle-size.json'
 import { Link } from 'react-router-dom'
 import { ArrowRight, Zap, Feather, Layers, MousePointer2, Sparkles, Copy, Check, Github, Package, Play, RotateCcw, ChevronDown, Terminal, Code2, Cpu, Timer, Box, Waves, PenTool, Spline } from 'lucide-react'
 import { Button } from '@/components/ui/button'
@@ -1737,10 +1738,10 @@ function AnimatedNumber({ value, suffix = '' }: { value: number; suffix?: string
 
 function Stats() {
   const stats = [
-    { value: 3, suffix: 'KB', label: 'Gzipped, spring() only', icon: Box },
+    { value: Math.ceil(bundleSizes.results.spring.gzipBytes / 1000), suffix: 'KB', label: 'Gzipped, spring() only (rounded up)', icon: Box },
     { value: 0, suffix: '', label: 'Dependencies', icon: Feather },
     { value: 100, suffix: '%', label: 'TypeScript', icon: Code2 },
-    { value: 3200, suffix: '+', label: 'Tests', icon: Timer },
+    { value: 3, suffix: '', label: 'Browser engines tested', icon: Timer },
   ]
 
   return (
@@ -1772,59 +1773,16 @@ function Stats() {
 // ============================================================================
 
 function ComparisonTable() {
-  const libraries = [
-    { name: 'SpringKit', bundle: '45KB · <Animated> 16KB', deps: '0', ts: true, gestures: true, presets: true },
-    { name: 'Framer Motion', bundle: '66KB · motion 41KB', deps: '3', ts: true, gestures: true, presets: true },
-    { name: 'React Spring', bundle: '20KB', deps: '5', ts: true, gestures: false, presets: true },
-    { name: 'GSAP', bundle: '27KB', deps: '0', ts: true, gestures: false, presets: false },
-  ]
-
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full">
-        <thead>
-          <tr className="border-b border-white/10">
-            <th className="text-left py-4 px-4 text-white/50 font-medium text-sm">Library</th>
-            <th className="text-center py-4 px-4 text-white/50 font-medium text-sm">Bundle Size</th>
-            <th className="text-center py-4 px-4 text-white/50 font-medium text-sm">Dependencies</th>
-            <th className="text-center py-4 px-4 text-white/50 font-medium text-sm">TypeScript</th>
-            <th className="text-center py-4 px-4 text-white/50 font-medium text-sm">Gestures</th>
-            <th className="text-center py-4 px-4 text-white/50 font-medium text-sm">Presets</th>
-          </tr>
-        </thead>
-        <tbody>
-          {libraries.map((lib) => (
-            <tr
-              key={lib.name}
-              className={`border-b border-white/5 ${lib.name === 'SpringKit' ? 'bg-orange-500/5' : ''}`}
-            >
-              <td className="py-4 px-4">
-                <span className={`font-medium ${lib.name === 'SpringKit' ? 'text-orange-400' : 'text-white'}`}>
-                  {lib.name}
-                </span>
-              </td>
-              <td className="text-center py-4 px-4 font-mono text-sm text-white/70">{lib.bundle}</td>
-              <td className="text-center py-4 px-4 font-mono text-sm text-white/70">{lib.deps}</td>
-              <td className="text-center py-4 px-4">
-                {lib.ts ? <Check className="w-4 h-4 text-green-400 mx-auto" /> : <span className="text-white/30">—</span>}
-              </td>
-              <td className="text-center py-4 px-4">
-                {lib.gestures ? <Check className="w-4 h-4 text-green-400 mx-auto" /> : <span className="text-white/30">—</span>}
-              </td>
-              <td className="text-center py-4 px-4">
-                {lib.presets ? <Check className="w-4 h-4 text-green-400 mx-auto" /> : <span className="text-white/30">—</span>}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <p className="text-xs text-white/30 px-4 py-3">
-        Bundle: whole package entry minified + gzipped with esbuild, React external (framer-motion
-        13.5, @react-spring/web 10.1, gsap 3.15; measured October 2026). SpringKit&apos;s figure includes
-        the core. Per-component numbers import only that component.
-      </p>
-    </div>
-  )
+  const labels: Record<string, string> = { spring: 'Spring physics', native: 'Native browser animation', animated: 'React Animated.div', dom: 'Live DOM binding', core: 'Complete core entry', react: 'Complete React entry' }
+  return <div className="overflow-x-auto">
+    <table className="w-full">
+      <thead><tr className="border-b border-white/10"><th className="text-left p-4">Usage</th><th className="text-left p-4">Import</th><th className="text-right p-4">Minify + gzip</th></tr></thead>
+      <tbody>{Object.entries(labels).map(([key, label]) => <tr key={key} className="border-b border-white/5">
+        <td className="p-4">{label}</td><td className="p-4 font-mono text-sm">{key}</td><td className="p-4 text-right font-mono">{(bundleSizes.results[key as keyof typeof bundleSizes.results].gzipBytes / 1000).toFixed(2)} KB</td>
+      </tr>)}</tbody>
+    </table>
+    <p className="text-xs text-white/40 px-4 py-3">Measured from the current built package with esbuild, React external. Values include the core code used by each import.</p>
+  </div>
 }
 
 // ============================================================================
@@ -2048,7 +2006,7 @@ const drag = createDragSpring(element, {
               <FeatureCard
                 icon={Cpu}
                 title="Compositor Springs"
-                description="springEasing() compiles spring physics to CSS linear(). The browser plays it off the main thread: smooth under load, zero JavaScript per frame."
+                description="springEasing() compiles spring physics to CSS linear(). Eligible transform/opacity animations can use browser compositing without per-frame JavaScript."
                 gradient="bg-gradient-to-br from-emerald-500/20 to-teal-500/20"
                 delay={0}
               />
@@ -2310,10 +2268,10 @@ const drag = createDragSpring(element, {
               className="text-center mb-16"
             >
               <h2 className="text-4xl md:text-5xl font-bold text-white mb-6">
-                How It Compares
+                Bundle Sizes
               </h2>
               <p className="text-white/50 text-lg max-w-2xl mx-auto">
-                Physics-first features with honest, measured numbers.
+                Measured sizes for individual imports and complete entry points.
               </p>
             </AnimatedDiv>
 

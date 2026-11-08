@@ -10,6 +10,7 @@ import {
 } from 'react'
 import { createSpringValue } from '@oxog/springkit'
 import type { SpringConfig } from '@oxog/springkit'
+import { useShouldReduceMotion } from '../utils/reducedMotion.js'
 
 // ============ Types ============
 
@@ -331,6 +332,7 @@ function ReorderItemComponent<T>(
   ref: React.Ref<HTMLElement>
 ) {
   const context = useReorderContext<T>()
+  const reducedMotion = useShouldReduceMotion()
   const { registerItem, unregisterItem } = context
   const elementRef = useRef<HTMLElement | null>(null)
   const springRef = useRef<ReturnType<typeof createSpringValue> | null>(null)
@@ -393,13 +395,13 @@ function ReorderItemComponent<T>(
       })
     }
 
-    if (moved) {
+    if (moved || reducedMotion) {
       springRef.current.jump(targetOffset)
       setOffset(targetOffset)
     } else {
       springRef.current.set(targetOffset)
     }
-  }, [targetOffset, isDragging, springConfig, index])
+  }, [targetOffset, isDragging, springConfig, index, reducedMotion])
 
   // Handle pointer down
   const handlePointerDown = useCallback((e: React.PointerEvent) => {
@@ -541,10 +543,12 @@ function ReorderItemComponent<T>(
       role: 'option',
       'aria-selected': isDragging,
       'aria-grabbed': isDragging,
+      'aria-posinset': index + 1,
+      'aria-setsize': context.values.length,
       tabIndex: dragEnabled ? 0 : -1,
       style: {
         transform: transformProp,
-        transition: !isDragging && context.layoutDuration > 0
+        transition: !reducedMotion && !isDragging && context.layoutDuration > 0
           ? `transform ${context.layoutDuration}ms ease-out`
           : undefined,
         cursor: dragEnabled ? (isDragging ? 'grabbing' : 'grab') : undefined,

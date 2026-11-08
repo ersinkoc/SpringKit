@@ -382,6 +382,8 @@ function capturePointer(target: Element | null, pointerId: number | undefined): 
 export interface AnimatedDragState {
   /** Current drag offset (render it as a translation) */
   dragOffset: DragPoint
+  /** Latest offset for direct DOM renderers. */
+  getOffset(): DragPoint
   /** Whether a drag gesture is active (for `whileDrag`) */
   isDragging: boolean
   /** Start a drag gesture from a native pointerdown event (the element's own listener) */
@@ -401,7 +403,8 @@ export interface AnimatedDragState {
  */
 export function useAnimatedDrag(
   props: AnimatedDragProps,
-  elementRef: React.RefObject<HTMLElement | null>
+  elementRef: React.RefObject<HTMLElement | null>,
+  onOffset?: () => void
 ): AnimatedDragState {
   const { drag, dragControls, dragConstraints } = props
   const motionConfig = useContext(MotionContext)
@@ -416,6 +419,8 @@ export function useAnimatedDrag(
   const transitionRef = useRef<ReleaseTransition | null>(null)
   const dragCountRef = useRef(0)
   const mountedRef = useRef(false)
+  const onOffsetRef = useRef(onOffset)
+  onOffsetRef.current = onOffset
 
   // Latest props, read from event handlers and animation callbacks
   const propsRef = useRef(props)
@@ -433,7 +438,10 @@ export function useAnimatedDrag(
 
   const setOffset = useCallback((next: DragPoint) => {
     offsetRef.current = next
-    if (mountedRef.current) setDragOffset(next)
+    if (mountedRef.current) {
+      if (onOffsetRef.current) onOffsetRef.current()
+      else setDragOffset(next)
+    }
   }, [])
 
   const setAxis = useCallback((axis: Axis, value: number) => {
@@ -1010,6 +1018,7 @@ export function useAnimatedDrag(
   })
 
   const getDragCount = useCallback(() => dragCountRef.current, [])
+  const getOffset = useCallback(() => offsetRef.current, [])
 
-  return { dragOffset, isDragging, startDrag, getDragCount }
+  return { dragOffset, getOffset, isDragging, startDrag, getDragCount }
 }

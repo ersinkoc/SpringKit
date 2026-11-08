@@ -306,3 +306,22 @@ longer fire when the pointer is cancelled.
   deterministic animation tests. Prefer it over `vi.useFakeTimers()`, which
   doesn't advance `performance.now()` by default and so no longer moves
   springs.
+
+## 2.x maintenance contracts and future removals
+
+The maintenance changes add `@oxog/springkit/dom` for explicit live style and
+attribute binding. Existing core, React and testing entries remain. See
+`API_SUPPORT.md` for value types, clocks and completion contracts.
+
+These legacy options remain accepted in 2.x and are candidates for removal in
+the next major; they have no effect today:
+
+| Legacy option | Migration |
+| --- | --- |
+| `LazyMotion.strict` | Use `MotionFeatureGuard` for explicit feature checks. LazyMotion is a flag loader, not a code-splitting boundary. |
+| `useGravity.mass` | Tune the gravity acceleration vector, drag and bounds. Mass does not change this hook's acceleration. |
+| `createScrollSpring` momentum options | Remove the options; wheel/trackpad input already carries OS inertia. |
+
+React provider `afterChildren` is unsupported. Choose explicit orchestration if
+completion order is required. Timeline seconds and spring/native milliseconds
+stay unchanged in 2.x; a future unit rename needs a major-version migration.

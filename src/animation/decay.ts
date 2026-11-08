@@ -180,7 +180,9 @@ class DecayAnimationImpl implements Animatable, DecayAnimation {
       ? (deltaTime ?? 0)
       : now - this.lastUpdateTime
     this.lastUpdateTime = now
-    this.elapsed += Math.min(Math.max(rawElapsed, 0), MAX_DELTA_MS)
+    this.elapsed += deltaTime === undefined
+      ? Math.min(Math.max(rawElapsed, 0), MAX_DELTA_MS)
+      : Math.max(rawElapsed, 0)
 
     const decayFactor = Math.exp(this.logDecel * this.elapsed)
     const velocityMs = this.velocityMs * decayFactor

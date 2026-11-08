@@ -9,6 +9,8 @@
 // average time per frame.
 import { spring, createSpringValue, createMotionValue, solveSpring, globalLoop } from '../dist/index.js'
 import { installTestClock } from '../dist/testing/index.js'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { cpus, platform, arch } from 'node:os'
 
 const FRAMES = 300
 const WARMUP_FRAMES = 30
@@ -26,7 +28,7 @@ let sink = 0
 
 /** Average ms per loop frame while `setup(n)` keeps n animations running */
 function frameBench(n, setup) {
-  let best = Infinity
+  const averages = []
   for (let trial = 0; trial < TRIALS; trial++) {
     const clock = installTestClock({ startTime: 0 })
     const teardown = setup(n)
@@ -39,14 +41,14 @@ function frameBench(n, setup) {
     }
     teardown()
     clock.uninstall()
-    best = Math.min(best, avg)
+    averages.push(avg)
   }
-  return best
+  return summarize(averages)
 }
 
 /** Average microseconds per call of fn(i) */
 function opBench(iterations, setup) {
-  let best = Infinity
+  const averages = []
   for (let trial = 0; trial < TRIALS; trial++) {
     const clock = installTestClock({ startTime: 0 })
     const { run, teardown } = setup(iterations)
@@ -55,9 +57,14 @@ function opBench(iterations, setup) {
     const avg = ((nowMs() - t0) * 1000) / iterations
     teardown()
     clock.uninstall()
-    best = Math.min(best, avg)
+    averages.push(avg)
   }
-  return best
+  return summarize(averages)
+}
+
+function summarize(averages) {
+  const sorted = [...averages].sort((a, b) => a - b)
+  return { best: sorted[0], median: sorted[Math.floor(sorted.length / 2)], trials: averages }
 }
 
 const springs = (n) => {
@@ -175,19 +182,41 @@ for (const setup of [springs, mixedSprings, springValues, motionValues]) frameBe
 
 console.log(`SpringKit benchmark — node ${process.version}, ${FRAMES} frames (best of ${TRIALS})\n`)
 console.log('ms / frame          N=100      N=1000     N=10000')
+const report = {
+  generatedAt: new Date().toISOString(),
+  environment: { node: process.version, platform: platform(), arch: arch(), cpu: cpus()[0]?.model },
+  method: { frames: FRAMES, warmupFrames: WARMUP_FRAMES, trials: TRIALS, summary: 'Best and median of trial averages; not frame percentiles or device paint time.' },
+  frames: {},
+  operations: {},
+}
 for (const [name, setup] of [
   ['spring().start()', springs],
   ['spring() mixed cfg', mixedSprings],
   ['SpringValue (2 sub)', springValues],
   ['MotionValue.set()', motionValues],
 ]) {
-  const cols = SIZES.map((n) => fmt(frameBench(n, setup)))
+  const samples = Object.fromEntries(SIZES.map(n => [n, frameBench(n, setup)]))
+  report.frames[name] = samples
+  const cols = SIZES.map(n => fmt(samples[n].best))
   console.log(`${name.padEnd(19)}${cols.join(' ')}`)
 }
 
 console.log('\nµs / call')
-console.log(`${'MotionValue.set retarget'.padEnd(26)}${fmt(opBench(20000, motionValueSet))}`)
-console.log(`${'MotionValue.set(v,false)'.padEnd(26)}${fmt(opBench(200000, motionValueJump))}`)
-console.log(`${'solveSpring()'.padEnd(26)}${fmt(opBench(200, solver))}`)
+for (const [name, iterations, setup] of [
+  ['MotionValue.set retarget', 20000, motionValueSet],
+  ['MotionValue.set(v,false)', 200000, motionValueJump],
+  ['solveSpring()', 200, solver],
+]) {
+  const sample = opBench(iterations, setup)
+  report.operations[name] = { iterations, unit: 'microseconds/call', ...sample }
+  console.log(`${name.padEnd(26)}${fmt(sample.best)}`)
+}
+
+if (process.argv.includes('--write')) {
+  const directory = new URL('../docs/metrics/', import.meta.url)
+  mkdirSync(directory, { recursive: true })
+  writeFileSync(new URL('benchmark.json', directory), `${JSON.stringify(report, null, 2)}\n`)
+  console.log('\nWrote docs/metrics/benchmark.json (machine-specific measurements).')
+}
 
 if (Number.isNaN(sink)) console.log('unreachable')

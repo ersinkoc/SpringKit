@@ -4,6 +4,7 @@
     "module": "ESNext",
     "moduleResolution": "bundler",
     "lib": ["ES2021", "DOM"],
+    "types": ["node"],
     "jsx": "react-jsx",
     "strict": true,
     "noUncheckedIndexedAccess": true,
@@ -19,7 +20,8 @@
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true,
     "paths": {
-      "@oxog/springkit": ["./src/index.ts"]
+      "@oxog/springkit": ["./src/index.ts"],
+      "@oxog/springkit/dom": ["./src/dom/index.ts"]
     }
   },
   "include": ["src/**/*"],

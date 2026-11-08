@@ -26,9 +26,9 @@ const cache = new Map<string, SpringEasing>()
  * Compile spring physics into a CSS `linear()` easing.
  *
  * The result runs entirely in the browser's animation engine: CSS
- * transitions/animations and `element.animate()` play it on the compositor
- * thread, so `transform` and `opacity` springs stay smooth even while the
- * main thread is busy — no JavaScript runs per frame.
+ * transitions/animations and `element.animate()` use the browser engine.
+ * Eligible transform/opacity animations can be composited, depending on the
+ * browser and rendering conditions; no JavaScript runs per frame.
  *
  * `velocity` is in progress units per second (1 = the full distance per
  * second), because an easing has no notion of absolute values.

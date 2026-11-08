@@ -118,7 +118,7 @@ afterEach(() => {
 })
 
 function formatCalls(spy: ReturnType<typeof vi.spyOn>): string {
-  return spy.mock.calls.map((args) => args.map(String).join(' ')).join('\n')
+  return spy.mock.calls.map((args: unknown[]) => args.map(String).join(' ')).join('\n')
 }
 
 /**

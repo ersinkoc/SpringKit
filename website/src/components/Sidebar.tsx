@@ -1,4 +1,5 @@
 import { Link, useLocation } from 'react-router-dom'
+import { useRef } from 'react'
 import { ScrollArea } from './ui/scroll-area'
 import { cn } from '@/lib/utils'
 
@@ -87,33 +88,31 @@ const navItems: NavItem[] = [
   },
 ]
 
+function DocNavigation({ onNavigate }: { onNavigate?: () => void }) {
+  return <nav aria-label="Documentation topics" className="space-y-6 px-4" onClick={onNavigate}>
+    {navItems.map(item => <div key={item.title}>
+      {item.children ? <div className="space-y-1">
+        <p className="text-xs font-semibold uppercase tracking-wider text-orange-400/80 mb-3 px-3">{item.title}</p>
+        {item.children.filter(child => child.href).map(child => <NavLink key={child.href} href={child.href!}>{child.title}</NavLink>)}
+      </div> : item.href ? <NavLink href={item.href}>{item.title}</NavLink> : null}
+    </div>)}
+  </nav>
+}
+
 export function Sidebar() {
-  return (
-    <aside className="hidden lg:block fixed left-0 top-16 z-40 h-[calc(100vh-4rem)] w-64 border-r border-white/5 bg-background/50 backdrop-blur-xl">
-      <ScrollArea className="h-full py-6">
-        <nav className="space-y-6 px-4">
-          {navItems.map((item) => (
-            <div key={item.title}>
-              {item.children ? (
-                <div className="space-y-1">
-                  <p className="text-xs font-semibold uppercase tracking-wider text-orange-400/80 mb-3 px-3">
-                    {item.title}
-                  </p>
-                  {item.children.filter((child) => child.href).map((child) => (
-                    <NavLink key={child.href} href={child.href!}>
-                      {child.title}
-                    </NavLink>
-                  ))}
-                </div>
-              ) : item.href ? (
-                <NavLink href={item.href}>{item.title}</NavLink>
-              ) : null}
-            </div>
-          ))}
-        </nav>
-      </ScrollArea>
-    </aside>
-  )
+  return <aside className="hidden lg:block fixed left-0 top-16 z-40 h-[calc(100vh-4rem)] w-64 border-r border-white/5 bg-background/50 backdrop-blur-xl">
+    <ScrollArea className="h-full py-6"><DocNavigation /></ScrollArea>
+  </aside>
+}
+
+export function MobileDocsNavigation() {
+  const ref = useRef<HTMLDetailsElement>(null)
+  return <details ref={ref} className="lg:hidden border-b border-white/10 p-4">
+    <summary className="cursor-pointer font-medium text-orange-300">Documentation menu</summary>
+    <div className="max-h-[65vh] overflow-y-auto py-4">
+      <DocNavigation onNavigate={() => { if (ref.current) ref.current.open = false }} />
+    </div>
+  </details>
 }
 
 function NavLink({ href, children }: { href: string; children: string }) {
@@ -123,6 +122,7 @@ function NavLink({ href, children }: { href: string; children: string }) {
   return (
     <Link
       to={href}
+      aria-current={isActive ? 'page' : undefined}
       className={cn(
         'flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-all duration-200',
         isActive

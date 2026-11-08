@@ -208,7 +208,7 @@ export type {
 
 export { Spring } from './components/Spring.js'
 export { Animated } from './components/Animated.js'
-export type { AnimatedStyle, AnimatedElementProps } from './components/Animated.js'
+export type { AnimatedStyle, AnimatedCSSStyle, AnimatedElementProps } from './components/Animated.js'
 export type {
   PanInfo,
   DragConstraints,

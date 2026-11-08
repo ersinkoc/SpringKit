@@ -15,6 +15,7 @@ function copyBundle(src, dest) {
 
 copyBundle('../dist/index.js', 'springkit.mjs');
 copyBundle('../dist/react/index.js', 'react.mjs');
+copyBundle('../dist/dom/index.js', 'dom.mjs');
 
 // Serve the AI-assistant reference at /llms.txt
 fs.copyFileSync('../llms.txt', 'public/llms.txt');

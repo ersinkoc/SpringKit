@@ -35,9 +35,8 @@ jobs:
 
       - run: npm ci
 
-      # prepublishOnly runs typecheck, lint, build and all tests
+      # The prepublishOnly lifecycle validates types, lint, build, tests and
+      # the packed export/declaration shape BEFORE npm uploads anything.
       - run: npm publish --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
-
-      - run: npm run lint:package

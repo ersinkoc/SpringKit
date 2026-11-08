@@ -1,10 +1,26 @@
 import { beforeEach } from 'vitest'
 import { cleanup } from '@testing-library/react'
-import '@testing-library/jest-dom'
+import '@testing-library/jest-dom/vitest'
 
 // The DOM polyfills below only apply to DOM environments (jsdom). SSR tests run
 // with `// @vitest-environment node` and must see a server-like global scope.
 const hasDOM = typeof window !== 'undefined'
+
+if (hasDOM && typeof window.matchMedia !== 'function') {
+  window.matchMedia = (query: string): MediaQueryList => {
+    const target = new EventTarget()
+    return {
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: listener => target.addEventListener('change', listener as EventListener),
+      removeListener: listener => target.removeEventListener('change', listener as EventListener),
+      addEventListener: target.addEventListener.bind(target),
+      removeEventListener: target.removeEventListener.bind(target),
+      dispatchEvent: target.dispatchEvent.bind(target),
+    }
+  }
+}
 
 // Mock IntersectionObserver
 if (hasDOM && typeof global.IntersectionObserver === 'undefined') {

@@ -9,6 +9,7 @@ import type { SpringConfig } from '../core/config.js'
 import { springMotion } from '../core/physics.js'
 import { clamp } from '../utils/math.js'
 import { globalLoop } from './loop.js'
+import { readStyle, writeStyle } from '../dom/style.js'
 
 // ============ Types ============
 
@@ -400,7 +401,6 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
   }
 
   const applyPropsToElement = (element: HTMLElement, props: Record<string, number>) => {
-    const cssProps: Record<string, string> = {}
     let stored = elementTransforms.get(element)
     let transformChanged = false
 
@@ -412,11 +412,8 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
         }
         stored.set(key, value)
         transformChanged = true
-      } else if (key === 'opacity') {
-        cssProps.opacity = String(value)
       } else {
-        // Assume pixels for numeric values
-        cssProps[key] = `${value}px`
+        writeStyle(element, key, value)
       }
     }
 
@@ -429,9 +426,6 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
       element.style.transform = transforms.join(' ')
     }
 
-    for (const [prop, val] of Object.entries(cssProps)) {
-      ;(element.style as unknown as Record<string, string>)[prop] = val
-    }
   }
 
   /** CSS transform function for a transform property, or null if it isn't one */
@@ -498,7 +492,7 @@ export function createTimeline(config: TimelineConfig = {}): Timeline {
           current[key] = stored?.get(key) ?? (key.startsWith('scale') ? 1 : 0)
           break
         default:
-          current[key] = parseFloat(computed.getPropertyValue(key)) || 0
+          current[key] = parseFloat(String(readStyle(element, key))) || 0
       }
     }
 

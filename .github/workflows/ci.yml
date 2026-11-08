@@ -37,6 +37,49 @@ jobs:
       - run: npm run typecheck
       - run: npm run lint
       - run: npm run build
-      - run: npm run test
-      - run: npm run test:react
+      - run: npm run test:coverage
+      - run: npm run test:react:coverage
       - run: npm run lint:package
+      - run: npm run size:check
+      - if: matrix.os == 'ubuntu-latest' && matrix.node == '24'
+        run: npm run test:consumers:web
+      - if: matrix.os == 'ubuntu-latest' && matrix.node == '24'
+        uses: actions/upload-artifact@v4
+        with:
+          name: package
+          path: .temp_files/packages/*.tgz
+
+  browser:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium firefox webkit
+      - run: npm run test:browser
+      - run: npm run build
+      - run: npm ci --prefix website
+      - run: npm run typecheck --prefix website
+      - run: npm run build --prefix website
+
+  consumers:
+    needs: check
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: ['18', '20', '22', '24']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: package
+          path: .temp_files/packages
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - run: npm run test:consumers
+        env:
+          SPRINGKIT_TARBALL: ${{ github.workspace }}/.temp_files/packages

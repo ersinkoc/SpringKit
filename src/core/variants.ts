@@ -1,3 +1,4 @@
+import { writeStyle } from '../dom/style.js'
 /**
  * Variants System - Named animation states with cascading support
  *
@@ -270,33 +271,10 @@ export function applyValuesToElement(element: HTMLElement, values: AnimationValu
     element.style.transform = transform
   }
 
-  // Apply non-transform properties
-  if (values.opacity !== undefined) {
-    element.style.opacity = String(values.opacity)
-  }
-  if (values.backgroundColor !== undefined) {
-    element.style.backgroundColor = values.backgroundColor
-  }
-  if (values.borderRadius !== undefined) {
-    element.style.borderRadius =
-      typeof values.borderRadius === 'number' ? `${values.borderRadius}px` : values.borderRadius
-  }
-  if (values.borderColor !== undefined) {
-    element.style.borderColor = values.borderColor
-  }
-  if (values.boxShadow !== undefined) {
-    element.style.boxShadow = values.boxShadow
-  }
-  if (values.color !== undefined) {
-    element.style.color = values.color
-  }
-  if (values.width !== undefined) {
-    element.style.width =
-      typeof values.width === 'number' ? `${values.width}px` : values.width
-  }
-  if (values.height !== undefined) {
-    element.style.height =
-      typeof values.height === 'number' ? `${values.height}px` : values.height
+  for (const [key, value] of Object.entries(values)) {
+    if ((!isTransformProperty(key) || key === 'transformOrigin') && (typeof value === 'number' || typeof value === 'string')) {
+      writeStyle(element, key, value)
+    }
   }
 }
 

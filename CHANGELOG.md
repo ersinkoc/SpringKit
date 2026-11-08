@@ -8,6 +8,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- Preserve scaled animation time at high playback rates for spring and decay.
+- Keep MotionValue numeric inputs finite and subscription registrations independent; finish directly from the spring instead of per-value RAF polling.
+- Preserve colors, CSS units and complex-string channels in imperative `animate`; share CSS unit metadata with timeline/variants.
+- Invalidate stale LazyMotion loader state, report variants at actual rest (including same-name retargets), and type SVG Animated refs correctly.
+- Honor reduced motion in text/typewriter/number and Reorder animations; hide the decorative typewriter cursor from accessibility APIs.
+
+### Added
+- `@oxog/springkit/dom` live style/attribute binding and shared value utilities.
+- Live MotionValues in Animated styles and direct DOM frame drawing, including drag release, without frame-by-frame React commits.
+- Timed `animate({ duration, ease })` interpolation and visual segment progress.
+- Preserve timed targets when paused before their start delay, and initialize DOM bindings for sources that only emit subsequent changes.
+- Separate core/React coverage gates, real Chromium/Firefox/WebKit input/geometry tests, isolated React 18/19, Vite/Next package consumers and bundle-size budgets.
+- API support/compatibility/architecture documentation and compiled canonical examples.
+
+### Tooling and website
+- Upgrade the test/build dependency chain and apply scoped patched esbuild/minimatch resolutions; retain the compatible DOM test environment.
+- Validate the packed package before publishing; configure browser, consumer and website checks in CI.
+- Lazy-load documentation/home routes, add mobile documentation navigation and accessible menu state, and expose shareable/native preset JSON exports.
+- Generate current bundle measurements for README/site and machine-specific benchmark JSON; retire unverified competitor size comparisons and mark 1.x design documents historical.
+
+### Previous maintenance fixes
 - `createMorph` called `onProgress(0)` when the morph was created, although
   nothing had moved. A "busy" flag set from `onProgress` (e.g. to disable
   buttons while morphing) stayed on until the first morph finished, and

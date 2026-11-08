@@ -1,5 +1,7 @@
 # SpringKit - Implementation Tasks
 
+> Historical 1.x design reference. This file is not the current runtime contract. See [API support](API_SUPPORT.md), [architecture](ARCHITECTURE.md) and [compatibility](COMPATIBILITY.md).
+
 ## Phase 1: Project Setup
 
 ### Task 1.1: Initialize Project Structure

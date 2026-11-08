@@ -53,8 +53,8 @@ const FALLBACK_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)'
  * Animate an element with a spring using the Web Animations API.
  *
  * The spring is compiled to a CSS `linear()` easing ({@link springEasing}),
- * so the browser runs it — on the compositor thread for `transform`,
- * `opacity` and `filter`. Ideal for enter/exit and layout-free motion that
+ * so the browser runs it. Eligible `transform`/`opacity` animations may use
+ * the compositor, depending on browser support. Ideal for layout-free motion that
  * must stay smooth under main-thread load.
  *
  * @example

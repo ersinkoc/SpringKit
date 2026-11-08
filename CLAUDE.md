@@ -60,7 +60,7 @@ src/
 - **Core** (`@oxog/springkit`): Framework-agnostic animation primitives
 - **React** (`@oxog/springkit/react`): Hooks and components for React 18+ (peer dep, optional)
 
-The React adapter must import core code **only** via `'@oxog/springkit'` (never relative paths like `'../../../core/...'`). That specifier is external in the React build, so both entry points share one core instance (one `globalLoop`, one `MotionValue` class). `tsconfig.json` `paths` and the Vitest aliases map it to `src/` during development. Anything the adapter needs from core must therefore be exported from `src/index.ts`. Import React as `import * as React from 'react'` (no default import, so consumers without `esModuleInterop` can typecheck). The React bundle gets a `"use client"` banner.
+The React adapter imports shared DOM utilities via `@oxog/springkit/dom` and core code **only** via `'@oxog/springkit'` (never relative paths like `'../../../core/...'`). That specifier is external in the React build, so both entry points share one core instance (one `globalLoop`, one `MotionValue` class). `tsconfig.json` `paths` and the Vitest aliases map it to `src/` during development. Anything the adapter needs from core must therefore be exported from `src/index.ts`. Import React as `import * as React from 'react'` (no default import, so consumers without `esModuleInterop` can typecheck). The React bundle gets a `"use client"` banner.
 
 ### Source Modules
 
@@ -82,7 +82,7 @@ src/
 
 **Global Animation Loop** (`src/animation/loop.ts`):
 - Singleton `globalLoop` manages all animations via RAF
-- Uses `WeakRef` for memory-safe animation tracking
+- Holds running animations strongly and releases them on completion/removal
 - Delta time clamping (`MAX_DELTA_TIME = 64ms`) prevents physics explosions after tab suspension
 
 **Spring Physics** (`src/core/`):
@@ -98,7 +98,7 @@ if (valueRef.current === null || valueRef.current.isDestroyed()) {
   valueRef.current = createMotionValue(0)
 }
 ```
-Destroy such instances via `hooks/useDestroyOnUnmount.ts` (defers destroy by a microtask and skips it when StrictMode re-runs the effect) — never destroy in a plain effect cleanup while the instance lives in a ref created during render.
+MotionValue completion is driven by the underlying spring, without a per-value RAF poll. Destroy such instances via `hooks/useDestroyOnUnmount.ts` (defers destroy by a microtask and skips it when StrictMode re-runs the effect) — never destroy in a plain effect cleanup while the instance lives in a ref created during render.
 
 **Physics & time** (see `src/core/physics.ts`):
 - `spring()` advances with `stepSpring()` (closed-form solution) — exact and refresh-rate independent. Never integrate with a fixed per-frame step; anything time-based must use real elapsed time (the loop passes `deltaTime` to `Animatable.update(now, deltaTime)`).
@@ -130,10 +130,10 @@ Destroy such instances via `hooks/useDestroyOnUnmount.ts` (defers destroy by a m
 ### Test Configuration
 
 Two Vitest configs:
-- `vitest.config.ts`: Main tests (jsdom environment, excludes `src/adapters/react/`)
-- `vitest.config.react.mts`: React tests with `forks` pool + `singleFork: true` for isolation
+- `vitest.config.ts`: Core/integration tests under `tests/`, excluding `tests/unit/react/` and all scratch evidence
+- `vitest.config.react.mts`: React tests with a single concurrent worker and per-file isolation
 
-Coverage thresholds: 80% minimum (lines, functions, branches, statements).
+Core and React have separate coverage commands and reports; browser tests use `vitest.config.browser.mts`. Coverage thresholds: 80% minimum (lines, functions, branches, statements).
 
 Test setup (`tests/setup.ts`) provides polyfills for:
 - `IntersectionObserver`
@@ -192,3 +192,7 @@ Flat config (`eslint.config.js`). Key rules:
 ## Website
 
 The `website/` folder contains the documentation site (Vite + React + Tailwind). Before building the website, run `npm run copy:springkit` from the website directory to copy the built library into `website/public/springkit/`. The website imports from these copied bundles, not directly from `src/`.
+
+## Current drawing and validation contracts
+
+`Animated` writes frames directly through the shared DOM style layer; keep its frame refs current so parent renders do not restore old values. Live MotionValues in style subscribe without React frame renders. Source examples under `docs/examples/` compile with test types. See `docs/API_SUPPORT.md`, `docs/ARCHITECTURE.md`, `docs/COMPATIBILITY.md` and `CONTRIBUTING.md` for the current contracts.

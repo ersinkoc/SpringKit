@@ -95,6 +95,7 @@ export interface LazyMotionProps {
   /**
    * Exposed to descendants as `useLazyMotion().isStrict`; it enforces nothing
    * by itself (no-op, kept for API compatibility)
+   * @deprecated This flag does not enforce feature usage. Use MotionFeatureGuard explicitly.
    */
   strict?: boolean
 
@@ -153,8 +154,8 @@ export function LazyMotion({
   children,
 }: LazyMotionProps): React.ReactElement {
   const isAsync = typeof features === 'function'
-  const [asyncFeatures, setAsyncFeatures] = useState<FeatureBundle | null>(null)
-  const [asyncLoaded, setAsyncLoaded] = useState(false)
+  const loadKey = useMemo(() => ({ features }), [features])
+  const [asyncResult, setAsyncResult] = useState<{ key: object; features: FeatureBundle } | null>(null)
 
   // A plain bundle is used as-is in the same render (no state/effect round trip,
   // so consumers never commit with the previous bundle). Inline bundles are new
@@ -176,24 +177,23 @@ export function LazyMotion({
     new Promise<FeatureBundle>((resolve) => resolve(features())).then(
       (loaded) => {
         if (cancelled) return
-        setAsyncFeatures(loaded)
-        setAsyncLoaded(true)
+        setAsyncResult({ key: loadKey, features: loaded })
       },
       (error: unknown) => {
         if (cancelled) return
         console.error('[SpringKit] LazyMotion: failed to load features', error)
         // Render children without optional features instead of nothing forever
-        setAsyncFeatures({})
-        setAsyncLoaded(true)
+        setAsyncResult({ key: loadKey, features: {} })
       }
     )
     return () => {
       cancelled = true
     }
-  }, [features])
+  }, [features, loadKey])
 
-  const resolvedFeatures = isAsync ? asyncFeatures ?? EMPTY_FEATURES : syncRef.current
-  const isLoaded = isAsync ? asyncLoaded : true
+  const loaded = asyncResult?.key === loadKey
+  const resolvedFeatures = isAsync ? loaded ? asyncResult.features : EMPTY_FEATURES : syncRef.current
+  const isLoaded = !isAsync || loaded
 
   const contextValue = useMemo<LazyMotionContextValue>(() => ({
     features: resolvedFeatures,

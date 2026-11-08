@@ -38,7 +38,7 @@ jobs:
 
       - name: Build website
         working-directory: ./website
-        run: npm run build
+        run: npm run typecheck && npm run build
 
       - name: Add CNAME
         run: echo "springkit.oxog.dev" > website/dist/CNAME

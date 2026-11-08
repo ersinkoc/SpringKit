@@ -1,6 +1,6 @@
 import { Link, useLocation } from 'react-router-dom'
 import { Sparkles, Github, Menu, X } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSpring } from '@oxog/springkit/react'
 
 export function Header() {
@@ -8,6 +8,16 @@ export function Header() {
   const [logoHovered, setLogoHovered] = useState(false)
   const [logoPressed, setLogoPressed] = useState(false)
   const location = useLocation()
+  const menuButton = useRef<HTMLButtonElement>(null)
+  useEffect(() => { setMobileMenuOpen(false) }, [location.pathname])
+  useEffect(() => {
+    if (!mobileMenuOpen) return
+    const close = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { setMobileMenuOpen(false); menuButton.current?.focus() }
+    }
+    document.addEventListener('keydown', close)
+    return () => document.removeEventListener('keydown', close)
+  }, [mobileMenuOpen])
 
   const navLinks = [
     { href: '/docs/getting-started', label: 'Docs' },
@@ -85,7 +95,10 @@ export function Header() {
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             className="md:hidden p-2 rounded-lg hover:bg-white/5 transition-colors"
+            ref={menuButton}
             aria-label="Toggle menu"
+            aria-expanded={mobileMenuOpen}
+            aria-controls="mobile-navigation"
           >
             {mobileMenuOpen ? (
               <X className="w-5 h-5 text-white" />
@@ -99,6 +112,7 @@ export function Header() {
       {/* Mobile Navigation */}
       {mobileMenuOpen && (
         <div
+          id="mobile-navigation"
           className="md:hidden border-t border-white/5 glass"
           style={{
             opacity: menuSpring.opacity,

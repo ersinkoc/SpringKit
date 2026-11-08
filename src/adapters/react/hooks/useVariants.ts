@@ -14,7 +14,6 @@ import {
   type AnimationValues,
   type VariantTransition,
 } from '@oxog/springkit'
-import { useIsomorphicLayoutEffect } from '../utils/ssr.js'
 import { useAnimatableValues } from '../utils/useAnimatableValues.js'
 import { animatableSignature, type AnimatableValue } from '../utils/animatable.js'
 
@@ -187,8 +186,6 @@ export function useVariants(options: UseVariantsOptions): UseVariantsReturn {
   // `custom` set on a VariantProvider reaches the variant functions of its
   // children unless they pass their own
   const custom = customOption !== undefined ? customOption : inherit ? parentContext.custom : undefined
-  const currentVariantRef = useRef<string | undefined>(undefined)
-  const isAnimatingRef = useRef<boolean>(false)
 
   // Variant requested imperatively via setVariant(). It applies until what
   // drives the element changes (the `animate` option, or the variant inherited
@@ -328,36 +325,16 @@ export function useVariants(options: UseVariantsOptions): UseVariantsReturn {
   const springTarget = hasDelay
     ? (releasedTarget ?? initialAnimatable)
     : isMounted ? targetAnimatable : initialAnimatable
-  const springValues = useAnimatableValues(springTarget, { stiffness, damping, mass })
-
-  // Track variant changes and detect animation completion. The callback is
-  // read from a ref: an inline `onAnimationComplete` changes every render, and
-  // the animation re-renders every frame, so depending on it would cancel the
-  // completion timer before it could fire.
-  const onAnimationCompleteRef = useRef(onAnimationComplete)
-  onAnimationCompleteRef.current = onAnimationComplete
-  const completedVariantRef = useRef<string | undefined>(undefined)
-
-  useIsomorphicLayoutEffect(() => {
-    if (!targetVariant) return
-    if (targetVariant !== currentVariantRef.current) {
-      currentVariantRef.current = targetVariant
-      completedVariantRef.current = undefined
+  const { values: springValues, isAnimating } = useAnimatableValues(
+    springTarget,
+    { stiffness, damping, mass },
+    () => {
+      // A previous target may finish while a replacement is still delayed.
+      if (targetVariant && animatableSignature(springTarget) === targetSignature) {
+        onAnimationComplete?.(targetVariant)
+      }
     }
-    if (completedVariantRef.current === targetVariant) return
-    isAnimatingRef.current = true
-
-    // Settle time of the spring actually used, from the exact solution, at
-    // 0.1% of the travelled distance
-    const settleDuration = settleTime({ stiffness, damping, mass })
-    const variant = targetVariant
-    // Animation time: follows the time scale and the test clock
-    return delay(staggerDelay + settleDuration, () => {
-      isAnimatingRef.current = false
-      completedVariantRef.current = variant
-      onAnimationCompleteRef.current?.(variant)
-    })
-  }, [targetVariant, staggerDelay, stiffness, damping, mass])
+  )
 
   const setVariant = useCallback((name: string) => {
     setVariantOverride({ name, driver: driverRef.current })
@@ -369,8 +346,8 @@ export function useVariants(options: UseVariantsOptions): UseVariantsReturn {
       ...springValues,
     },
     setVariant,
-    currentVariant: currentVariantRef.current,
-    isAnimating: isAnimatingRef.current,
+    currentVariant: targetVariant,
+    isAnimating: isAnimating || (hasDelay && animatableSignature(springTarget) !== targetSignature),
   }
 }
 

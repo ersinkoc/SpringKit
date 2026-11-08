@@ -258,7 +258,11 @@ class SpringAnimationImpl implements SpringAnimation, Animatable {
     // Clamp elapsed time to prevent physics explosions after tab suspension
     // (and ignore negative deltas from out-of-order timestamps)
     const MAX_DELTA_TIME = 1 / 15 // Maximum 15fps worth of simulation per frame
-    const safeElapsed = Math.min(Math.max(elapsed, 0), MAX_DELTA_TIME)
+    // The global loop already clamps real time before applying timeScale.
+    // Clamping its scaled time again would discard motion at high rates.
+    const safeElapsed = deltaTime === undefined
+      ? Math.min(Math.max(elapsed, 0), MAX_DELTA_TIME)
+      : Math.max(elapsed, 0)
 
     // Advance with the exact closed-form solution of the spring equation:
     // frame-rate independent, no integration error, one evaluation per frame

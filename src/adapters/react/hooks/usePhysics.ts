@@ -164,7 +164,7 @@ export interface UseMomentumOptions {
  *     push(dragVelocity) // Apply velocity on release
  *   }
  *
- *   return <div style={{ x: value.get() }} />
+ *   return <Animated.div style={{ x: value }} />
  * }
  * ```
  */
@@ -317,7 +317,7 @@ export interface UseElasticOptions {
  *   const handleDrag = (offset) => stretch(offset)
  *   const handleRelease = () => release()
  *
- *   return <div style={{ y: value.get() }} />
+ *   return <Animated.div style={{ y: value }} />
  * }
  * ```
  */
@@ -425,8 +425,8 @@ export interface UseBounceOptions {
  *   })
  *
  *   return (
- *     <div
- *       style={{ y: value.get() }}
+ *     <Animated.div
+ *       style={{ y: value }}
  *       onClick={() => drop(0)}
  *     />
  *   )
@@ -555,7 +555,7 @@ export function useBounce(options: UseBounceOptions = {}) {
 export interface UseGravityOptions {
   /** Gravity vector */
   gravity?: { x: number; y: number }
-  /** Mass of the object */
+  /** @deprecated Reserved and unused; gravity is an acceleration. Kept for 2.x compatibility. */
   mass?: number
   /** Air resistance */
   drag?: number
@@ -586,8 +586,8 @@ export interface UseGravityOptions {
  *   })
  *
  *   return (
- *     <div
- *       style={{ x: x.get(), y: y.get() }}
+ *     <Animated.div
+ *       style={{ x, y }}
  *       onClick={() => launch({ x: 5, y: -10 })}
  *     />
  *   )

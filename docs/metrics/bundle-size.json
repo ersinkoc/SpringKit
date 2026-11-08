@@ -1,0 +1,38 @@
+{
+  "version": "2.0.0",
+  "method": "esbuild; ESM browser ES2021; React external; gzipSync defaults; bytes",
+  "results": {
+    "spring": {
+      "minifiedBytes": 10562,
+      "gzipBytes": 3599
+    },
+    "native": {
+      "minifiedBytes": 9352,
+      "gzipBytes": 3754
+    },
+    "motionValue": {
+      "minifiedBytes": 15995,
+      "gzipBytes": 4736
+    },
+    "animated": {
+      "minifiedBytes": 70087,
+      "gzipBytes": 24305
+    },
+    "dom": {
+      "minifiedBytes": 1937,
+      "gzipBytes": 922
+    },
+    "core": {
+      "minifiedBytes": 116159,
+      "gzipBytes": 38929
+    },
+    "react": {
+      "minifiedBytes": 179271,
+      "gzipBytes": 59842
+    },
+    "all": {
+      "minifiedBytes": 222570,
+      "gzipBytes": 74009
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "spring": 4500,
+  "native": 4500,
+  "motionValue": 5500,
+  "animated": 26000,
+  "dom": 1500,
+  "core": 45000,
+  "react": 65000,
+  "all": 85000
+}

@@ -86,3 +86,12 @@ Prefer it over `vi.useFakeTimers()`; in React tests wrap `clock.advance()` in `a
 - [Changelog](CHANGELOG.md)
 - [Migration guide 1.x → 2.0](docs/MIGRATION-2.0.md)
 - [Documentation site](https://springkit.oxog.dev)
+
+## DOM binding and current maintenance contracts
+- `@oxog/springkit/dom`: `bindStyle(element, { opacity: motionValue, x: motionValue })` and `bindAttribute(element, name, value)` return cleanup handles. Clean up bindings before destroying their values.
+- `Animated` accepts live values in `style`, writes frames without React rendering, and supports SVG refs. `useSpring` deliberately returns React state.
+- `MotionValue.finished` resolves the current numeric run. Subscription handles own independent registrations, even for identical callbacks.
+- `animate` preserves colors and units, supports finite `duration` in milliseconds plus `ease`, and reads actual driver completion. Incompatible string templates jump. `getProgress()` reports clamped visual segment progress.
+- Varying a named variant's values reanimates and completes at the actual group rest. Async LazyMotion loaders expose no flags until their own load completes; LazyMotion remains a flag provider rather than a code-splitting mechanism.
+- Text/typewriter/number and Reorder animations honor MotionConfig reduced motion. Native compositing depends on browser/property eligibility.
+- Current support/time-unit/deprecation matrix: docs/API_SUPPORT.md. Runnable, typechecked examples: docs/examples/live-values.tsx.
