@@ -63,6 +63,30 @@ jobs:
       # the packed export/declaration shape BEFORE npm uploads anything.
       - run: npm publish --provenance --access public --registry=https://registry.npmjs.org/
 
+  # A failed post-publication check can be rerun without uploading the same
+  # immutable npm version again. This job only reads the public registry.
+  verify:
+    needs: publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+          package-manager-cache: false
+
+      - name: Use the reviewed signature-capable npm CLI
+        run: npm install --global npm@12.2.2 --registry=https://registry.npmjs.org/
+
+      - name: Use the public registry without an npm token
+        run: |
+          printf 'registry=https://registry.npmjs.org/\n' > "$RUNNER_TEMP/springkit-npmrc"
+          echo "NPM_CONFIG_USERCONFIG=$RUNNER_TEMP/springkit-npmrc" >> "$GITHUB_ENV"
+
       - name: Verify registry version and provenance availability
         run: npm run verify:published
 

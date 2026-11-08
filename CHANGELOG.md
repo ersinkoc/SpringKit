@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.2] - 2026-11-08
+
+### Release automation
+- Wait for npm's abbreviated install index as well as version metadata and provenance before starting clean consumer tests; require matching artifact integrity and tarball URLs.
+- Separate read-only post-publication verification so failed checks can be rerun without republishing an immutable npm version.
+
 ## [2.1.1] - 2026-11-08
 
 ### Release automation

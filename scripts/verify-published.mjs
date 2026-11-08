@@ -54,19 +54,38 @@ export function verifyAuditedProvenance(report, expected) {
   return statement
 }
 
-export async function waitForPublication(expected, { fetcher = fetch, sleep = ms => new Promise(done => setTimeout(done, ms)), timeoutMs = 300000 } = {}) {
+async function readRegistry(url, fetcher, accept = 'application/json') {
+  const response = await fetcher(url, { headers: { Accept: accept, 'Cache-Control': 'no-cache' }, signal: AbortSignal.timeout(15000) })
+  if (response.status === 200) return response.json()
+  if (response.status !== 404 && response.status !== 429 && response.status < 500) {
+    throw new Error(`Registry verification failed: HTTP ${response.status}`)
+  }
+  return null
+}
+
+export async function waitForPublication(expected, { fetcher = fetch, sleep = ms => new Promise(done => setTimeout(done, ms)), timeoutMs = 600000 } = {}) {
   const deadline = Date.now() + timeoutMs
-  const url = `https://registry.npmjs.org/${encodeURIComponent(expected.name)}/${encodeURIComponent(expected.version)}`
+  // Match npm's canonical package URL and abbreviated install Accept header:
+  // this CDN representation can lag behind the per-version metadata endpoint.
+  const url = `https://registry.npmjs.org/${expected.name.replace('/', '%2f')}`
   do {
-    const response = await fetcher(url, { headers: { 'Cache-Control': 'no-cache' }, signal: AbortSignal.timeout(15000) })
-    if (response.status === 200) {
-      const metadata = await response.json()
-      if (registryReady(metadata, expected)) return metadata
-    } else if (response.status !== 404 && response.status !== 429 && response.status < 500) {
-      throw new Error(`Registry verification failed: HTTP ${response.status}`)
+    const [metadata, index] = await Promise.all([
+      readRegistry(`${url}/${encodeURIComponent(expected.version)}`, fetcher),
+      readRegistry(url, fetcher, 'application/vnd.npm.install-v1+json; q=1.0, application/json; q=0.8, */*'),
+    ])
+    if (metadata && registryReady(metadata, expected)) {
+      const installed = index?.versions?.[expected.version]
+      if (installed) {
+        assert.equal(index.name, expected.name, 'Wrong npm install index package')
+        assert.equal(installed.name, expected.name, 'Wrong npm install index entry')
+        assert.equal(installed.version, expected.version, 'Wrong npm install index version')
+        assert(metadata.dist.integrity && installed.dist?.integrity === metadata.dist.integrity, 'npm install index integrity does not match the published artifact')
+        assert(metadata.dist.tarball && installed.dist?.tarball === metadata.dist.tarball, 'npm install index tarball does not match the published artifact')
+        return metadata
+      }
     }
     if (Date.now() >= deadline) break
-    console.log('Waiting for the published version and its provenance to become available...')
+    console.log('Waiting for the published version, provenance and npm install index to become available...')
     await sleep(5000)
   } while (Date.now() <= deadline)
   throw new Error('Timed out waiting for registry publication and provenance')

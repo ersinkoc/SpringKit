@@ -1,6 +1,6 @@
 {
   "name": "@oxog/springkit",
-  "version": "2.1.1",
+  "version": "2.1.2",
   "description": "Zero-dependency physics-based spring animation library with gesture support",
   "author": "Ersin KOÇ",
   "license": "MIT",
