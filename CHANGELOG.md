@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Documentation
+- Document release preparation, patch/minor/major selection, GitHub UI and CLI commands, and npm/GitHub Release/site completion checks in README and CONTRIBUTING.
+- Add recovery steps for retrying the same release request, rerunning failed child jobs, resolving publication/deployment failures, and handling source fixes that require a new version.
+
 ## [2.1.3] - 2026-11-09
 
 ### Release automation
